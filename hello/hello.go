@@ -6,6 +6,7 @@ import (
 	"github.com/couchbaselabs/go-couchbase"
 	"log"
 	"strconv"
+	"time"
 )
 
 func maybeFatal(err error) {
@@ -16,16 +17,21 @@ func maybeFatal(err error) {
 
 func doOps(b couchbase.Bucket) {
 	fmt.Printf("Doing some ops on %s\n", b.Name)
-	for i := 0; i < 10000; i++ {
+	start := time.Now()
+	total := 10000
+	for i := 0; i < total; i++ {
 		k := fmt.Sprintf("k%d", i)
-		fmt.Printf("Doing key=%s\n", k)
 		maybeFatal(b.Set(k, []string{"a", "b", "c"}))
 		rv := make([]string, 0, 10)
-		fmt.Printf("Getting %s\n", k)
 		maybeFatal(b.Get(k, &rv))
-		fmt.Printf("Got back %v\n", rv)
+		if fmt.Sprintf("%#v", rv) != `[]string{"a", "b", "c"}` {
+			log.Fatalf("Expected %#v, got %#v",
+				[]string{"a", "b", "c"}, rv)
+		}
 		maybeFatal(b.Delete(k))
 	}
+	fmt.Printf("Did %d ops in %s\n",
+		total*3, time.Now().Sub(start).String())
 }
 
 func exploreBucket(bucket couchbase.Bucket) {
