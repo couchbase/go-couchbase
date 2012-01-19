@@ -3,8 +3,10 @@ package couchbase
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 )
 
 type PoolsResponse struct {
@@ -43,6 +45,26 @@ type Pool struct {
 	client Client
 }
 
+type Bucket struct {
+	AuthType            string
+	Capabilities        []string `json:"bucketCapabilities"`
+	CapabilitiesVersion string   `json:"bucketCapabilitiesVer"`
+	Type                string   `json:"bucketType"`
+	Name                string
+	NodeLocator         string
+	Nodes               []Node
+	Quota               map[string]uint64
+	Replicas            int    `json:"replicaNumber"`
+	Password            string `json:"saslPassword"`
+	URI                 string
+	VBucketServerMap    struct {
+		HashAlgorithm string
+		NumReplicas   int
+		ServerList    []string
+		VBucketMap    [][]int
+	}
+}
+
 type Client struct {
 	BaseURL *url.URL
 	Info    PoolsResponse
@@ -50,7 +72,12 @@ type Client struct {
 
 func (c *Client) parseURLResponse(path string, out interface{}) error {
 	u := *c.BaseURL
-	u.Path = path
+	if q := strings.Index(path, "?"); q > 0 {
+		u.Path = path[:q]
+		u.RawQuery = path[q+1:]
+	} else {
+		u.Path = path
+	}
 
 	res, err := http.Get(u.String())
 	if err != nil {
@@ -89,6 +116,17 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 	return
 }
 
-func (p *Pool) GetBuckets() error {
-	return nil
+func (p *Pool) GetBucket(name string) (b Bucket, err error) {
+	u, ok := p.Buckets[name]
+	if !ok {
+		return Bucket{}, errors.New("No bucket named " + name)
+	}
+	buckets := make([]Bucket, 0, 1)
+	err = p.client.parseURLResponse(u, &buckets)
+	if len(buckets) != 1 {
+		return Bucket{}, errors.New(fmt.Sprintf(
+			"Returned weird stuff from bucket req: %v", buckets))
+	}
+	b = buckets[0]
+	return
 }
