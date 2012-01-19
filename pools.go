@@ -63,6 +63,9 @@ type Bucket struct {
 		ServerList    []string
 		VBucketMap    [][]int
 	}
+
+	pool        *Pool
+	connections []*memcachedClient
 }
 
 type Client struct {
@@ -128,5 +131,7 @@ func (p *Pool) GetBucket(name string) (b Bucket, err error) {
 			"Returned weird stuff from bucket req: %v", buckets))
 	}
 	b = buckets[0]
+	b.pool = p
+	b.connections = make([]*memcachedClient, len(b.VBucketServerMap.ServerList))
 	return
 }

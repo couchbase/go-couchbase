@@ -8,6 +8,21 @@ import (
 	"strconv"
 )
 
+func maybeFatal(err error) {
+	if err != nil {
+		log.Fatalf("Error:  %v", err)
+	}
+}
+
+func doOps(b couchbase.Bucket) {
+	fmt.Printf("Doing some ops on %s\n", b.Name)
+	maybeFatal(b.Set("key1", []string{"a", "b", "c"}))
+	rv := make([]string, 0, 10)
+	maybeFatal(b.Get("key1", &rv))
+	log.Printf("Got back %v", rv)
+	maybeFatal(b.Delete("key1"))
+}
+
 func main() {
 	flag.Parse()
 	c, err := couchbase.Connect(flag.Arg(0))
@@ -40,6 +55,8 @@ func main() {
 				}
 				fmt.Printf("        %s: %v\n", server, vbs)
 			}
+
+			doOps(bucket)
 		}
 	}
 }
