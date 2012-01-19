@@ -14,6 +14,8 @@ func (b *Bucket) do(k string, f func(mc *memcachedClient) error) error {
 	return f(b.connections[h])
 }
 
+// Set a value in this bucket.
+// The value will be serialized into a JSON document.
 func (b *Bucket) Set(k string, v interface{}) error {
 	return b.do(k, func(mc *memcachedClient) error {
 		data, err := json.Marshal(v)
@@ -28,6 +30,9 @@ func (b *Bucket) Set(k string, v interface{}) error {
 	})
 }
 
+// Get a value from this bucket.
+// The value is expected to be a JSON stream and will be deserialized
+// into rv.
 func (b *Bucket) Get(k string, rv interface{}) error {
 	return b.do(k, func(mc *memcachedClient) error {
 		res := mc.Get(k)
@@ -38,6 +43,7 @@ func (b *Bucket) Get(k string, rv interface{}) error {
 	})
 }
 
+// Delete a key from this bucket.
 func (b *Bucket) Delete(k string) error {
 	return b.do(k, func(mc *memcachedClient) error {
 		res := mc.Del(k)

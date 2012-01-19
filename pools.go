@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-type PoolsResponse struct {
+type poolsResponse struct {
 	ComponentsVersion     map[string]string
 	ImplementationVersion string
 	IsAdmin               bool `json:"isAdminCreds"`
@@ -21,6 +21,7 @@ type PoolsResponse struct {
 	}
 }
 
+// A computer in a cluster running the couchbase software.
 type Node struct {
 	ClusterCompatibility int
 	ClusterMembership    string
@@ -38,6 +39,7 @@ type Node struct {
 	Version              string
 }
 
+// A pool of nodes and buckets.
 type Pool struct {
 	Buckets map[string]string
 	Nodes   []Node
@@ -45,6 +47,7 @@ type Pool struct {
 	client Client
 }
 
+// An individual bucket.  Herein lives the most useful stuff.
 type Bucket struct {
 	AuthType            string
 	Capabilities        []string `json:"bucketCapabilities"`
@@ -68,9 +71,10 @@ type Bucket struct {
 	connections []*memcachedClient
 }
 
+// The couchbase client gives access to all the things.
 type Client struct {
 	BaseURL *url.URL
-	Info    PoolsResponse
+	Info    poolsResponse
 }
 
 func (c *Client) parseURLResponse(path string, out interface{}) error {
@@ -95,6 +99,7 @@ func (c *Client) parseURLResponse(path string, out interface{}) error {
 	return nil
 }
 
+// Connect to a couchbase cluster.
 func Connect(baseU string) (c Client, err error) {
 	c.BaseURL, err = url.Parse(baseU)
 	if err != nil {
@@ -104,6 +109,7 @@ func Connect(baseU string) (c Client, err error) {
 	return
 }
 
+// Get a pool from within the couchbase cluster (usually "default").
 func (c *Client) GetPool(name string) (p Pool, err error) {
 	var poolURI string
 	for _, p := range c.Info.Pools {
@@ -119,6 +125,7 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 	return
 }
 
+// Get a bucket from within this pool.
 func (p *Pool) GetBucket(name string) (b Bucket, err error) {
 	u, ok := p.Buckets[name]
 	if !ok {
