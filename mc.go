@@ -14,6 +14,8 @@ const bufsize = 1024
 type memcachedClient struct {
 	Conn   net.Conn
 	writer *bufio.Writer
+
+	hdrBuf []byte
 }
 
 func connect(prot, dest string) (rv *memcachedClient) {
@@ -27,6 +29,7 @@ func connect(prot, dest string) (rv *memcachedClient) {
 	if err != nil {
 		panic("Can't make a buffer")
 	}
+	rv.hdrBuf = make([]byte, HDR_LEN)
 	return rv
 }
 
@@ -40,12 +43,11 @@ func (client *memcachedClient) Get(vb uint16, key string) mcResponse {
 	var req mcRequest
 	req.Opcode = mcGET
 	req.VBucket = vb
-	req.Key = make([]byte, len(key))
-	copy(req.Key, key)
+	req.Key = []byte(key)
 	req.Cas = 0
 	req.Opaque = 0
-	req.Extras = make([]byte, 0)
-	req.Body = make([]byte, 0)
+	req.Extras = []byte{}
+	req.Body = []byte{}
 	return client.send(req)
 }
 
@@ -53,12 +55,11 @@ func (client *memcachedClient) Del(vb uint16, key string) mcResponse {
 	var req mcRequest
 	req.Opcode = mcDELETE
 	req.VBucket = vb
-	req.Key = make([]byte, len(key))
-	copy(req.Key, key)
+	req.Key = []byte(key)
 	req.Cas = 0
 	req.Opaque = 0
-	req.Extras = make([]byte, 0)
-	req.Body = make([]byte, 0)
+	req.Extras = []byte{}
+	req.Body = []byte{}
 	return client.send(req)
 }
 
@@ -70,9 +71,8 @@ func (client *memcachedClient) store(opcode uint8, vb uint16,
 	req.VBucket = vb
 	req.Cas = 0
 	req.Opaque = 0
-	req.Key = make([]byte, len(key))
-	copy(req.Key, key)
-	req.Extras = make([]byte, 8)
+	req.Key = []byte(key)
+	req.Extras = []byte{0, 0, 0, 0, 0, 0, 0, 0}
 	binary.BigEndian.PutUint64(req.Extras, uint64(flags)<<32|uint64(exp))
 	req.Body = body
 	return client.send(req)
@@ -89,13 +89,12 @@ func (client *memcachedClient) Set(vb uint16, key string, flags int, exp int,
 }
 
 func (client *memcachedClient) getResponse() mcResponse {
-	hdrBytes := make([]byte, HDR_LEN)
-	bytesRead, err := io.ReadFull(client.Conn, hdrBytes)
+	bytesRead, err := io.ReadFull(client.Conn, client.hdrBuf)
 	if err != nil || bytesRead != HDR_LEN {
 		log.Printf("Error reading message: %s (%d bytes)", err, bytesRead)
 		runtime.Goexit()
 	}
-	res := grokHeader(hdrBytes)
+	res := grokHeader(client.hdrBuf)
 	readContents(client.Conn, res)
 	return res
 }
