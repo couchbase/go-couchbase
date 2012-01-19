@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/dustin/go-couchbase"
+	"github.com/couchbaselabs/go-couchbase"
 	"log"
 	"strconv"
 )
