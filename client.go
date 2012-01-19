@@ -23,7 +23,7 @@ func (b *Bucket) Set(k string, v interface{}) error {
 			return err
 		}
 		res := mc.Set(k, 0, 0, data)
-		if res.Status != SUCCESS {
+		if res.Status != mcSUCCESS {
 			return res
 		}
 		return nil
@@ -36,7 +36,7 @@ func (b *Bucket) Set(k string, v interface{}) error {
 func (b *Bucket) Get(k string, rv interface{}) error {
 	return b.do(k, func(mc *memcachedClient) error {
 		res := mc.Get(k)
-		if res.Status != SUCCESS {
+		if res.Status != mcSUCCESS {
 			return res
 		}
 		return json.Unmarshal(res.Body, rv)
@@ -47,7 +47,7 @@ func (b *Bucket) Get(k string, rv interface{}) error {
 func (b *Bucket) Delete(k string) error {
 	return b.do(k, func(mc *memcachedClient) error {
 		res := mc.Del(k)
-		if res.Status != SUCCESS {
+		if res.Status != mcSUCCESS {
 			return res
 		}
 		return nil

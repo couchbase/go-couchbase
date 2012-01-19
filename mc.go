@@ -32,15 +32,15 @@ func connect(prot, dest string) (rv *memcachedClient) {
 	return rv
 }
 
-func (client *memcachedClient) send(req MCRequest) (rv MCResponse) {
+func (client *memcachedClient) send(req mcRequest) (rv mcResponse) {
 	transmitRequest(client.writer, req)
 	rv = client.getResponse()
 	return
 }
 
-func (client *memcachedClient) Get(key string) MCResponse {
-	var req MCRequest
-	req.Opcode = GET
+func (client *memcachedClient) Get(key string) mcResponse {
+	var req mcRequest
+	req.Opcode = mcGET
 	req.Key = make([]byte, len(key))
 	copy(req.Key, key)
 	req.Cas = 0
@@ -50,9 +50,9 @@ func (client *memcachedClient) Get(key string) MCResponse {
 	return client.send(req)
 }
 
-func (client *memcachedClient) Del(key string) MCResponse {
-	var req MCRequest
-	req.Opcode = DELETE
+func (client *memcachedClient) Del(key string) mcResponse {
+	var req mcRequest
+	req.Opcode = mcDELETE
 	req.Key = make([]byte, len(key))
 	copy(req.Key, key)
 	req.Cas = 0
@@ -63,9 +63,9 @@ func (client *memcachedClient) Del(key string) MCResponse {
 }
 
 func (client *memcachedClient) store(opcode uint8,
-	key string, flags int, exp int, body []byte) MCResponse {
+	key string, flags int, exp int, body []byte) mcResponse {
 
-	var req MCRequest
+	var req mcRequest
 	req.Opcode = opcode
 	req.Cas = 0
 	req.Opaque = 0
@@ -78,16 +78,16 @@ func (client *memcachedClient) store(opcode uint8,
 }
 
 func (client *memcachedClient) Add(key string, flags int, exp int,
-	body []byte) MCResponse {
-	return client.store(ADD, key, flags, exp, body)
+	body []byte) mcResponse {
+	return client.store(mcADD, key, flags, exp, body)
 }
 
 func (client *memcachedClient) Set(key string, flags int, exp int,
-	body []byte) MCResponse {
-	return client.store(SET, key, flags, exp, body)
+	body []byte) mcResponse {
+	return client.store(mcSET, key, flags, exp, body)
 }
 
-func (client *memcachedClient) getResponse() MCResponse {
+func (client *memcachedClient) getResponse() mcResponse {
 	hdrBytes := make([]byte, HDR_LEN)
 	bytesRead, err := io.ReadFull(client.Conn, hdrBytes)
 	if err != nil || bytesRead != HDR_LEN {
@@ -99,14 +99,14 @@ func (client *memcachedClient) getResponse() MCResponse {
 	return res
 }
 
-func readContents(s net.Conn, res MCResponse) {
+func readContents(s net.Conn, res mcResponse) {
 	readOb(s, res.Extras)
 	readOb(s, res.Key)
 	readOb(s, res.Body)
 }
 
-func grokHeader(hdrBytes []byte) (rv MCResponse) {
-	if hdrBytes[0] != RES_MAGIC {
+func grokHeader(hdrBytes []byte) (rv mcResponse) {
+	if hdrBytes[0] != mcRES_MAGIC {
 		log.Printf("Bad magic: %x", hdrBytes[0])
 		runtime.Goexit()
 	}
@@ -121,9 +121,9 @@ func grokHeader(hdrBytes []byte) (rv MCResponse) {
 	return
 }
 
-func transmitRequest(o *bufio.Writer, req MCRequest) {
+func transmitRequest(o *bufio.Writer, req mcRequest) {
 	// 0
-	writeByte(o, REQ_MAGIC)
+	writeByte(o, mcREQ_MAGIC)
 	writeByte(o, req.Opcode)
 	writeUint16(o, uint16(len(req.Key)))
 	// 4

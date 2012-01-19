@@ -5,101 +5,101 @@ import "fmt"
 type HeaderMagic int
 
 const (
-	REQ_MAGIC = 0x80
-	RES_MAGIC = 0x81
+	mcREQ_MAGIC = 0x80
+	mcRES_MAGIC = 0x81
 )
 
-type CommandCode int
+type mcCommandCode int
 
 const (
-	GET        = 0x00
-	SET        = 0x01
-	ADD        = 0x02
-	REPLACE    = 0x03
-	DELETE     = 0x04
-	INCREMENT  = 0x05
-	DECREMENT  = 0x06
-	QUIT       = 0x07
-	FLUSH      = 0x08
-	GETQ       = 0x09
-	NOOP       = 0x0a
-	VERSION    = 0x0b
-	GETK       = 0x0c
-	GETKQ      = 0x0d
-	APPEND     = 0x0e
-	PREPEND    = 0x0f
-	STAT       = 0x10
-	SETQ       = 0x11
-	ADDQ       = 0x12
-	REPLACEQ   = 0x13
-	DELETEQ    = 0x14
-	INCREMENTQ = 0x15
-	DECREMENTQ = 0x16
-	QUITQ      = 0x17
-	FLUSHQ     = 0x18
-	APPENDQ    = 0x19
-	PREPENDQ   = 0x1a
-	RGET       = 0x30
-	RSET       = 0x31
-	RSETQ      = 0x32
-	RAPPEND    = 0x33
-	RAPPENDQ   = 0x34
-	RPREPEND   = 0x35
-	RPREPENDQ  = 0x36
-	RDELETE    = 0x37
-	RDELETEQ   = 0x38
-	RINCR      = 0x39
-	RINCRQ     = 0x3a
-	RDECR      = 0x3b
-	RDECRQ     = 0x3c
+	mcGET        = 0x00
+	mcSET        = 0x01
+	mcADD        = 0x02
+	mcREPLACE    = 0x03
+	mcDELETE     = 0x04
+	mcINCREMENT  = 0x05
+	mcDECREMENT  = 0x06
+	mcQUIT       = 0x07
+	mcFLUSH      = 0x08
+	mcGETQ       = 0x09
+	mcNOOP       = 0x0a
+	mcVERSION    = 0x0b
+	mcGETK       = 0x0c
+	mcGETKQ      = 0x0d
+	mcAPPEND     = 0x0e
+	mcPREPEND    = 0x0f
+	mcSTAT       = 0x10
+	mcSETQ       = 0x11
+	mcADDQ       = 0x12
+	mcREPLACEQ   = 0x13
+	mcDELETEQ    = 0x14
+	mcINCREMENTQ = 0x15
+	mcDECREMENTQ = 0x16
+	mcQUITQ      = 0x17
+	mcFLUSHQ     = 0x18
+	mcAPPENDQ    = 0x19
+	mcPREPENDQ   = 0x1a
+	mcRGET       = 0x30
+	mcRSET       = 0x31
+	mcRSETQ      = 0x32
+	mcRAPPEND    = 0x33
+	mcRAPPENDQ   = 0x34
+	mcRPREPEND   = 0x35
+	mcRPREPENDQ  = 0x36
+	mcRDELETE    = 0x37
+	mcRDELETEQ   = 0x38
+	mcRINCR      = 0x39
+	mcRINCRQ     = 0x3a
+	mcRDECR      = 0x3b
+	mcRDECRQ     = 0x3c
 )
 
-type ResponseStatus int
+type mcResponseStatus int
 
 const (
-	SUCCESS         = 0x00
-	KEY_ENOENT      = 0x01
-	KEY_EEXISTS     = 0x02
-	E2BIG           = 0x03
-	EINVAL          = 0x04
-	NOT_STORED      = 0x05
-	DELTA_BADVAL    = 0x06
-	UNKNOWN_COMMAND = 0x81
-	ENOMEM          = 0x82
+	mcSUCCESS         = 0x00
+	mcKEY_ENOENT      = 0x01
+	mcKEY_EEXISTS     = 0x02
+	mcE2BIG           = 0x03
+	mcEINVAL          = 0x04
+	mcNOT_STORED      = 0x05
+	mcDELTA_BADVAL    = 0x06
+	mcUNKNOWN_COMMAND = 0x81
+	mcENOMEM          = 0x82
 )
 
-type MCRequest struct {
+type mcRequest struct {
 	Opcode            uint8
 	Cas               uint64
 	Opaque            uint32
 	VBucket           uint16
 	Extras, Key, Body []byte
-	ResponseChannel   chan MCResponse
+	ResponseChannel   chan mcResponse
 }
 
-func (req MCRequest) String() string {
-	return fmt.Sprintf("{MCRequest opcode=%x, key='%s'}",
+func (req mcRequest) String() string {
+	return fmt.Sprintf("{mcRequest opcode=%x, key='%s'}",
 		req.Opcode, req.Key)
 }
 
-type MCResponse struct {
+type mcResponse struct {
 	Status            uint16
 	Cas               uint64
 	Extras, Key, Body []byte
 	Fatal             bool
 }
 
-func (res MCResponse) String() string {
-	return fmt.Sprintf("{MCResponse status=%x keylen=%d, extralen=%d, bodylen=%d}",
+func (res mcResponse) String() string {
+	return fmt.Sprintf("{mcResponse status=%x keylen=%d, extralen=%d, bodylen=%d}",
 		res.Status, len(res.Key), len(res.Extras), len(res.Body))
 }
 
-func (res MCResponse) Error() string {
-	return fmt.Sprintf("MCResponse status=%x, msg: %s",
+func (res mcResponse) Error() string {
+	return fmt.Sprintf("mcResponse status=%x, msg: %s",
 		res.Status, string(res.Body))
 }
 
-type MCItem struct {
+type mcItem struct {
 	Cas               uint64
 	Flags, Expiration uint32
 	Data              []byte
