@@ -255,7 +255,7 @@ var samplePool = `{
 
 func assert(t *testing.T, name string, got interface{}, expected interface{}) {
 	if got != expected {
-		t.Fatalf("Expected %s for %s, got %s", expected, name, got)
+		t.Fatalf("Expected %v for %s, got %v", expected, name, got)
 	}
 }
 

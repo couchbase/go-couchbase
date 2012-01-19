@@ -16,11 +16,16 @@ func maybeFatal(err error) {
 
 func doOps(b couchbase.Bucket) {
 	fmt.Printf("Doing some ops on %s\n", b.Name)
-	maybeFatal(b.Set("key1", []string{"a", "b", "c"}))
-	rv := make([]string, 0, 10)
-	maybeFatal(b.Get("key1", &rv))
-	log.Printf("Got back %v", rv)
-	maybeFatal(b.Delete("key1"))
+	for i := 0; i < 10000; i++ {
+		k := fmt.Sprintf("k%d", i)
+		fmt.Printf("Doing key=%s\n", k)
+		maybeFatal(b.Set(k, []string{"a", "b", "c"}))
+		rv := make([]string, 0, 10)
+		fmt.Printf("Getting %s\n", k)
+		maybeFatal(b.Get(k, &rv))
+		fmt.Printf("Got back %v\n", rv)
+		maybeFatal(b.Delete(k))
+	}
 }
 
 func main() {
@@ -29,6 +34,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("Error connecting:  %v", err)
 	}
+	fmt.Printf("Connected to ver=%s\n", c.Info.ImplementationVersion)
 	for _, pn := range c.Info.Pools {
 		fmt.Printf("Found pool:  %s -> %s\n", pn.Name, pn.URI)
 		p, err := c.GetPool(pn.Name)

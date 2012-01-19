@@ -2,27 +2,26 @@ package couchbase
 
 import (
 	"encoding/json"
-	"log"
 )
 
-func (b *Bucket) do(k string, f func(mc *memcachedClient) error) error {
-	h := b.VBHash(k) % uint32(len(b.connections))
-	log.Printf("Sending %s to connection %d (%d connections)\n", k, h, len(b.connections))
-	if b.connections[h] == nil {
-		b.connections[h] = connect("tcp", b.VBucketServerMap.ServerList[h])
+func (b *Bucket) do(k string, f func(mc *memcachedClient, vb uint16) error) error {
+	vb := b.VBHash(k)
+	masterId := b.VBucketServerMap.VBucketMap[vb][0]
+	if b.connections[masterId] == nil {
+		b.connections[masterId] = connect("tcp", b.VBucketServerMap.ServerList[masterId])
 	}
-	return f(b.connections[h])
+	return f(b.connections[masterId], uint16(vb))
 }
 
 // Set a value in this bucket.
 // The value will be serialized into a JSON document.
 func (b *Bucket) Set(k string, v interface{}) error {
-	return b.do(k, func(mc *memcachedClient) error {
+	return b.do(k, func(mc *memcachedClient, vb uint16) error {
 		data, err := json.Marshal(v)
 		if err != nil {
 			return err
 		}
-		res := mc.Set(k, 0, 0, data)
+		res := mc.Set(vb, k, 0, 0, data)
 		if res.Status != mcSUCCESS {
 			return res
 		}
@@ -34,8 +33,8 @@ func (b *Bucket) Set(k string, v interface{}) error {
 // The value is expected to be a JSON stream and will be deserialized
 // into rv.
 func (b *Bucket) Get(k string, rv interface{}) error {
-	return b.do(k, func(mc *memcachedClient) error {
-		res := mc.Get(k)
+	return b.do(k, func(mc *memcachedClient, vb uint16) error {
+		res := mc.Get(vb, k)
 		if res.Status != mcSUCCESS {
 			return res
 		}
@@ -45,8 +44,8 @@ func (b *Bucket) Get(k string, rv interface{}) error {
 
 // Delete a key from this bucket.
 func (b *Bucket) Delete(k string) error {
-	return b.do(k, func(mc *memcachedClient) error {
-		res := mc.Del(k)
+	return b.do(k, func(mc *memcachedClient, vb uint16) error {
+		res := mc.Del(vb, k)
 		if res.Status != mcSUCCESS {
 			return res
 		}

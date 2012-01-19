@@ -17,12 +17,10 @@ type memcachedClient struct {
 }
 
 func connect(prot, dest string) (rv *memcachedClient) {
-	log.Printf("Connecting to %s", dest)
 	conn, err := net.Dial(prot, dest)
 	if err != nil {
 		log.Fatalf("Failed to connect: %s", err)
 	}
-	log.Printf("Connected to %s", dest)
 	rv = new(memcachedClient)
 	rv.Conn = conn
 	rv.writer, err = bufio.NewWriterSize(rv.Conn, bufsize)
@@ -38,9 +36,10 @@ func (client *memcachedClient) send(req mcRequest) (rv mcResponse) {
 	return
 }
 
-func (client *memcachedClient) Get(key string) mcResponse {
+func (client *memcachedClient) Get(vb uint16, key string) mcResponse {
 	var req mcRequest
 	req.Opcode = mcGET
+	req.VBucket = vb
 	req.Key = make([]byte, len(key))
 	copy(req.Key, key)
 	req.Cas = 0
@@ -50,9 +49,10 @@ func (client *memcachedClient) Get(key string) mcResponse {
 	return client.send(req)
 }
 
-func (client *memcachedClient) Del(key string) mcResponse {
+func (client *memcachedClient) Del(vb uint16, key string) mcResponse {
 	var req mcRequest
 	req.Opcode = mcDELETE
+	req.VBucket = vb
 	req.Key = make([]byte, len(key))
 	copy(req.Key, key)
 	req.Cas = 0
@@ -62,11 +62,12 @@ func (client *memcachedClient) Del(key string) mcResponse {
 	return client.send(req)
 }
 
-func (client *memcachedClient) store(opcode uint8,
+func (client *memcachedClient) store(opcode uint8, vb uint16,
 	key string, flags int, exp int, body []byte) mcResponse {
 
 	var req mcRequest
 	req.Opcode = opcode
+	req.VBucket = vb
 	req.Cas = 0
 	req.Opaque = 0
 	req.Key = make([]byte, len(key))
@@ -77,14 +78,14 @@ func (client *memcachedClient) store(opcode uint8,
 	return client.send(req)
 }
 
-func (client *memcachedClient) Add(key string, flags int, exp int,
+func (client *memcachedClient) Add(vb uint16, key string, flags int, exp int,
 	body []byte) mcResponse {
-	return client.store(mcADD, key, flags, exp, body)
+	return client.store(mcADD, vb, key, flags, exp, body)
 }
 
-func (client *memcachedClient) Set(key string, flags int, exp int,
+func (client *memcachedClient) Set(vb uint16, key string, flags int, exp int,
 	body []byte) mcResponse {
-	return client.store(mcSET, key, flags, exp, body)
+	return client.store(mcSET, vb, key, flags, exp, body)
 }
 
 func (client *memcachedClient) getResponse() mcResponse {
