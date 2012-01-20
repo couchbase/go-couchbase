@@ -110,6 +110,22 @@ func Connect(baseU string) (c Client, err error) {
 	return
 }
 
+func (p *Pool) refreshBuckets() (err error) {
+	p.BucketMap = make(map[string]Bucket)
+
+	buckets := []Bucket{}
+	err = p.client.parseURLResponse(p.BucketURL["uri"], &buckets)
+	if err != nil {
+		return err
+	}
+	for _, b := range buckets {
+		b.pool = p
+		b.connections = make([]*memcachedClient, len(b.VBucketServerMap.ServerList))
+		p.BucketMap[b.Name] = b
+	}
+	return nil
+}
+
 // Get a pool from within the couchbase cluster (usually "default").
 func (c *Client) GetPool(name string) (p Pool, err error) {
 	var poolURI string
@@ -123,20 +139,9 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 	}
 	err = c.parseURLResponse(poolURI, &p)
 
-	p.BucketMap = make(map[string]Bucket)
-
-	buckets := []Bucket{}
-	err = c.parseURLResponse(p.BucketURL["uri"], &buckets)
-	if err != nil {
-		return Pool{}, err
-	}
-	for _, b := range buckets {
-		b.pool = &p
-		b.connections = make([]*memcachedClient, len(b.VBucketServerMap.ServerList))
-		p.BucketMap[b.Name] = b
-	}
-
 	p.client = *c
+
+	p.refreshBuckets()
 	return
 }
 
