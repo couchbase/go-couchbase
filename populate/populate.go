@@ -91,7 +91,6 @@ func harass(b couchbase.Bucket) {
 
 		k := time.Now().Format(myfmt)
 
-		// mfmt.Printf("%s:  %#v\n", k, r)
 		if err := b.Set(k, r); err != nil {
 			log.Fatalf("Oops, failed a store of %s:  %v", k, err)
 		}
