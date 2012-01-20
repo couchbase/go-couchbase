@@ -64,6 +64,7 @@ const (
 	mcEINVAL          = 0x04
 	mcNOT_STORED      = 0x05
 	mcDELTA_BADVAL    = 0x06
+	mcNOT_MY_VBUCKET  = 0x07
 	mcUNKNOWN_COMMAND = 0x81
 	mcENOMEM          = 0x82
 )

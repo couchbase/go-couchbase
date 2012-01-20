@@ -15,7 +15,20 @@ func (b *Bucket) do(k string, f func(mc *memcachedClient, vb uint16) error) erro
 	if b.connections[masterId] == nil {
 		b.connections[masterId] = connect("tcp", b.VBucketServerMap.ServerList[masterId])
 	}
-	return f(b.connections[masterId], uint16(vb))
+	for {
+		err := f(b.connections[masterId], uint16(vb))
+		switch err.(type) {
+		default:
+			return err
+		case mcResponse:
+			if err.(mcResponse).Status == mcNOT_MY_VBUCKET {
+				b.pool.refreshBuckets()
+			} else {
+				return err
+			}
+		}
+	}
+	panic("Unreachable.")
 }
 
 // Set a value in this bucket.
