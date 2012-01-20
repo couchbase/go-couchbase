@@ -7,6 +7,7 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"sync/atomic"
 )
 
 func (b *Bucket) do(k string, f func(mc *memcachedClient, vb uint16) error) error {
@@ -21,7 +22,9 @@ func (b *Bucket) do(k string, f func(mc *memcachedClient, vb uint16) error) erro
 		default:
 			return err
 		case mcResponse:
-			if err.(mcResponse).Status == mcNOT_MY_VBUCKET {
+			st := err.(mcResponse).Status
+			atomic.AddUint64(&b.pool.client.Statuses[st], 1)
+			if st == mcNOT_MY_VBUCKET {
 				b.refresh()
 			} else {
 				return err

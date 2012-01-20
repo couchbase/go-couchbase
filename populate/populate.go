@@ -7,7 +7,6 @@ import (
 	"log"
 	"math/rand"
 	"os"
-	"sync/atomic"
 	"text/tabwriter"
 	"time"
 )
@@ -54,10 +53,12 @@ type Record struct {
 	Score    int    `json:"score"`
 }
 
-func report(b couchbase.Bucket, msgs *uint64) {
+func report(c couchbase.Client, b couchbase.Bucket) {
 	fmt.Printf("-----------------------------------------------------\n")
-	fmt.Printf("Sent %d messages\n", *msgs)
+	fmt.Printf("Got %d success messages, %d not-my-vbucket\n",
+		c.Statuses[0], c.Statuses[7])
 	fmt.Printf("-----------------------------------------------------\n")
+	return
 	tr := tabwriter.NewWriter(os.Stdout, 8, 8, 1, ' ', 0)
 	defer tr.Flush()
 	params := map[string]interface{}{
@@ -79,14 +80,13 @@ func report(b couchbase.Bucket, msgs *uint64) {
 	}
 }
 
-func harass(b couchbase.Bucket) {
+func harass(c couchbase.Client, b couchbase.Bucket) {
 	fmt.Printf("Doing stuff\n")
-	msgs := uint64(0)
 
 	go func() {
 		for {
-			time.Sleep(5 * time.Second)
-			report(b, &msgs)
+			time.Sleep(2 * time.Second)
+			report(c, b)
 		}
 	}()
 
@@ -104,7 +104,6 @@ func harass(b couchbase.Bucket) {
 		if err := b.Set(k, r); err != nil {
 			log.Fatalf("Oops, failed a store of %s:  %v", k, err)
 		}
-		atomic.AddUint64(&msgs, 1)
 	}
 }
 
@@ -125,5 +124,5 @@ func main() {
 		log.Fatalf("Error getting bucket:  %v", err)
 	}
 
-	harass(bucket)
+	harass(c, bucket)
 }

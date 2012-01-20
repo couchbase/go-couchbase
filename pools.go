@@ -74,8 +74,9 @@ type Bucket struct {
 
 // The couchbase client gives access to all the things.
 type Client struct {
-	BaseURL *url.URL
-	Info    poolsResponse
+	BaseURL  *url.URL
+	Info     poolsResponse
+	Statuses [256]uint64
 }
 
 func (c *Client) parseURLResponse(path string, out interface{}) error {
