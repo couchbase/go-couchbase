@@ -18,7 +18,7 @@ func maybeFatal(err error) {
 func doOps(b couchbase.Bucket) {
 	fmt.Printf("Doing some ops on %s\n", b.Name)
 	start := time.Now()
-	total := 10000
+	total := 2048
 	for i := 0; i < total; i++ {
 		k := fmt.Sprintf("k%d", i)
 		maybeFatal(b.Set(k, []string{"a", "b", "c"}))
