@@ -2,6 +2,9 @@ package couchbase
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/url"
 )
 
 func (b *Bucket) getVBInfo(k string) (*memcachedClient, uint16) {
@@ -48,4 +51,42 @@ func (b *Bucket) Delete(k string) error {
 		return res
 	}
 	return nil
+}
+
+type ViewRow struct {
+	ID    string
+	Key   interface{}
+	Value interface{}
+	Doc   *interface{}
+}
+
+type ViewResult struct {
+	TotalRows int `json:"total_rows"`
+	Rows      []ViewRow
+}
+
+// Execute a view
+func (b *Bucket) View(ddoc, name string, params map[string]interface{}) (vres ViewResult, err error) {
+	u := *b.pool.client.BaseURL
+
+	values := url.Values{}
+	for k, v := range params {
+		values[k] = []string{fmt.Sprintf("%v", v)}
+	}
+
+	u.Path = fmt.Sprintf("/couchBase/%s/_design/%s/_view/%s", b.Name, ddoc, name)
+	u.RawQuery = values.Encode()
+
+	res, err := http.Get(u.String())
+	if err != nil {
+		return ViewResult{}, err
+	}
+	defer res.Body.Close()
+
+	d := json.NewDecoder(res.Body)
+	if err = d.Decode(&vres); err != nil {
+		return ViewResult{}, err
+	}
+	return vres, nil
+
 }
