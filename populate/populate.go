@@ -6,6 +6,8 @@ import (
 	"github.com/couchbaselabs/go-couchbase"
 	"log"
 	"math/rand"
+	"os"
+	"text/tabwriter"
 	"time"
 )
 
@@ -51,8 +53,32 @@ type Record struct {
 	Score    int    `json:"score"`
 }
 
+func report(b couchbase.Bucket) {
+	fmt.Printf("-----------------------------------------------------\n")
+	tr := tabwriter.NewWriter(os.Stdout, 8, 8, 1, ' ', 0)
+	defer tr.Flush()
+	params := map[string]interface{}{
+		"group_level": 1,
+	}
+	vres, err := b.View("test", "test", params)
+	if err != nil {
+		log.Fatalf("Error executing view:  %v", err)
+	}
+
+	for _, r := range vres.Rows {
+		fmt.Fprintf(tr, "%v:\t%v\n", r.Key, r.Value)
+	}
+}
+
 func harass(b couchbase.Bucket) {
 	fmt.Printf("Doing stuff\n")
+
+	go func() {
+		for {
+			time.Sleep(5 * time.Second)
+			report(b)
+		}
+	}()
 
 	for {
 		r := Record{
@@ -65,7 +91,7 @@ func harass(b couchbase.Bucket) {
 
 		k := time.Now().Format(myfmt)
 
-		fmt.Printf("%s:  %#v\n", k, r)
+		// mfmt.Printf("%s:  %#v\n", k, r)
 		if err := b.Set(k, r); err != nil {
 			log.Fatalf("Oops, failed a store of %s:  %v", k, err)
 		}
