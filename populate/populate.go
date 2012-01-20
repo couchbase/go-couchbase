@@ -7,6 +7,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sync/atomic"
 	"text/tabwriter"
 	"time"
 )
@@ -53,16 +54,20 @@ type Record struct {
 	Score    int    `json:"score"`
 }
 
-func report(b couchbase.Bucket) {
+func report(b couchbase.Bucket, msgs *uint64) {
+	fmt.Printf("-----------------------------------------------------\n")
+	fmt.Printf("Sent %d messages\n", *msgs)
 	fmt.Printf("-----------------------------------------------------\n")
 	tr := tabwriter.NewWriter(os.Stdout, 8, 8, 1, ' ', 0)
 	defer tr.Flush()
 	params := map[string]interface{}{
-		"group_level": 1,
+		"group_level":        1,
+		"stale":              "update_after",
+		"connection_timeout": 60000,
 	}
 	vres, err := b.View("test", "test", params)
 	if err != nil {
-		log.Fatalf("Error executing view:  %v", err)
+		log.Printf("Error executing view:  %v", err)
 	}
 
 	for _, r := range vres.Rows {
@@ -72,11 +77,12 @@ func report(b couchbase.Bucket) {
 
 func harass(b couchbase.Bucket) {
 	fmt.Printf("Doing stuff\n")
+	msgs := uint64(0)
 
 	go func() {
 		for {
 			time.Sleep(5 * time.Second)
-			report(b)
+			report(b, &msgs)
 		}
 	}()
 
@@ -94,6 +100,7 @@ func harass(b couchbase.Bucket) {
 		if err := b.Set(k, r); err != nil {
 			log.Fatalf("Oops, failed a store of %s:  %v", k, err)
 		}
+		atomic.AddUint64(&msgs, 1)
 	}
 }
 
