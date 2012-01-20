@@ -22,7 +22,7 @@ func (b *Bucket) do(k string, f func(mc *memcachedClient, vb uint16) error) erro
 			return err
 		case mcResponse:
 			if err.(mcResponse).Status == mcNOT_MY_VBUCKET {
-				b.pool.refreshBuckets()
+				b.refresh()
 			} else {
 				return err
 			}

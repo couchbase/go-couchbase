@@ -110,7 +110,18 @@ func Connect(baseU string) (c Client, err error) {
 	return
 }
 
-func (p *Pool) refreshBuckets() (err error) {
+func (b *Bucket) refresh() (err error) {
+	pool := b.pool
+	err = pool.client.parseURLResponse(b.URI, b)
+	if err != nil {
+		return err
+	}
+	b.pool = pool
+	b.connections = make([]*memcachedClient, len(b.VBucketServerMap.ServerList))
+	return nil
+}
+
+func (p *Pool) refresh() (err error) {
 	p.BucketMap = make(map[string]Bucket)
 
 	buckets := []Bucket{}
@@ -141,7 +152,7 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 
 	p.client = *c
 
-	p.refreshBuckets()
+	p.refresh()
 	return
 }
 
