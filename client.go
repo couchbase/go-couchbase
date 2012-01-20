@@ -3,6 +3,7 @@ package couchbase
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
 	"net/url"
 )
@@ -67,14 +68,19 @@ type ViewResult struct {
 
 // Execute a view
 func (b *Bucket) View(ddoc, name string, params map[string]interface{}) (vres ViewResult, err error) {
-	u := *b.pool.client.BaseURL
+	// Pick a random node to service our request.
+	node := b.Nodes[rand.Intn(len(b.Nodes))]
+	u, err := url.Parse(node.CouchAPIBase)
+	if err != nil {
+		return ViewResult{}, err
+	}
 
 	values := url.Values{}
 	for k, v := range params {
 		values[k] = []string{fmt.Sprintf("%v", v)}
 	}
 
-	u.Path = fmt.Sprintf("/couchBase/%s/_design/%s/_view/%s", b.Name, ddoc, name)
+	u.Path = fmt.Sprintf("/%s/_design/%s/_view/%s", b.Name, ddoc, name)
 	u.RawQuery = values.Encode()
 
 	res, err := http.Get(u.String())
