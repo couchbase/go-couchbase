@@ -11,11 +11,11 @@ import (
 
 func (b *Bucket) do(k string, f func(mc *memcachedClient, vb uint16) error) error {
 	vb := b.VBHash(k)
-	masterId := b.VBucketServerMap.VBucketMap[vb][0]
-	if b.connections[masterId] == nil {
-		b.connections[masterId] = connect("tcp", b.VBucketServerMap.ServerList[masterId])
-	}
 	for {
+		masterId := b.VBucketServerMap.VBucketMap[vb][0]
+		if b.connections[masterId] == nil {
+			b.connections[masterId] = connect("tcp", b.VBucketServerMap.ServerList[masterId])
+		}
 		err := f(b.connections[masterId], uint16(vb))
 		switch err.(type) {
 		default:
