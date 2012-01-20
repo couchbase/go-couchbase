@@ -65,6 +65,10 @@ type ViewRow struct {
 type ViewResult struct {
 	TotalRows int `json:"total_rows"`
 	Rows      []ViewRow
+	Errors    []struct {
+		From   string
+		Reason string
+	}
 }
 
 // Execute a view

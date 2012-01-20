@@ -70,6 +70,12 @@ func report(b couchbase.Bucket, msgs *uint64) {
 		log.Printf("Error executing view:  %v", err)
 	}
 
+	if len(vres.Errors) != 0 {
+		for _, e := range vres.Errors {
+			fmt.Printf(" * Error from %s:  %s\n", e.From, e.Reason)
+		}
+	}
+
 	for _, r := range vres.Rows {
 		fmt.Fprintf(tr, "%v:\t%v\n", r.Key, r.Value)
 	}
