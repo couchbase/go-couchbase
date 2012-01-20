@@ -56,7 +56,7 @@ func explorePool(pool couchbase.Pool) {
 		fmt.Printf("     %v\n", n.Hostname)
 	}
 	fmt.Printf("  Buckets:\n")
-	for n, _ := range pool.Buckets {
+	for n, _ := range pool.BucketMap {
 		bucket, err := pool.GetBucket(n)
 		if err != nil {
 			log.Fatalf("Error getting bucket:  %v\n", err)

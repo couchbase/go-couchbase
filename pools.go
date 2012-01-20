@@ -3,7 +3,6 @@ package couchbase
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -41,8 +40,10 @@ type Node struct {
 
 // A pool of nodes and buckets.
 type Pool struct {
-	Buckets map[string]string
-	Nodes   []Node
+	BucketMap map[string]Bucket
+	Nodes     []Node
+
+	BucketURL map[string]string `json:"buckets"`
 
 	client Client
 }
@@ -121,24 +122,29 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 		return p, errors.New("No pool named " + name)
 	}
 	err = c.parseURLResponse(poolURI, &p)
+
+	p.BucketMap = make(map[string]Bucket)
+
+	buckets := []Bucket{}
+	err = c.parseURLResponse(p.BucketURL["uri"], &buckets)
+	if err != nil {
+		return Pool{}, err
+	}
+	for _, b := range buckets {
+		b.pool = &p
+		b.connections = make([]*memcachedClient, len(b.VBucketServerMap.ServerList))
+		p.BucketMap[b.Name] = b
+	}
+
 	p.client = *c
 	return
 }
 
 // Get a bucket from within this pool.
 func (p *Pool) GetBucket(name string) (b Bucket, err error) {
-	u, ok := p.Buckets[name]
+	rv, ok := p.BucketMap[name]
 	if !ok {
 		return Bucket{}, errors.New("No bucket named " + name)
 	}
-	buckets := make([]Bucket, 0, 1)
-	err = p.client.parseURLResponse(u, &buckets)
-	if len(buckets) != 1 {
-		return Bucket{}, errors.New(fmt.Sprintf(
-			"Returned weird stuff from bucket req: %v", buckets))
-	}
-	b = buckets[0]
-	b.pool = p
-	b.connections = make([]*memcachedClient, len(b.VBucketServerMap.ServerList))
-	return
+	return rv, nil
 }
