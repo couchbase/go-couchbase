@@ -2,6 +2,7 @@ package couchbase
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/http"
@@ -88,6 +89,10 @@ func (b *Bucket) View(ddoc, name string, params map[string]interface{}) (vres Vi
 		return ViewResult{}, err
 	}
 	defer res.Body.Close()
+
+	if res.StatusCode != 200 {
+		return ViewResult{}, errors.New(res.Status)
+	}
 
 	d := json.NewDecoder(res.Body)
 	if err = d.Decode(&vres); err != nil {
