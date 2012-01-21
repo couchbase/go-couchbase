@@ -1,3 +1,16 @@
+/*
+A smart client for go.
+
+Usage:
+
+ client, err := couchbase.Connect("http://myserver:8091/")
+ handleError(err)
+ pool, err := client.GetPool("default")
+ handleError(err)
+ bucket, err := pool.getBucket("MyAwesomeBucket")
+ handleError(err)
+ ...
+*/
 package couchbase
 
 import (
