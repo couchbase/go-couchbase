@@ -1,0 +1,29 @@
+# A smart client for couchbase in go
+
+This is an evolving package, but does provide a useful interface to a
+[couchbase](http://www.couchbase.com/) server including all of the
+pool/bucket discovery features, compatible key distribution with other
+clients, and vbucket motion awareness so application can continue to
+operate during rebalances.
+
+It also supports view querying with source node randomization so you
+don't bang on all one node to do all the work.
+
+## Example
+
+    c, err := couchbase.Connect("http://dev-couchbase.example.com:8091/")
+    if err != nil {
+    	log.Fatalf("Error connecting:  %v", err)
+    }
+
+    pool, err := c.GetPool("default")
+    if err != nil {
+    	log.Fatalf("Error getting pool:  %v", err)
+    }
+
+    bucket, err := pool.GetBucket("default")
+    if err != nil {
+    	log.Fatalf("Error getting bucket:  %v", err)
+    }
+
+    bucket.Set("someKey", []string{"an", "example", "list"})
