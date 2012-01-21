@@ -2,14 +2,10 @@ package couchbase
 
 import "fmt"
 
-type HeaderMagic int
-
 const (
 	mcREQ_MAGIC = 0x80
 	mcRES_MAGIC = 0x81
 )
-
-type mcCommandCode int
 
 const (
 	mcGET        = 0x00
@@ -53,8 +49,6 @@ const (
 	mcRDECR      = 0x3b
 	mcRDECRQ     = 0x3c
 )
-
-type mcResponseStatus int
 
 const (
 	mcSUCCESS         = 0x00
