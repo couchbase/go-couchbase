@@ -61,7 +61,7 @@ func (client *memcachedClient) Del(vb uint16, key string) gomemcached.MCResponse
 	return client.send(req)
 }
 
-func (client *memcachedClient) store(opcode uint8, vb uint16,
+func (client *memcachedClient) store(opcode gomemcached.CommandCode, vb uint16,
 	key string, flags int, exp int, body []byte) gomemcached.MCResponse {
 
 	var req gomemcached.MCRequest
@@ -122,7 +122,7 @@ func grokHeader(hdrBytes []byte) (rv gomemcached.MCResponse) {
 func transmitRequest(o *bufio.Writer, req gomemcached.MCRequest) {
 	// 0
 	writeByte(o, gomemcached.REQ_MAGIC)
-	writeByte(o, req.Opcode)
+	writeByte(o, byte(req.Opcode))
 	writeUint16(o, uint16(len(req.Key)))
 	// 4
 	writeByte(o, uint8(len(req.Extras)))
