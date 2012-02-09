@@ -3,6 +3,7 @@ package couchbase
 import (
 	"bufio"
 	"encoding/binary"
+	"github.com/dustin/gomemcached"
 	"io"
 	"log"
 	"net"
@@ -26,19 +27,19 @@ func connect(prot, dest string) (rv *memcachedClient) {
 	rv = new(memcachedClient)
 	rv.Conn = conn
 	rv.writer = bufio.NewWriterSize(rv.Conn, bufsize)
-	rv.hdrBuf = make([]byte, HDR_LEN)
+	rv.hdrBuf = make([]byte, gomemcached.HDR_LEN)
 	return rv
 }
 
-func (client *memcachedClient) send(req mcRequest) (rv mcResponse) {
+func (client *memcachedClient) send(req gomemcached.MCRequest) (rv gomemcached.MCResponse) {
 	transmitRequest(client.writer, req)
 	rv = client.getResponse()
 	return
 }
 
-func (client *memcachedClient) Get(vb uint16, key string) mcResponse {
-	var req mcRequest
-	req.Opcode = mcGET
+func (client *memcachedClient) Get(vb uint16, key string) gomemcached.MCResponse {
+	var req gomemcached.MCRequest
+	req.Opcode = gomemcached.GET
 	req.VBucket = vb
 	req.Key = []byte(key)
 	req.Cas = 0
@@ -48,9 +49,9 @@ func (client *memcachedClient) Get(vb uint16, key string) mcResponse {
 	return client.send(req)
 }
 
-func (client *memcachedClient) Del(vb uint16, key string) mcResponse {
-	var req mcRequest
-	req.Opcode = mcDELETE
+func (client *memcachedClient) Del(vb uint16, key string) gomemcached.MCResponse {
+	var req gomemcached.MCRequest
+	req.Opcode = gomemcached.DELETE
 	req.VBucket = vb
 	req.Key = []byte(key)
 	req.Cas = 0
@@ -61,9 +62,9 @@ func (client *memcachedClient) Del(vb uint16, key string) mcResponse {
 }
 
 func (client *memcachedClient) store(opcode uint8, vb uint16,
-	key string, flags int, exp int, body []byte) mcResponse {
+	key string, flags int, exp int, body []byte) gomemcached.MCResponse {
 
-	var req mcRequest
+	var req gomemcached.MCRequest
 	req.Opcode = opcode
 	req.VBucket = vb
 	req.Cas = 0
@@ -76,18 +77,18 @@ func (client *memcachedClient) store(opcode uint8, vb uint16,
 }
 
 func (client *memcachedClient) Add(vb uint16, key string, flags int, exp int,
-	body []byte) mcResponse {
-	return client.store(mcADD, vb, key, flags, exp, body)
+	body []byte) gomemcached.MCResponse {
+	return client.store(gomemcached.ADD, vb, key, flags, exp, body)
 }
 
 func (client *memcachedClient) Set(vb uint16, key string, flags int, exp int,
-	body []byte) mcResponse {
-	return client.store(mcSET, vb, key, flags, exp, body)
+	body []byte) gomemcached.MCResponse {
+	return client.store(gomemcached.SET, vb, key, flags, exp, body)
 }
 
-func (client *memcachedClient) getResponse() mcResponse {
+func (client *memcachedClient) getResponse() gomemcached.MCResponse {
 	bytesRead, err := io.ReadFull(client.Conn, client.hdrBuf)
-	if err != nil || bytesRead != HDR_LEN {
+	if err != nil || bytesRead != gomemcached.HDR_LEN {
 		log.Printf("Error reading message: %s (%d bytes)", err, bytesRead)
 		runtime.Goexit()
 	}
@@ -96,14 +97,14 @@ func (client *memcachedClient) getResponse() mcResponse {
 	return res
 }
 
-func readContents(s net.Conn, res mcResponse) {
+func readContents(s net.Conn, res gomemcached.MCResponse) {
 	readOb(s, res.Extras)
 	readOb(s, res.Key)
 	readOb(s, res.Body)
 }
 
-func grokHeader(hdrBytes []byte) (rv mcResponse) {
-	if hdrBytes[0] != mcRES_MAGIC {
+func grokHeader(hdrBytes []byte) (rv gomemcached.MCResponse) {
+	if hdrBytes[0] != gomemcached.RES_MAGIC {
 		log.Printf("Bad magic: %x", hdrBytes[0])
 		runtime.Goexit()
 	}
@@ -118,9 +119,9 @@ func grokHeader(hdrBytes []byte) (rv mcResponse) {
 	return
 }
 
-func transmitRequest(o *bufio.Writer, req mcRequest) {
+func transmitRequest(o *bufio.Writer, req gomemcached.MCRequest) {
 	// 0
-	writeByte(o, mcREQ_MAGIC)
+	writeByte(o, gomemcached.REQ_MAGIC)
 	writeByte(o, req.Opcode)
 	writeUint16(o, uint16(len(req.Key)))
 	// 4

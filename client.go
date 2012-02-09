@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/dustin/gomemcached"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -34,10 +35,10 @@ func (b *Bucket) do(k string, f func(mc *memcachedClient, vb uint16) error) erro
 		switch err.(type) {
 		default:
 			return err
-		case mcResponse:
-			st := err.(mcResponse).Status
+		case gomemcached.MCResponse:
+			st := err.(gomemcached.MCResponse).Status
 			atomic.AddUint64(&b.pool.client.Statuses[st], 1)
-			if st == mcNOT_MY_VBUCKET {
+			if st == gomemcached.NOT_MY_VBUCKET {
 				b.refresh()
 			} else {
 				return err
@@ -56,7 +57,7 @@ func (b *Bucket) Set(k string, v interface{}) error {
 			return err
 		}
 		res := mc.Set(vb, k, 0, 0, data)
-		if res.Status != mcSUCCESS {
+		if res.Status != gomemcached.SUCCESS {
 			return res
 		}
 		return nil
@@ -69,7 +70,7 @@ func (b *Bucket) Set(k string, v interface{}) error {
 func (b *Bucket) Get(k string, rv interface{}) error {
 	return b.do(k, func(mc *memcachedClient, vb uint16) error {
 		res := mc.Get(vb, k)
-		if res.Status != mcSUCCESS {
+		if res.Status != gomemcached.SUCCESS {
 			return res
 		}
 		return json.Unmarshal(res.Body, rv)
@@ -80,7 +81,7 @@ func (b *Bucket) Get(k string, rv interface{}) error {
 func (b *Bucket) Delete(k string) error {
 	return b.do(k, func(mc *memcachedClient, vb uint16) error {
 		res := mc.Del(vb, k)
-		if res.Status != mcSUCCESS {
+		if res.Status != gomemcached.SUCCESS {
 			return res
 		}
 		return nil
