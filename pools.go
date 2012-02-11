@@ -26,11 +26,11 @@ type Node struct {
 	ClusterMembership    string
 	CouchAPIBase         string
 	Hostname             string
-	InterestingStats     map[string]uint64
-	MCDMemoryAllocated   uint64
-	MCDMemoryReserved    uint64
-	MemoryFree           uint64
-	MemoryTotal          uint64
+	InterestingStats     map[string]float64
+	MCDMemoryAllocated   float64
+	MCDMemoryReserved    float64
+	MemoryFree           float64
+	MemoryTotal          float64
 	OS                   string
 	Ports                map[string]int
 	Status               string
@@ -57,7 +57,7 @@ type Bucket struct {
 	Name                string
 	NodeLocator         string
 	Nodes               []Node
-	Quota               map[string]uint64
+	Quota               map[string]float64
 	Replicas            int    `json:"replicaNumber"`
 	Password            string `json:"saslPassword"`
 	URI                 string
