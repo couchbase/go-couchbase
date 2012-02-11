@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+
+	"github.com/dustin/gomemcached/client"
 )
 
 type poolsResponse struct {
@@ -69,7 +71,7 @@ type Bucket struct {
 	}
 
 	pool        *Pool
-	connections []*memcachedClient
+	connections []*memcached.Client
 }
 
 // The couchbase client gives access to all the things.
@@ -118,7 +120,7 @@ func (b *Bucket) refresh() (err error) {
 		return err
 	}
 	b.pool = pool
-	b.connections = make([]*memcachedClient, len(b.VBucketServerMap.ServerList))
+	b.connections = make([]*memcached.Client, len(b.VBucketServerMap.ServerList))
 	return nil
 }
 
@@ -132,7 +134,7 @@ func (p *Pool) refresh() (err error) {
 	}
 	for _, b := range buckets {
 		b.pool = p
-		b.connections = make([]*memcachedClient, len(b.VBucketServerMap.ServerList))
+		b.connections = make([]*memcached.Client, len(b.VBucketServerMap.ServerList))
 		p.BucketMap[b.Name] = b
 	}
 	return nil

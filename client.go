@@ -17,19 +17,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/dustin/gomemcached"
 	"math/rand"
 	"net/http"
 	"net/url"
 	"sync/atomic"
+
+	"github.com/dustin/gomemcached"
+	"github.com/dustin/gomemcached/client"
 )
 
-func (b *Bucket) do(k string, f func(mc *memcachedClient, vb uint16) error) error {
+func (b *Bucket) do(k string, f func(mc *memcached.Client, vb uint16) error) error {
 	vb := b.VBHash(k)
 	for {
 		masterId := b.VBucketServerMap.VBucketMap[vb][0]
 		if b.connections[masterId] == nil {
-			b.connections[masterId] = connect("tcp", b.VBucketServerMap.ServerList[masterId])
+			var err error
+			b.connections[masterId], err = memcached.Connect("tcp",
+				b.VBucketServerMap.ServerList[masterId])
+			if err != nil {
+				return err
+			}
 		}
 		err := f(b.connections[masterId], uint16(vb))
 		switch err.(type) {
@@ -51,7 +58,7 @@ func (b *Bucket) do(k string, f func(mc *memcachedClient, vb uint16) error) erro
 // Set a value in this bucket.
 // The value will be serialized into a JSON document.
 func (b *Bucket) Set(k string, v interface{}) error {
-	return b.do(k, func(mc *memcachedClient, vb uint16) error {
+	return b.do(k, func(mc *memcached.Client, vb uint16) error {
 		data, err := json.Marshal(v)
 		if err != nil {
 			return err
@@ -68,7 +75,7 @@ func (b *Bucket) Set(k string, v interface{}) error {
 // The value is expected to be a JSON stream and will be deserialized
 // into rv.
 func (b *Bucket) Get(k string, rv interface{}) error {
-	return b.do(k, func(mc *memcachedClient, vb uint16) error {
+	return b.do(k, func(mc *memcached.Client, vb uint16) error {
 		res := mc.Get(vb, k)
 		if res.Status != gomemcached.SUCCESS {
 			return res
@@ -79,7 +86,7 @@ func (b *Bucket) Get(k string, rv interface{}) error {
 
 // Delete a key from this bucket.
 func (b *Bucket) Delete(k string) error {
-	return b.do(k, func(mc *memcachedClient, vb uint16) error {
+	return b.do(k, func(mc *memcached.Client, vb uint16) error {
 		res := mc.Del(vb, k)
 		if res.Status != gomemcached.SUCCESS {
 			return res
