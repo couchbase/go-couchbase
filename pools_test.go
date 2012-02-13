@@ -286,3 +286,26 @@ func TestPool(t *testing.T) {
 	testParse(t, samplePool, &res)
 	assert(t, "len(pools)", 5, len(res.Nodes))
 }
+
+func TestCommonAddressSuffixEmpty(t *testing.T) {
+	b := Bucket{}
+	assert(t, "empty", "", b.CommonAddressSuffix())
+}
+
+func TestCommonAddressSuffixUncommon(t *testing.T) {
+	b := Bucket{}
+	b.VBucketServerMap.ServerList = []string{"somestring", "unrelated"}
+	assert(t, "shouldn't match", "", b.CommonAddressSuffix())
+}
+
+func TestCommonAddressSuffixCommon(t *testing.T) {
+	b := Bucket{}
+	b.VBucketServerMap.ServerList = []string{
+		"server1.example.com:11210",
+		"server2.example.com:11210",
+		"server3.example.com:11210",
+		"server4.example.com:11210",
+	}
+	assert(t, "useful suffix", ".example.com:11210",
+		b.CommonAddressSuffix())
+}
