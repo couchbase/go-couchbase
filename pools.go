@@ -200,3 +200,19 @@ func (p *Pool) GetBucket(name string) (b Bucket, err error) {
 	}
 	return rv, nil
 }
+
+// Convenience function for getting a named bucket from a URL
+func GetBucket(endpoint, poolname, bucketname string) (Bucket, error) {
+	var err error
+	client, err := Connect(endpoint)
+	if err != nil {
+		return Bucket{}, err
+	}
+
+	pool, err := client.GetPool("default")
+	if err != nil {
+		return Bucket{}, err
+	}
+
+	return pool.GetBucket("default")
+}
