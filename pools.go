@@ -218,7 +218,7 @@ func (p *Pool) GetBucket(name string) (b *Bucket, err error) {
 	if !ok {
 		return nil, errors.New("No bucket named " + name)
 	}
-	runtime.SetFinalizer(bucket_finalizer, &rv)
+	runtime.SetFinalizer(&rv, bucket_finalizer)
 	return &rv, nil
 }
 
