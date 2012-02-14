@@ -3,8 +3,10 @@ package couchbase
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
+	"runtime"
 	"sort"
 	"strings"
 
@@ -192,26 +194,45 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 	return
 }
 
+// Mark this bucket as no longer needed, closing connections it may have open.
+func (b *Bucket) Close() {
+	if b.connections != nil {
+		for _, c := range b.connections {
+			if c != nil {
+				c.Close()
+			}
+		}
+		b.connections = nil
+	}
+}
+
+func bucket_finalizer(b *Bucket) {
+	if b.connections != nil {
+		log.Printf("Warning: Finalizing a bucket with active connections.")
+	}
+}
+
 // Get a bucket from within this pool.
-func (p *Pool) GetBucket(name string) (b Bucket, err error) {
+func (p *Pool) GetBucket(name string) (b *Bucket, err error) {
 	rv, ok := p.BucketMap[name]
 	if !ok {
-		return Bucket{}, errors.New("No bucket named " + name)
+		return nil, errors.New("No bucket named " + name)
 	}
-	return rv, nil
+	runtime.SetFinalizer(bucket_finalizer, &rv)
+	return &rv, nil
 }
 
 // Convenience function for getting a named bucket from a URL
-func GetBucket(endpoint, poolname, bucketname string) (Bucket, error) {
+func GetBucket(endpoint, poolname, bucketname string) (*Bucket, error) {
 	var err error
 	client, err := Connect(endpoint)
 	if err != nil {
-		return Bucket{}, err
+		return nil, err
 	}
 
 	pool, err := client.GetPool("default")
 	if err != nil {
-		return Bucket{}, err
+		return nil, err
 	}
 
 	return pool.GetBucket("default")
