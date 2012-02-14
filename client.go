@@ -70,7 +70,7 @@ type gathered_stats struct {
 	vals map[string]string
 }
 
-func getStatsParallel(b *Bucket, offset int, ch chan<- gathered_stats) {
+func getStatsParallel(b *Bucket, offset int, which string, ch chan<- gathered_stats) {
 	sn := b.VBucketServerMap.ServerList[offset]
 
 	results := map[string]string{}
@@ -78,7 +78,7 @@ func getStatsParallel(b *Bucket, offset int, ch chan<- gathered_stats) {
 	if err != nil {
 		ch <- gathered_stats{sn, results}
 	} else {
-		for _, statval := range b.connections[offset].Stats("") {
+		for _, statval := range b.connections[offset].Stats(which) {
 			results[statval.Key] = statval.Val
 		}
 		ch <- gathered_stats{sn, results}
@@ -91,7 +91,7 @@ func (b *Bucket) GetStats(which string) map[string]map[string]string {
 	ch := make(chan gathered_stats, todo)
 
 	for offset, _ := range b.VBucketServerMap.ServerList {
-		go getStatsParallel(b, offset, ch)
+		go getStatsParallel(b, offset, which, ch)
 	}
 
 	// Gather the results
