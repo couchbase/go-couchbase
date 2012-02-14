@@ -26,17 +26,27 @@ import (
 	"github.com/dustin/gomemcached/client"
 )
 
+func (b *Bucket) ensureConnection(which int) error {
+	if b.connections == nil {
+		b.connections = []*memcached.Client{}
+	}
+	if b.connections[which] == nil {
+		var err error
+		b.connections[which], err = memcached.Connect("tcp",
+			b.VBucketServerMap.ServerList[which])
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (b *Bucket) do(k string, f func(mc *memcached.Client, vb uint16) error) error {
 	vb := b.VBHash(k)
 	for {
 		masterId := b.VBucketServerMap.VBucketMap[vb][0]
-		if b.connections[masterId] == nil {
-			var err error
-			b.connections[masterId], err = memcached.Connect("tcp",
-				b.VBucketServerMap.ServerList[masterId])
-			if err != nil {
-				return err
-			}
+		if err := b.ensureConnection(masterId); err != nil {
+			return err
 		}
 		err := f(b.connections[masterId], uint16(vb))
 		switch err.(type) {
@@ -53,6 +63,47 @@ func (b *Bucket) do(k string, f func(mc *memcached.Client, vb uint16) error) err
 		}
 	}
 	panic("Unreachable.")
+}
+
+type gathered_stats struct {
+	sn   string
+	vals map[string]string
+}
+
+func getStatsParallel(b *Bucket, offset int, ch chan<- gathered_stats) {
+	sn := b.VBucketServerMap.ServerList[offset]
+
+	results := map[string]string{}
+	err := b.ensureConnection(offset)
+	if err != nil {
+		ch <- gathered_stats{sn, results}
+	} else {
+		for _, statval := range b.connections[offset].Stats("") {
+			results[statval.Key] = statval.Val
+		}
+		ch <- gathered_stats{sn, results}
+	}
+}
+
+func (b *Bucket) GetStats(which string) map[string]map[string]string {
+	// Go grab all the things at once.
+	todo := len(b.VBucketServerMap.ServerList)
+	ch := make(chan gathered_stats, todo)
+
+	for offset, _ := range b.VBucketServerMap.ServerList {
+		go getStatsParallel(b, offset, ch)
+	}
+
+	// Gather the results
+	rv := map[string]map[string]string{}
+	for i := 0; i < len(b.VBucketServerMap.ServerList); i++ {
+		g := <-ch
+		if len(g.vals) > 0 {
+			rv[g.sn] = g.vals
+		}
+	}
+
+	return rv
 }
 
 // Set a value in this bucket.
