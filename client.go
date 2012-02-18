@@ -78,10 +78,8 @@ func getStatsParallel(b *Bucket, offset int, which string, ch chan<- gathered_st
 	if err != nil {
 		ch <- gathered_stats{sn, results}
 	} else {
-		for _, statval := range b.connections[offset].Stats(which) {
-			results[statval.Key] = statval.Val
-		}
-		ch <- gathered_stats{sn, results}
+		st := b.connections[offset].StatsMap(which)
+		ch <- gathered_stats{sn, st}
 	}
 }
 
