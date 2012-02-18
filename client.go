@@ -78,8 +78,12 @@ func getStatsParallel(b *Bucket, offset int, which string, ch chan<- gathered_st
 	if err != nil {
 		ch <- gathered_stats{sn, results}
 	} else {
-		st := b.connections[offset].StatsMap(which)
-		ch <- gathered_stats{sn, st}
+		st, err := b.connections[offset].StatsMap(which)
+		if err == nil {
+			ch <- gathered_stats{sn, st}
+		} else {
+			ch <- gathered_stats{sn, results}
+		}
 	}
 }
 
@@ -112,7 +116,10 @@ func (b *Bucket) Set(k string, v interface{}) error {
 		if err != nil {
 			return err
 		}
-		res := mc.Set(vb, k, 0, 0, data)
+		res, err := mc.Set(vb, k, 0, 0, data)
+		if err != nil {
+			return err
+		}
 		if res.Status != gomemcached.SUCCESS {
 			return res
 		}
@@ -125,7 +132,10 @@ func (b *Bucket) Set(k string, v interface{}) error {
 // into rv.
 func (b *Bucket) Get(k string, rv interface{}) error {
 	return b.do(k, func(mc *memcached.Client, vb uint16) error {
-		res := mc.Get(vb, k)
+		res, err := mc.Get(vb, k)
+		if err != nil {
+			return err
+		}
 		if res.Status != gomemcached.SUCCESS {
 			return res
 		}
@@ -136,7 +146,10 @@ func (b *Bucket) Get(k string, rv interface{}) error {
 // Delete a key from this bucket.
 func (b *Bucket) Delete(k string) error {
 	return b.do(k, func(mc *memcached.Client, vb uint16) error {
-		res := mc.Del(vb, k)
+		res, err := mc.Del(vb, k)
+		if err != nil {
+			return err
+		}
 		if res.Status != gomemcached.SUCCESS {
 			return res
 		}
