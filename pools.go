@@ -88,25 +88,11 @@ func (b Bucket) NodeAddresses() []string {
 
 // Get the longest common suffix of all host:port strings in the node list.
 func (b Bucket) CommonAddressSuffix() string {
-	rv := ""
-	if len(b.VBucketServerMap.ServerList) == 0 {
-		return ""
+	input := []string{}
+	for _, n := range b.Nodes {
+		input = append(input, n.Hostname)
 	}
-	from := b.VBucketServerMap.ServerList
-	for i := len(from[0]); i > 0; i-- {
-		common := true
-		suffix := from[0][i:]
-		for _, s := range from {
-			if !strings.HasSuffix(s, suffix) {
-				common = false
-				break
-			}
-		}
-		if common {
-			rv = suffix
-		}
-	}
-	return rv
+	return FindCommonSuffix(input)
 }
 
 // The couchbase client gives access to all the things.

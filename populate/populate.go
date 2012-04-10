@@ -53,7 +53,7 @@ type Record struct {
 	Score    int    `json:"score"`
 }
 
-func report(c couchbase.Client, b couchbase.Bucket) {
+func report(c couchbase.Client, b *couchbase.Bucket) {
 	fmt.Printf("-----------------------------------------------------\n")
 	fmt.Printf("Got %d success messages, %d not-my-vbucket\n",
 		c.Statuses[0], c.Statuses[7])
@@ -80,7 +80,7 @@ func report(c couchbase.Client, b couchbase.Bucket) {
 	}
 }
 
-func harass(c couchbase.Client, b couchbase.Bucket) {
+func harass(c couchbase.Client, b *couchbase.Bucket) {
 	fmt.Printf("Doing stuff\n")
 
 	go func() {
@@ -109,20 +109,11 @@ func harass(c couchbase.Client, b couchbase.Bucket) {
 
 func main() {
 	flag.Parse()
-	c, err := couchbase.Connect(flag.Arg(0))
-	if err != nil {
-		log.Fatalf("Error connecting:  %v", err)
-	}
-
-	pool, err := c.GetPool(*poolName)
-	if err != nil {
-		log.Fatalf("Error getting pool:  %v", err)
-	}
-
-	bucket, err := pool.GetBucket(*bucketName)
+	bucket, err := couchbase.GetBucket(flag.Arg(0), "default", "default")
 	if err != nil {
 		log.Fatalf("Error getting bucket:  %v", err)
 	}
+	defer bucket.Close()
 
-	harass(c, bucket)
+	harass(bucket.Pool, bucket)
 }

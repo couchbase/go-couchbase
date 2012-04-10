@@ -300,11 +300,11 @@ func TestCommonAddressSuffixUncommon(t *testing.T) {
 
 func TestCommonAddressSuffixCommon(t *testing.T) {
 	b := Bucket{}
-	b.VBucketServerMap.ServerList = []string{
-		"server1.example.com:11210",
-		"server2.example.com:11210",
-		"server3.example.com:11210",
-		"server4.example.com:11210",
+	b.Nodes = []Node{
+		Node{Hostname: "server1.example.com:11210"},
+		Node{Hostname: "server2.example.com:11210"},
+		Node{Hostname: "server3.example.com:11210"},
+		Node{Hostname: "server4.example.com:11210"},
 	}
 	assert(t, "useful suffix", ".example.com:11210",
 		b.CommonAddressSuffix())
