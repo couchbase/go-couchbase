@@ -216,10 +216,10 @@ func GetBucket(endpoint, poolname, bucketname string) (*Bucket, error) {
 		return nil, err
 	}
 
-	pool, err := client.GetPool("default")
+	pool, err := client.GetPool(poolname)
 	if err != nil {
 		return nil, err
 	}
 
-	return pool.GetBucket("default")
+	return pool.GetBucket(bucketname)
 }
