@@ -88,6 +88,11 @@ func getStatsParallel(b *Bucket, offset int, which string, ch chan<- gathered_st
 }
 
 func (b *Bucket) GetStats(which string) map[string]map[string]string {
+	rv := map[string]map[string]string{}
+
+	if b.VBucketServerMap.ServerList == nil {
+		return rv
+	}
 	// Go grab all the things at once.
 	todo := len(b.VBucketServerMap.ServerList)
 	ch := make(chan gathered_stats, todo)
@@ -97,7 +102,6 @@ func (b *Bucket) GetStats(which string) map[string]map[string]string {
 	}
 
 	// Gather the results
-	rv := map[string]map[string]string{}
 	for i := 0; i < len(b.VBucketServerMap.ServerList); i++ {
 		g := <-ch
 		if len(g.vals) > 0 {
