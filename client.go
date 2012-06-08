@@ -41,7 +41,12 @@ func (b *Bucket) ensureConnection(which int) error {
 	return nil
 }
 
-func (b *Bucket) do(k string, f func(mc *memcached.Client, vb uint16) error) error {
+// Execute a function on a memcached connection to the node owning key "k"
+//
+// Note that this automatically handles transient errors by replaying
+// your function on a "not-my-vbucket" error, so don't assume
+// your command will only be executed only once.
+func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) error {
 	vb := b.VBHash(k)
 	for {
 		masterId := b.VBucketServerMap.VBucketMap[vb][0]
@@ -115,7 +120,7 @@ func (b *Bucket) GetStats(which string) map[string]map[string]string {
 // Set a value in this bucket.
 // The value will be serialized into a JSON document.
 func (b *Bucket) Set(k string, v interface{}) error {
-	return b.do(k, func(mc *memcached.Client, vb uint16) error {
+	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		data, err := json.Marshal(v)
 		if err != nil {
 			return err
@@ -135,7 +140,7 @@ func (b *Bucket) Set(k string, v interface{}) error {
 // The value is expected to be a JSON stream and will be deserialized
 // into rv.
 func (b *Bucket) Get(k string, rv interface{}) error {
-	return b.do(k, func(mc *memcached.Client, vb uint16) error {
+	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		res, err := mc.Get(vb, k)
 		if err != nil {
 			return err
@@ -149,7 +154,7 @@ func (b *Bucket) Get(k string, rv interface{}) error {
 
 // Delete a key from this bucket.
 func (b *Bucket) Delete(k string) error {
-	return b.do(k, func(mc *memcached.Client, vb uint16) error {
+	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		res, err := mc.Del(vb, k)
 		if err != nil {
 			return err
