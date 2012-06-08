@@ -92,6 +92,9 @@ func getStatsParallel(b *Bucket, offset int, which string, ch chan<- gathered_st
 	}
 }
 
+// Get a set of stats from all servers.
+//
+// Returns a map of server ID -> map of stat key to map value.
 func (b *Bucket) GetStats(which string) map[string]map[string]string {
 	rv := map[string]map[string]string{}
 
