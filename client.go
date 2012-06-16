@@ -169,6 +169,20 @@ func (b *Bucket) Delete(k string) error {
 	})
 }
 
+// Increment a key
+func (b *Bucket) Incr(k string, amt, def uint64, exp int) (uint64, error) {
+	var rv uint64
+	err := b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		res, err := mc.Incr(vb, k, amt, def, exp)
+		if err != nil {
+			return err
+		}
+		rv = res
+		return nil
+	})
+	return rv, err
+}
+
 type ViewRow struct {
 	ID    string
 	Key   interface{}
