@@ -120,6 +120,59 @@ func (b *Bucket) GetStats(which string) map[string]map[string]string {
 	return rv
 }
 
+func (b *Bucket) doBulkGet(vb uint16, keys []string,
+	ch chan<- map[string]*gomemcached.MCResponse) {
+	for {
+		masterId := b.VBucketServerMap.VBucketMap[vb][0]
+		if err := b.ensureConnection(masterId); err != nil {
+			ch <- map[string]*gomemcached.MCResponse{}
+		}
+
+		m, err := b.connections[masterId].GetBulk(vb, keys)
+		switch err.(type) {
+		default:
+			ch <- m
+		case gomemcached.MCResponse:
+			st := err.(gomemcached.MCResponse).Status
+			atomic.AddUint64(&b.pool.client.Statuses[st], 1)
+			if st == gomemcached.NOT_MY_VBUCKET {
+				b.refresh()
+			} else {
+				ch <- map[string]*gomemcached.MCResponse{}
+			}
+		}
+	}
+}
+
+func (b *Bucket) GetBulk(keys []string) map[string]*gomemcached.MCResponse {
+	// Organize by vbucket
+	kdm := map[uint16][]string{}
+	for _, k := range keys {
+		vb := uint16(b.VBHash(k))
+		a, ok := kdm[vb]
+		if !ok {
+			a = []string{}
+		}
+		kdm[vb] = append(a, k)
+	}
+
+	ch := make(chan map[string]*gomemcached.MCResponse)
+
+	for k, v := range kdm {
+		go b.doBulkGet(k, v, ch)
+	}
+
+	rv := map[string]*gomemcached.MCResponse{}
+	for _ = range kdm {
+		m := <-ch
+		for k, v := range m {
+			rv[k] = v
+		}
+	}
+
+	return rv
+}
+
 // Set a value in this bucket.
 // The value will be serialized into a JSON document.
 func (b *Bucket) Set(k string, v interface{}) error {
