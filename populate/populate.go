@@ -53,7 +53,7 @@ type Record struct {
 	Score    int    `json:"score"`
 }
 
-func report(c couchbase.Client, b *couchbase.Bucket) {
+func report(c *couchbase.Client, b *couchbase.Bucket) {
 	fmt.Printf("-----------------------------------------------------\n")
 	fmt.Printf("Got %d success messages, %d not-my-vbucket\n",
 		c.Statuses[0], c.Statuses[7])
@@ -80,7 +80,7 @@ func report(c couchbase.Client, b *couchbase.Bucket) {
 	}
 }
 
-func harass(c couchbase.Client, b *couchbase.Bucket) {
+func harass(c *couchbase.Client, b *couchbase.Bucket) {
 	fmt.Printf("Doing stuff\n")
 
 	go func() {
@@ -115,5 +115,5 @@ func main() {
 	}
 	defer bucket.Close()
 
-	harass(bucket.Pool, bucket)
+	harass(bucket.GetPool().GetClient(), bucket)
 }

@@ -15,7 +15,7 @@ func maybeFatal(err error) {
 	}
 }
 
-func doOps(b couchbase.Bucket) {
+func doOps(b *couchbase.Bucket) {
 	fmt.Printf("Doing some ops on %s\n", b.Name)
 	start := time.Now()
 	total := 2048
@@ -34,7 +34,7 @@ func doOps(b couchbase.Bucket) {
 		total*3, time.Now().Sub(start).String())
 }
 
-func exploreBucket(bucket couchbase.Bucket) {
+func exploreBucket(bucket *couchbase.Bucket) {
 	fmt.Printf("     %v uses %s\n", bucket.Name,
 		bucket.VBucketServerMap.HashAlgorithm)
 	for pos, server := range bucket.VBucketServerMap.ServerList {

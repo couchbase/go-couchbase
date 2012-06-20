@@ -208,6 +208,16 @@ func (p *Pool) GetBucket(name string) (b *Bucket, err error) {
 	return &rv, nil
 }
 
+// Get the pool to which this bucket belongs.
+func (b *Bucket) GetPool() *Pool {
+	return b.pool
+}
+
+// Get the client from which we got this pool.
+func (p *Pool) GetClient() *Client {
+	return &p.client
+}
+
 // Convenience function for getting a named bucket from a URL
 func GetBucket(endpoint, poolname, bucketname string) (*Bucket, error) {
 	var err error
