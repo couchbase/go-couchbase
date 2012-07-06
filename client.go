@@ -10,6 +10,10 @@ Usage:
  bucket, err := pool.getBucket("MyAwesomeBucket")
  handleError(err)
  ...
+
+or a shortcut for the bucket directly
+
+ bucket, err := couchbase.GetBucket("http://myserver:8091/", "default", "default")
 */
 package couchbase
 
