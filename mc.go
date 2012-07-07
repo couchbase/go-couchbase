@@ -25,10 +25,10 @@ func connect(prot, dest string) (rv *memcachedClient) {
 	}
 	rv = new(memcachedClient)
 	rv.Conn = conn
-	rv.writer, err = bufio.NewWriterSize(rv.Conn, bufsize)
-	if err != nil {
-		panic("Can't make a buffer")
-	}
+	rv.writer = bufio.NewWriterSize(rv.Conn, bufsize)
+	//if err != nil {
+		//panic("Can't make a buffer")
+	//}
 	rv.hdrBuf = make([]byte, HDR_LEN)
 	return rv
 }
