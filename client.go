@@ -41,6 +41,11 @@ func (b *Bucket) ensureConnection(which int) error {
 		if err != nil {
 			return err
 		}
+
+		if b.Name != "default" {
+			b.connections[which].Auth(b.Name, "")
+		}
+
 	}
 	return nil
 }
