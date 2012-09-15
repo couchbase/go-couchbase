@@ -65,7 +65,11 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) err
 		err := f(b.connections[masterId], uint16(vb))
 		switch err.(type) {
 		default:
+			b.connections[masterId].Close()
+			b.connections[masterId] = nil
 			return err
+		case nil:
+			return nil
 		case gomemcached.MCResponse:
 			st := err.(gomemcached.MCResponse).Status
 			atomic.AddUint64(&b.pool.client.Statuses[st], 1)
