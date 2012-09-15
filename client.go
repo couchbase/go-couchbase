@@ -24,30 +24,59 @@ import (
 	"math/rand"
 	"net/http"
 	"net/url"
+	"sync"
 	"sync/atomic"
 
 	"github.com/dustin/gomemcached"
 	"github.com/dustin/gomemcached/client"
 )
 
-func (b *Bucket) ensureConnection(which int) error {
-	if b.connections == nil {
-		b.connections = []*memcached.Client{}
-	}
-	if b.connections[which] == nil {
-		var err error
-		b.connections[which], err = memcached.Connect("tcp",
-			b.VBucketServerMap.ServerList[which])
-		if err != nil {
-			return err
-		}
+type connectionPool struct {
+	host        string
+	name        string
+	connections []*memcached.Client
+	mutex       sync.Mutex
+}
 
-		if b.Name != "default" {
-			b.connections[which].Auth(b.Name, "")
-		}
-
+func (cp *connectionPool) Close() error {
+	cp.mutex.Lock()
+	defer cp.mutex.Unlock()
+	for _, c := range cp.connections {
+		c.Close()
 	}
+	cp.connections = []*memcached.Client{}
 	return nil
+}
+
+func (cp *connectionPool) Get() (*memcached.Client, error) {
+	cp.mutex.Lock()
+	defer cp.mutex.Unlock()
+
+	if len(cp.connections) == 0 {
+		conn, err := memcached.Connect("tcp", cp.host)
+		if err != nil {
+			return nil, err
+		}
+		if cp.name != "default" {
+			conn.Auth(cp.name, "")
+		}
+
+		cp.connections = append(cp.connections, conn)
+	}
+
+	rv := cp.connections[0]
+	cp.connections = cp.connections[1:]
+
+	return rv, nil
+}
+
+func (cp *connectionPool) Return(c *memcached.Client) {
+	cp.mutex.Lock()
+	defer cp.mutex.Unlock()
+
+	if c != nil {
+		cp.connections = append(cp.connections, c)
+	}
 }
 
 // Execute a function on a memcached connection to the node owning key "k"
@@ -59,17 +88,16 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) err
 	vb := b.VBHash(k)
 	for {
 		masterId := b.VBucketServerMap.VBucketMap[vb][0]
-		if err := b.ensureConnection(masterId); err != nil {
+		conn, err := b.connections[masterId].Get()
+		defer b.connections[masterId].Return(conn)
+		if err != nil {
 			return err
 		}
-		err := f(b.connections[masterId], uint16(vb))
+
+		err = f(conn, uint16(vb))
 		switch err.(type) {
 		default:
-			b.connections[masterId].Close()
-			b.connections[masterId] = nil
 			return err
-		case nil:
-			return nil
 		case gomemcached.MCResponse:
 			st := err.(gomemcached.MCResponse).Status
 			atomic.AddUint64(&b.pool.client.Statuses[st], 1)
@@ -92,11 +120,12 @@ func getStatsParallel(b *Bucket, offset int, which string, ch chan<- gathered_st
 	sn := b.VBucketServerMap.ServerList[offset]
 
 	results := map[string]string{}
-	err := b.ensureConnection(offset)
+	conn, err := b.connections[offset].Get()
+	defer b.connections[offset].Return(conn)
 	if err != nil {
 		ch <- gathered_stats{sn, results}
 	} else {
-		st, err := b.connections[offset].StatsMap(which)
+		st, err := conn.StatsMap(which)
 		if err == nil {
 			ch <- gathered_stats{sn, st}
 		} else {
@@ -137,11 +166,13 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 	ch chan<- map[string]*gomemcached.MCResponse) {
 	for {
 		masterId := b.VBucketServerMap.VBucketMap[vb][0]
-		if err := b.ensureConnection(masterId); err != nil {
+		conn, err := b.connections[masterId].Get()
+		defer b.connections[masterId].Return(conn)
+		if err != nil {
 			ch <- map[string]*gomemcached.MCResponse{}
 		}
 
-		m, err := b.connections[masterId].GetBulk(vb, keys)
+		m, err := conn.GetBulk(vb, keys)
 		switch err.(type) {
 		default:
 			ch <- m

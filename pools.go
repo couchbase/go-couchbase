@@ -74,7 +74,7 @@ type Bucket struct {
 	}
 
 	pool        *Pool
-	connections []*memcached.Client
+	connections []*connectionPool
 	commonSufix string
 }
 
@@ -141,7 +141,14 @@ func (b *Bucket) refresh() (err error) {
 		return err
 	}
 	b.pool = pool
-	b.connections = make([]*memcached.Client, len(b.VBucketServerMap.ServerList))
+	b.connections = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
+	for i := range b.connections {
+		b.connections[i] = &connectionPool{
+			host:        b.VBucketServerMap.ServerList[i],
+			name:        b.Name,
+			connections: []*memcached.Client{},
+		}
+	}
 	return nil
 }
 
@@ -155,7 +162,8 @@ func (p *Pool) refresh() (err error) {
 	}
 	for _, b := range buckets {
 		b.pool = p
-		b.connections = make([]*memcached.Client, len(b.VBucketServerMap.ServerList))
+		b.connections = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
+
 		p.BucketMap[b.Name] = b
 	}
 	return nil
@@ -205,6 +213,7 @@ func (p *Pool) GetBucket(name string) (b *Bucket, err error) {
 		return nil, errors.New("No bucket named " + name)
 	}
 	runtime.SetFinalizer(&rv, bucket_finalizer)
+	rv.refresh()
 	return &rv, nil
 }
 
