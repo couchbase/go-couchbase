@@ -75,7 +75,11 @@ func (cp *connectionPool) Return(c *memcached.Client) {
 	defer cp.mutex.Unlock()
 
 	if c != nil {
-		cp.connections = append(cp.connections, c)
+		if c.IsHealthy() {
+			cp.connections = append(cp.connections, c)
+		} else {
+			c.Close()
+		}
 	}
 }
 
