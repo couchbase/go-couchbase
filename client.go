@@ -239,7 +239,7 @@ func (b *Bucket) Set(k string, v interface{}) error {
 // Get a value from this bucket.
 // The value is expected to be a JSON stream and will be deserialized
 // into rv.
-func (b *Bucket) Get(k string, rv interface{}) error {
+func (b *Bucket) Gets(k string, rv interface{}, cas *uint64) error {
 	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		res, err := mc.Get(vb, k)
 		if err != nil {
@@ -248,8 +248,18 @@ func (b *Bucket) Get(k string, rv interface{}) error {
 		if res.Status != gomemcached.SUCCESS {
 			return res
 		}
+		if cas != nil {
+			*cas = res.Cas
+		}
 		return json.Unmarshal(res.Body, rv)
 	})
+}
+
+// Get a value from this bucket.
+// The value is expected to be a JSON stream and will be deserialized
+// into rv.
+func (b *Bucket) Get(k string, rv interface{}) error {
+	return b.Gets(k, rv, nil)
 }
 
 // Delete a key from this bucket.
