@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -310,8 +311,12 @@ type ViewResult struct {
 	}
 }
 
-// Execute a view
-func (b *Bucket) View(ddoc, name string, params map[string]interface{}) (vres ViewResult, err error) {
+// Perform a view request that can map row values to a custom type.
+//
+// See the source to View for an example usage.
+func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
+	f func(r io.Reader) (interface{}, error)) (interface{}, error) {
+
 	// Pick a random node to service our request.
 	node := b.Nodes[rand.Intn(len(b.Nodes))]
 	u, err := url.Parse(node.CouchAPIBase)
@@ -337,10 +342,20 @@ func (b *Bucket) View(ddoc, name string, params map[string]interface{}) (vres Vi
 		return ViewResult{}, errors.New(res.Status)
 	}
 
-	d := json.NewDecoder(res.Body)
-	if err = d.Decode(&vres); err != nil {
-		return ViewResult{}, err
-	}
-	return vres, nil
+	return f(res.Body)
+}
 
+// Execute a view
+func (b *Bucket) View(ddoc, name string, params map[string]interface{}) (ViewResult, error) {
+
+	i, err := b.ViewCustom(ddoc, name, params, func(r io.Reader) (interface{}, error) {
+		vres := ViewResult{}
+		d := json.NewDecoder(r)
+		if err := d.Decode(&vres); err != nil {
+			return ViewResult{}, err
+		}
+		return vres, nil
+	})
+
+	return i.(ViewResult), err
 }
