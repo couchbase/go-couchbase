@@ -21,7 +21,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -315,13 +314,13 @@ type ViewResult struct {
 //
 // See the source to View for an example usage.
 func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
-	f func(r io.Reader) (interface{}, error)) (interface{}, error) {
+	vres interface{}) error {
 
 	// Pick a random node to service our request.
 	node := b.Nodes[rand.Intn(len(b.Nodes))]
 	u, err := url.Parse(node.CouchAPIBase)
 	if err != nil {
-		return ViewResult{}, err
+		return err
 	}
 
 	values := url.Values{}
@@ -334,28 +333,23 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 
 	res, err := http.Get(u.String())
 	if err != nil {
-		return ViewResult{}, err
+		return err
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return ViewResult{}, errors.New(res.Status)
+		return errors.New(res.Status)
 	}
 
-	return f(res.Body)
+	d := json.NewDecoder(res.Body)
+	if err := d.Decode(vres); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Execute a view
 func (b *Bucket) View(ddoc, name string, params map[string]interface{}) (ViewResult, error) {
-
-	i, err := b.ViewCustom(ddoc, name, params, func(r io.Reader) (interface{}, error) {
-		vres := ViewResult{}
-		d := json.NewDecoder(r)
-		if err := d.Decode(&vres); err != nil {
-			return ViewResult{}, err
-		}
-		return vres, nil
-	})
-
-	return i.(ViewResult), err
+	vres := ViewResult{}
+	return vres, b.ViewCustom(ddoc, name, params, &vres)
 }
