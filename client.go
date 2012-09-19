@@ -168,27 +168,26 @@ func (b *Bucket) GetStats(which string) map[string]map[string]string {
 
 func (b *Bucket) doBulkGet(vb uint16, keys []string,
 	ch chan<- map[string]*gomemcached.MCResponse) {
-	for {
-		masterId := b.VBucketServerMap.VBucketMap[vb][0]
-		conn, err := b.connections[masterId].Get()
-		defer b.connections[masterId].Return(conn)
-		if err != nil {
-			ch <- map[string]*gomemcached.MCResponse{}
-		}
 
-		m, err := conn.GetBulk(vb, keys)
-		switch err.(type) {
-		default:
-			ch <- m
-		case gomemcached.MCResponse:
-			st := err.(gomemcached.MCResponse).Status
-			atomic.AddUint64(&b.pool.client.Statuses[st], 1)
-			if st == gomemcached.NOT_MY_VBUCKET {
-				b.refresh()
-			} else {
-				ch <- map[string]*gomemcached.MCResponse{}
-			}
+	masterId := b.VBucketServerMap.VBucketMap[vb][0]
+	conn, err := b.connections[masterId].Get()
+	if err != nil {
+		ch <- map[string]*gomemcached.MCResponse{}
+	}
+	defer b.connections[masterId].Return(conn)
+
+	m, err := conn.GetBulk(vb, keys)
+	switch err.(type) {
+	default:
+		ch <- m
+	case *gomemcached.MCResponse:
+		fmt.Printf("Got a memcached error")
+		st := err.(gomemcached.MCResponse).Status
+		atomic.AddUint64(&b.pool.client.Statuses[st], 1)
+		if st == gomemcached.NOT_MY_VBUCKET {
+			b.refresh()
 		}
+		ch <- map[string]*gomemcached.MCResponse{}
 	}
 }
 
@@ -205,6 +204,7 @@ func (b *Bucket) GetBulk(keys []string) map[string]*gomemcached.MCResponse {
 	}
 
 	ch := make(chan map[string]*gomemcached.MCResponse)
+	defer close(ch)
 
 	for k, v := range kdm {
 		go b.doBulkGet(k, v, ch)
