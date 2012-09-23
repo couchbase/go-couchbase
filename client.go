@@ -325,7 +325,20 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 
 	values := url.Values{}
 	for k, v := range params {
-		values[k] = []string{fmt.Sprintf("%v", v)}
+		switch t := v.(type) {
+		case string:
+			values[k] = []string{fmt.Sprintf(`"%s"`, url.QueryEscape(t))}
+		case int:
+			values[k] = []string{fmt.Sprintf(`%d`, t)}
+		case bool:
+			values[k] = []string{fmt.Sprintf(`%v`, t)}
+		default:
+			b, err := json.Marshal(v)
+			if err != nil {
+				panic(fmt.Sprintf("unsupported value-type %T in Query, json encoder said %v", t, err))
+			}
+			values[k] = []string{fmt.Sprintf(`%v`, string(b))}
+		}
 	}
 
 	u.Path = fmt.Sprintf("/%s/_design/%s/_view/%s", b.Name, ddoc, name)
