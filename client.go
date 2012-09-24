@@ -209,6 +209,7 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 	for k := range kdm {
 		wch <- k
 	}
+	close(wch)
 
 }
 func (b *Bucket) GetBulk(keys []string) map[string]*gomemcached.MCResponse {
