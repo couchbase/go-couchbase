@@ -241,13 +241,13 @@ func (b *Bucket) GetBulk(keys []string) map[string]*gomemcached.MCResponse {
 
 // Set a value in this bucket.
 // The value will be serialized into a JSON document.
-func (b *Bucket) Set(k string, v interface{}) error {
+func (b *Bucket) Set(k string, exp int, v interface{}) error {
 	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		data, err := json.Marshal(v)
 		if err != nil {
 			return err
 		}
-		res, err := mc.Set(vb, k, 0, 0, data)
+		res, err := mc.Set(vb, k, 0, exp, data)
 		if err != nil {
 			return err
 		}
