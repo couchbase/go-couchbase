@@ -191,6 +191,26 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 	}
 }
 
+func (b *Bucket) processBulkGet(kdm map[uint16][]string,
+	ch chan map[string]*gomemcached.MCResponse) {
+
+	wch := make(chan uint16)
+
+	worker := func() {
+		for k := range wch {
+			b.doBulkGet(k, kdm[k], ch)
+		}
+	}
+
+	for i := 0; i < 4; i++ {
+		go worker()
+	}
+
+	for k := range kdm {
+		wch <- k
+	}
+
+}
 func (b *Bucket) GetBulk(keys []string) map[string]*gomemcached.MCResponse {
 	// Organize by vbucket
 	kdm := map[uint16][]string{}
@@ -206,9 +226,7 @@ func (b *Bucket) GetBulk(keys []string) map[string]*gomemcached.MCResponse {
 	ch := make(chan map[string]*gomemcached.MCResponse)
 	defer close(ch)
 
-	for k, v := range kdm {
-		go b.doBulkGet(k, v, ch)
-	}
+	go b.processBulkGet(kdm, ch)
 
 	rv := map[string]*gomemcached.MCResponse{}
 	for _ = range kdm {
