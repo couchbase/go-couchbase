@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"net/http"
 	"net/url"
 	"sync"
 	"sync/atomic"
@@ -363,7 +362,7 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	u.Path = fmt.Sprintf("/%s/_design/%s/_view/%s", b.Name, ddoc, name)
 	u.RawQuery = values.Encode()
 
-	res, err := http.Get(u.String())
+	res, err := HttpClient.Get(u.String())
 	if err != nil {
 		return err
 	}

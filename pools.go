@@ -13,6 +13,9 @@ import (
 	"github.com/dustin/gomemcached/client"
 )
 
+// The HTTP Client To Use
+var HttpClient = http.DefaultClient
+
 type poolsResponse struct {
 	ComponentsVersion     map[string]string
 	ImplementationVersion string
@@ -111,7 +114,7 @@ func (c *Client) parseURLResponse(path string, out interface{}) error {
 		u.Path = path
 	}
 
-	res, err := http.Get(u.String())
+	res, err := HttpClient.Get(u.String())
 	if err != nil {
 		return err
 	}
