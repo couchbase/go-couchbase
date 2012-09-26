@@ -345,7 +345,7 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	for k, v := range params {
 		switch t := v.(type) {
 		case string:
-			values[k] = []string{fmt.Sprintf(`"%s"`, url.QueryEscape(t))}
+			values[k] = []string{fmt.Sprintf(`"%s"`, t)}
 		case int:
 			values[k] = []string{fmt.Sprintf(`%d`, t)}
 		case bool:
