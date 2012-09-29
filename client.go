@@ -328,6 +328,9 @@ type ViewResult struct {
 	}
 }
 
+// Document ID type for the startkey_docid parameter in views.
+type DocId string
+
 // Perform a view request that can map row values to a custom type.
 //
 // See the source to View for an example usage.
@@ -344,6 +347,8 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	values := url.Values{}
 	for k, v := range params {
 		switch t := v.(type) {
+		case DocId:
+			values[k] = []string{url.QueryEscape(string(t))}
 		case string:
 			values[k] = []string{fmt.Sprintf(`"%s"`, t)}
 		case int:
