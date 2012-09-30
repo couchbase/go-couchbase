@@ -319,13 +319,15 @@ type ViewRow struct {
 	Doc   *interface{}
 }
 
+type ViewError struct {
+	From   string
+	Reason string
+}
+
 type ViewResult struct {
 	TotalRows int `json:"total_rows"`
 	Rows      []ViewRow
-	Errors    []struct {
-		From   string
-		Reason string
-	}
+	Errors    []ViewError
 }
 
 // Document ID type for the startkey_docid parameter in views.
