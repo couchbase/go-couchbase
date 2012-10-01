@@ -324,6 +324,10 @@ type ViewError struct {
 	Reason string
 }
 
+func (ve ViewError) Error() string {
+	return fmt.Sprintf("Node: %v, reason: %v", ve.From, ve.Reason)
+}
+
 type ViewResult struct {
 	TotalRows int `json:"total_rows"`
 	Rows      []ViewRow
