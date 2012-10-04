@@ -21,7 +21,7 @@ func doOps(b *couchbase.Bucket) {
 	total := 2048
 	for i := 0; i < total; i++ {
 		k := fmt.Sprintf("k%d", i)
-		maybeFatal(b.Set(k, []string{"a", "b", "c"}))
+		maybeFatal(b.Set(k, 0, []string{"a", "b", "c"}))
 		rv := make([]string, 0, 10)
 		maybeFatal(b.Get(k, &rv))
 		if fmt.Sprintf("%#v", rv) != `[]string{"a", "b", "c"}` {
