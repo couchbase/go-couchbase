@@ -7,7 +7,7 @@ Usage:
  handleError(err)
  pool, err := client.GetPool("default")
  handleError(err)
- bucket, err := pool.getBucket("MyAwesomeBucket")
+ bucket, err := pool.GetBucket("MyAwesomeBucket")
  handleError(err)
  ...
 
