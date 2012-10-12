@@ -242,12 +242,18 @@ func (b *Bucket) GetBulk(keys []string) map[string]*gomemcached.MCResponse {
 // Set a value in this bucket.
 // The value will be serialized into a JSON document.
 func (b *Bucket) Set(k string, exp int, v interface{}) error {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return err
+	}
+	return b.SetRaw(k, exp, data)
+}
+
+// Set a value in this bucket.
+// The value will be stored as raw bytes.
+func (b *Bucket) SetRaw(k string, exp int, v []byte) error {
 	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		data, err := json.Marshal(v)
-		if err != nil {
-			return err
-		}
-		res, err := mc.Set(vb, k, 0, exp, data)
+		res, err := mc.Set(vb, k, 0, exp, v)
 		if err != nil {
 			return err
 		}
@@ -258,11 +264,37 @@ func (b *Bucket) Set(k string, exp int, v interface{}) error {
 	})
 }
 
-// Get a value from this bucket.
-// The value is expected to be a JSON stream and will be deserialized
-// into rv.
-func (b *Bucket) Gets(k string, rv interface{}, cas *uint64) error {
-	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
+// Adds a value to this bucket; like Set except that nothing happens if the key exists.
+// The value will be serialized into a JSON document.
+func (b *Bucket) Add(k string, exp int, v interface{}) (added bool, err error) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		return false, err
+	}
+	return b.AddRaw(k, exp, data)
+}
+
+// Adds a value to this bucket; like SetRaw except that nothing happens if the key exists.
+// The value will be stored as raw bytes.
+func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		switch res, err := mc.Add(vb, k, 0, exp, v) ; {
+		case err != nil:
+			return err
+        case res.Status == gomemcached.KEY_EEXISTS:
+		case res.Status != gomemcached.SUCCESS:
+			return res
+		}
+        added = true
+		return nil
+	})
+    return
+}
+
+// Get a raw value from this bucket, including its CAS counter.
+func (b *Bucket) GetsRaw(k string, cas *uint64) ([]byte, error) {
+    var data []byte
+	err := b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		res, err := mc.Get(vb, k)
 		if err != nil {
 			return err
@@ -273,8 +305,21 @@ func (b *Bucket) Gets(k string, rv interface{}, cas *uint64) error {
 		if cas != nil {
 			*cas = res.Cas
 		}
-		return json.Unmarshal(res.Body, rv)
+        data = res.Body
+		return nil
 	})
+    return data, err
+}
+
+// Get a value from this bucket, including its CAS counter.
+// The value is expected to be a JSON stream and will be deserialized
+// into rv.
+func (b *Bucket) Gets(k string, rv interface{}, cas *uint64) error {
+    data, err := b.GetsRaw(k, cas)
+    if err != nil {
+        return err
+    }
+	return json.Unmarshal(data, rv)
 }
 
 // Get a value from this bucket.
@@ -282,6 +327,11 @@ func (b *Bucket) Gets(k string, rv interface{}, cas *uint64) error {
 // into rv.
 func (b *Bucket) Get(k string, rv interface{}) error {
 	return b.Gets(k, rv, nil)
+}
+
+// Get a raw value from this bucket.
+func (b *Bucket) GetRaw(k string) ([]byte, error) {
+	return b.GetsRaw(k, nil)
 }
 
 // Delete a key from this bucket.
