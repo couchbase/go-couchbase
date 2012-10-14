@@ -281,11 +281,11 @@ func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
 		switch res, err := mc.Add(vb, k, 0, exp, v); {
 		case err != nil:
 			return err
-		case res.Status == gomemcached.KEY_EEXISTS:
-		case res.Status != gomemcached.SUCCESS:
+		case res.Status == gomemcached.SUCCESS:
+			added = true
+		case res.Status != gomemcached.KEY_EEXISTS:
 			return res
 		}
-		added = true
 		return nil
 	})
 	return
