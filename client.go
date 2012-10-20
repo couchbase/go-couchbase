@@ -48,6 +48,9 @@ func (cp *connectionPool) Close() error {
 }
 
 func (cp *connectionPool) Get() (*memcached.Client, error) {
+	if cp == nil {
+		return nil, errors.New("no pool")
+	}
 	cp.mutex.Lock()
 	defer cp.mutex.Unlock()
 
@@ -70,6 +73,9 @@ func (cp *connectionPool) Get() (*memcached.Client, error) {
 }
 
 func (cp *connectionPool) Return(c *memcached.Client) {
+	if cp == nil {
+		return
+	}
 	cp.mutex.Lock()
 	defer cp.mutex.Unlock()
 
