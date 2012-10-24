@@ -368,6 +368,42 @@ func (b *Bucket) Incr(k string, amt, def uint64, exp int) (uint64, error) {
 	return rv, err
 }
 
+// A callback function to update a document
+type UpdateFunc func(current []byte) (updated []byte, err error)
+
+// Return this as the error from an UpdateFunc to cancel the Update operation.
+const UpdateCancel = memcached.CASQuit
+
+// Safe update of a document, avoiding conflicts by using CAS.
+// The callback function will be invoked with the current raw document contents (or nil if the
+// document doesn't exist); it should return the updated raw contents (or nil to delete.)
+// If it decides not to change anything it can return UpdateCancel as the error.
+//
+// If another writer modifies the document between the get and the set, the callback will be
+// invoked again with the newer value.
+func (b *Bucket) Update(k string, exp int, callback UpdateFunc) error {
+	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		var callbackErr error
+		casFunc := func(current []byte) ([]byte, memcached.CasOp) {
+			var updated []byte
+			updated, callbackErr = callback(current)
+			if callbackErr != nil {
+				return nil, memcached.CASQuit
+			} else if updated == nil {
+				return updated, memcached.CASDelete
+			} else {
+				return updated, memcached.CASStore
+			}
+			panic("unreachable")
+		}
+		_, err := mc.CAS(vb, k, casFunc, exp)
+		if err == memcached.CASQuit {
+			err = callbackErr
+		}
+		return err
+	})
+}
+
 type ViewRow struct {
 	ID    string
 	Key   interface{}
