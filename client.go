@@ -456,7 +456,8 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 		default:
 			b, err := json.Marshal(v)
 			if err != nil {
-				panic(fmt.Sprintf("unsupported value-type %T in Query, json encoder said %v", t, err))
+				panic(fmt.Sprintf("unsupported value-type %T in Query, json encoder said %v",
+					t, err))
 			}
 			values[k] = []string{fmt.Sprintf(`%v`, string(b))}
 		}
