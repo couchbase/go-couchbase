@@ -18,10 +18,12 @@ or a shortcut for the bucket directly
 package couchbase
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"net/url"
 	"sync"
 	"sync/atomic"
@@ -426,6 +428,11 @@ type ViewResult struct {
 	Errors    []ViewError
 }
 
+func (b *Bucket) randomBaseURL() (*url.URL, error) {
+	node := b.Nodes[rand.Intn(len(b.Nodes))]
+	return url.Parse(node.CouchAPIBase)
+}
+
 // Document ID type for the startkey_docid parameter in views.
 type DocId string
 
@@ -435,9 +442,7 @@ type DocId string
 func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	vres interface{}) error {
 
-	// Pick a random node to service our request.
-	node := b.Nodes[rand.Intn(len(b.Nodes))]
-	u, err := url.Parse(node.CouchAPIBase)
+	u, err := b.randomBaseURL()
 	if err != nil {
 		return err
 	}
@@ -487,4 +492,34 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 func (b *Bucket) View(ddoc, name string, params map[string]interface{}) (ViewResult, error) {
 	vres := ViewResult{}
 	return vres, b.ViewCustom(ddoc, name, params, &vres)
+}
+
+// Install a design document.
+func (b *Bucket) PutDDoc(docname string, value interface{}) error {
+	u, err := b.randomBaseURL()
+	if err != nil {
+		return err
+	}
+
+	j, err := json.Marshal(value)
+	if err != nil {
+		return err
+	}
+
+	u.Path = fmt.Sprintf("/%s/_design/%s", b.Name, docname)
+	req, err := http.NewRequest("GET", u.String(), bytes.NewReader(j))
+	if err != nil {
+		return err
+	}
+
+	res, err := HttpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		return fmt.Errorf("Error installing view: %v", res.Status)
+	}
+
+	return nil
 }
