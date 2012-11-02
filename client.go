@@ -474,12 +474,15 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 
 	res, err := HttpClient.Get(u.String())
 	if err != nil {
-		return err
+		return fmt.Errorf("Error starting view req at %v: %v", u, err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
-		return errors.New(res.Status)
+		bod := make([]byte, 512)
+		l, _ := res.Body.Read(bod)
+		return fmt.Errorf("Error executing view req at %v: %v - %s",
+			u, res.Status, bod[:l])
 	}
 
 	d := json.NewDecoder(res.Body)
