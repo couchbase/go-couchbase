@@ -22,6 +22,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -507,18 +508,21 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 	}
 
 	u.Path = fmt.Sprintf("/%s/_design/%s", b.Name, docname)
-	req, err := http.NewRequest("GET", u.String(), bytes.NewReader(j))
+	req, err := http.NewRequest("PUT", u.String(), bytes.NewReader(j))
 	if err != nil {
 		return err
 	}
+	req.Header.Set("Content-Type", "application/json")
 
 	res, err := HttpClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		return fmt.Errorf("Error installing view: %v", res.Status)
+	if res.StatusCode != 201 {
+		body, _ := ioutil.ReadAll(res.Body)
+		return fmt.Errorf("Error installing view: %v / %s",
+			res.Status, body)
 	}
 
 	return nil
