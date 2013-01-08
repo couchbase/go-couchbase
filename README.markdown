@@ -9,6 +9,10 @@ operate during rebalances.
 It also supports view querying with source node randomization so you
 don't bang on all one node to do all the work.
 
+## Install
+
+    go get github.com/couchbaselabs/go-couchbase
+
 ## Example
 
     c, err := couchbase.Connect("http://dev-couchbase.example.com:8091/")
