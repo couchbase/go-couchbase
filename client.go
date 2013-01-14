@@ -437,15 +437,13 @@ func (b *Bucket) randomBaseURL() (*url.URL, error) {
 // Document ID type for the startkey_docid parameter in views.
 type DocId string
 
-// Perform a view request that can map row values to a custom type.
-//
-// See the source to View for an example usage.
-func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
-	vres interface{}) error {
-
+// Build a URL for a view with the given ddoc, view name, and
+// parameters.
+func (b *Bucket) ViewURL(ddoc, name string,
+	params map[string]interface{}) (string, error) {
 	u, err := b.randomBaseURL()
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	values := url.Values{}
@@ -476,7 +474,21 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	}
 	u.RawQuery = values.Encode()
 
-	res, err := HttpClient.Get(u.String())
+	return u.String(), nil
+}
+
+// Perform a view request that can map row values to a custom type.
+//
+// See the source to View for an example usage.
+func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
+	vres interface{}) error {
+
+	u, err := b.ViewURL(ddoc, name, params)
+	if err != nil {
+		return err
+	}
+
+	res, err := HttpClient.Get(u)
 	if err != nil {
 		return fmt.Errorf("Error starting view req at %v: %v", u, err)
 	}
