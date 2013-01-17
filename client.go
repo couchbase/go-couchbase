@@ -508,7 +508,24 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	return nil
 }
 
-// Execute a view
+// Execute a view.
+//
+// The ddoc parameter is just the bare name of your design doc without
+// the "_design/" prefix.
+//
+// Parameters are string keys with values that correspond to couchbase
+// view parameters.  Primitive should work fairly naturally (booleans,
+// ints, strings, etc...) and other values will attempt to be JSON
+// marshaled (useful for array indexing on on view keys, for example).
+//
+// Example:
+//
+//   res, err := couchbase.View("myddoc", "myview", map[string]interface{}{
+//       "group_level": 2,
+//       "start_key":    []interface{}{"thing"},
+//       "end_key":      []interface{}{"thing", map[string]string{}},
+//       "stale": false,
+//       })
 func (b *Bucket) View(ddoc, name string, params map[string]interface{}) (ViewResult, error) {
 	vres := ViewResult{}
 	return vres, b.ViewCustom(ddoc, name, params, &vres)
