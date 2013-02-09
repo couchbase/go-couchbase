@@ -260,7 +260,7 @@ func (b *Bucket) Set(k string, exp int, v interface{}) error {
 // The value will be stored as raw bytes.
 func (b *Bucket) SetRaw(k string, exp int, v []byte) error {
 	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		res, err := mc.Set(vb, k, 0, exp, v)
+		_, err := mc.Set(vb, k, 0, exp, v)
 		if err != nil {
 			return err
 		}
@@ -338,7 +338,7 @@ func (b *Bucket) GetRaw(k string) ([]byte, error) {
 // Delete a key from this bucket.
 func (b *Bucket) Delete(k string) error {
 	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		res, err := mc.Del(vb, k)
+		_, err := mc.Del(vb, k)
 		if err != nil {
 			return err
 		}
