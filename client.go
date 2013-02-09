@@ -264,9 +264,6 @@ func (b *Bucket) SetRaw(k string, exp int, v []byte) error {
 		if err != nil {
 			return err
 		}
-		if res.Status != gomemcached.SUCCESS {
-			return res
-		}
 		return nil
 	})
 }
@@ -285,7 +282,7 @@ func (b *Bucket) Add(k string, exp int, v interface{}) (added bool, err error) {
 // The value will be stored as raw bytes.
 func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		switch res, err := mc.Add(vb, k, 0, exp, v); {
+		switch res, err := memcached.UnwrapMemcachedError(mc.Add(vb, k, 0, exp, v)); {
 		case err != nil:
 			return err
 		case res.Status == gomemcached.SUCCESS:
@@ -305,9 +302,6 @@ func (b *Bucket) GetsRaw(k string, cas *uint64) ([]byte, error) {
 		res, err := mc.Get(vb, k)
 		if err != nil {
 			return err
-		}
-		if res.Status != gomemcached.SUCCESS {
-			return res
 		}
 		if cas != nil {
 			*cas = res.Cas
@@ -347,9 +341,6 @@ func (b *Bucket) Delete(k string) error {
 		res, err := mc.Del(vb, k)
 		if err != nil {
 			return err
-		}
-		if res.Status != gomemcached.SUCCESS {
-			return res
 		}
 		return nil
 	})
