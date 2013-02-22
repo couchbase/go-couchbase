@@ -179,6 +179,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 	conn, err := b.connections[masterId].Get()
 	if err != nil {
 		ch <- map[string]*gomemcached.MCResponse{}
+		return
 	}
 	defer b.connections[masterId].Return(conn)
 
