@@ -16,16 +16,18 @@ import (
 // The HTTP Client To Use
 var HttpClient = http.DefaultClient
 
-type poolsResponse struct {
-	ComponentsVersion     map[string]string
-	ImplementationVersion string
-	IsAdmin               bool `json:"isAdminCreds"`
-	UUID                  string
-	Pools                 []struct {
-		Name         string
-		StreamingURI string
-		URI          string
-	}
+type RestPool struct {
+	Name         string `json:"name"`
+	StreamingURI string `json:"streamingUri"`
+	URI          string `json:"uri"`
+}
+
+type Pools struct {
+	ComponentsVersion     map[string]string `json:"componentsVersion"`
+	ImplementationVersion string            `json:"implementationVersion"`
+	IsAdmin               bool              `json:"isAdminCreds"`
+	UUID                  string            `json:"uuid"`
+	Pools                 []RestPool        `json:"pools"`
 }
 
 // A computer in a cluster running the couchbase software.
@@ -101,7 +103,7 @@ func (b Bucket) CommonAddressSuffix() string {
 // The couchbase client gives access to all the things.
 type Client struct {
 	BaseURL  *url.URL
-	Info     poolsResponse
+	Info     Pools
 	Statuses [256]uint64
 }
 

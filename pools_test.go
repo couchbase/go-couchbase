@@ -266,7 +266,7 @@ func testParse(t *testing.T, s string, rv interface{}) {
 }
 
 func TestPoolsResponse(t *testing.T) {
-	res := poolsResponse{}
+	res := Pools{}
 	testParse(t, samplePools, &res)
 
 	assert(t, "couch", res.ComponentsVersion["couch"],
