@@ -189,7 +189,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 		ch <- m
 	case *gomemcached.MCResponse:
 		fmt.Printf("Got a memcached error")
-		st := err.(gomemcached.MCResponse).Status
+		st := err.(*gomemcached.MCResponse).Status
 		atomic.AddUint64(&b.pool.client.Statuses[st], 1)
 		if st == gomemcached.NOT_MY_VBUCKET {
 			b.refresh()
