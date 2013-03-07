@@ -23,7 +23,7 @@ type RestPool struct {
 }
 
 type Pools struct {
-	ComponentsVersion     map[string]string `json:"componentsVersion"`
+	ComponentsVersion     map[string]string `json:"componentsVersion,omitempty"`
 	ImplementationVersion string            `json:"implementationVersion"`
 	IsAdmin               bool              `json:"isAdminCreds"`
 	UUID                  string            `json:"uuid"`
