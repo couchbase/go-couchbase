@@ -32,20 +32,20 @@ type Pools struct {
 
 // A computer in a cluster running the couchbase software.
 type Node struct {
-	ClusterCompatibility int
-	ClusterMembership    string
-	CouchAPIBase         string
-	Hostname             string
-	InterestingStats     map[string]float64
-	MCDMemoryAllocated   float64
-	MCDMemoryReserved    float64
-	MemoryFree           float64
-	MemoryTotal          float64
-	OS                   string
-	Ports                map[string]int
-	Status               string
-	Uptime               int `json:"uptime,string"`
-	Version              string
+	ClusterCompatibility int                `json:"clusterCompatibility"`
+	ClusterMembership    string             `json:"clusterMembership"`
+	CouchAPIBase         string             `json:"couchApiBase"`
+	Hostname             string             `json:"hostname"`
+	InterestingStats     map[string]float64 `json:"interestingStats,omitempty"`
+	MCDMemoryAllocated   float64            `json:"mcdMemoryAllocated"`
+	MCDMemoryReserved    float64            `json:"mcdMemoryReserved"`
+	MemoryFree           float64            `json:"memoryFree"`
+	MemoryTotal          float64            `json:"memoryTotal"`
+	OS                   string             `json:"os"`
+	Ports                map[string]int     `json:"ports"`
+	Status               string             `json:"status"`
+	Uptime               int                `json:"uptime,string"`
+	Version              string             `json:"version"`
 }
 
 // A pool of nodes and buckets.
