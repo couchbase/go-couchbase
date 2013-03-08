@@ -60,23 +60,23 @@ type Pool struct {
 
 // An individual bucket.  Herein lives the most useful stuff.
 type Bucket struct {
-	AuthType            string
-	Capabilities        []string `json:"bucketCapabilities"`
-	CapabilitiesVersion string   `json:"bucketCapabilitiesVer"`
-	Type                string   `json:"bucketType"`
-	Name                string
-	NodeLocator         string
-	Nodes               []Node
-	Quota               map[string]float64
-	Replicas            int    `json:"replicaNumber"`
-	Password            string `json:"saslPassword"`
-	URI                 string
+	AuthType            string             `json:"authType"`
+	Capabilities        []string           `json:"bucketCapabilities"`
+	CapabilitiesVersion string             `json:"bucketCapabilitiesVer"`
+	Type                string             `json:"bucketType"`
+	Name                string             `json:"name"`
+	NodeLocator         string             `json:"nodeLocator"`
+	Nodes               []Node             `json:"nodes"`
+	Quota               map[string]float64 `json:"quota,omitempty"`
+	Replicas            int                `json:"replicaNumber"`
+	Password            string             `json:"saslPassword"`
+	URI                 string             `json:"uri"`
 	VBucketServerMap    struct {
-		HashAlgorithm string
-		NumReplicas   int
-		ServerList    []string
-		VBucketMap    [][]int
-	}
+		HashAlgorithm string   `json:"hashAlgorithm"`
+		NumReplicas   int      `json:"numReplicas"`
+		ServerList    []string `json:"serverList"`
+		VBucketMap    [][]int  `json:"vBucketMap"`
+	} `json:"vBucketServerMap"`
 
 	pool        *Pool
 	connections []*connectionPool
