@@ -71,6 +71,7 @@ type Bucket struct {
 	Replicas            int                `json:"replicaNumber"`
 	Password            string             `json:"saslPassword"`
 	URI                 string             `json:"uri"`
+	StreamingURI        string             `json:"streamingUri"`
 	UUID                string             `json:"uuid"`
 	VBucketServerMap    struct {
 		HashAlgorithm string   `json:"hashAlgorithm"`
