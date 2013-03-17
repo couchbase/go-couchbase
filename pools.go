@@ -46,6 +46,7 @@ type Node struct {
 	Status               string             `json:"status"`
 	Uptime               int                `json:"uptime,string"`
 	Version              string             `json:"version"`
+	ThisNode             bool               `json:"thisNode,omitempty"`
 }
 
 // A pool of nodes and buckets.
@@ -72,6 +73,7 @@ type Bucket struct {
 	Password            string             `json:"saslPassword"`
 	URI                 string             `json:"uri"`
 	StreamingURI        string             `json:"streamingUri"`
+	LocalRandomKeyURI   string             `json:"localRandomKeyUri,omitempty"`
 	UUID                string             `json:"uuid"`
 	VBucketServerMap    struct {
 		HashAlgorithm string   `json:"hashAlgorithm"`
@@ -79,6 +81,9 @@ type Bucket struct {
 		ServerList    []string `json:"serverList"`
 		VBucketMap    [][]int  `json:"vBucketMap"`
 	} `json:"vBucketServerMap"`
+	BasicStats  map[string]interface{} `json:"basicStats,omitempty"`
+	DDocs       map[string]interface{} `json:"ddocs,omitempty"`
+	Controllers map[string]interface{} `json:"controllers,omitempty"`
 
 	pool        *Pool
 	connections []*connectionPool
