@@ -77,7 +77,7 @@ type Bucket struct {
 	UUID                string             `json:"uuid"`
 	DDocs               struct {
 		URI string `json:"uri"`
-	} `json:"ddocs"`
+	} `json:"ddocs,omitempty"`
 	VBucketServerMap struct {
 		HashAlgorithm string   `json:"hashAlgorithm"`
 		NumReplicas   int      `json:"numReplicas"`
@@ -85,7 +85,6 @@ type Bucket struct {
 		VBucketMap    [][]int  `json:"vBucketMap"`
 	} `json:"vBucketServerMap"`
 	BasicStats  map[string]interface{} `json:"basicStats,omitempty"`
-	DDocs       map[string]interface{} `json:"ddocs,omitempty"`
 	Controllers map[string]interface{} `json:"controllers,omitempty"`
 
 	pool        *Pool
