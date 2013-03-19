@@ -75,7 +75,10 @@ type Bucket struct {
 	StreamingURI        string             `json:"streamingUri"`
 	LocalRandomKeyURI   string             `json:"localRandomKeyUri,omitempty"`
 	UUID                string             `json:"uuid"`
-	VBucketServerMap    struct {
+	DDocs               struct {
+		URI string `json:"uri"`
+	} `json:"ddocs"`
+	VBucketServerMap struct {
 		HashAlgorithm string   `json:"hashAlgorithm"`
 		NumReplicas   int      `json:"numReplicas"`
 		ServerList    []string `json:"serverList"`
