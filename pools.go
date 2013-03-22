@@ -9,8 +9,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-
-	"github.com/dustin/gomemcached/client"
 )
 
 // The HTTP Client To Use
@@ -157,11 +155,8 @@ func (b *Bucket) refresh() (err error) {
 	b.pool = pool
 	b.connections = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
 	for i := range b.connections {
-		b.connections[i] = &connectionPool{
-			host:        b.VBucketServerMap.ServerList[i],
-			name:        b.Name,
-			connections: []*memcached.Client{},
-		}
+		b.connections[i] = newConnectionPool(
+			b.VBucketServerMap.ServerList[i], b.Name, 4)
 	}
 	return nil
 }

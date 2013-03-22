@@ -20,74 +20,14 @@ package couchbase
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
-	"sync"
 	"sync/atomic"
 
 	"github.com/dustin/gomemcached"
 	"github.com/dustin/gomemcached/client"
 )
-
-type connectionPool struct {
-	host        string
-	name        string
-	connections []*memcached.Client
-	mutex       sync.Mutex
-}
-
-func (cp *connectionPool) Close() error {
-	cp.mutex.Lock()
-	defer cp.mutex.Unlock()
-	for _, c := range cp.connections {
-		c.Close()
-	}
-	cp.connections = []*memcached.Client{}
-	return nil
-}
-
-func (cp *connectionPool) Get() (*memcached.Client, error) {
-	if cp == nil {
-		return nil, errors.New("no pool")
-	}
-	cp.mutex.Lock()
-	defer cp.mutex.Unlock()
-
-	if len(cp.connections) == 0 {
-		conn, err := memcached.Connect("tcp", cp.host)
-		if err != nil {
-			return nil, err
-		}
-		if cp.name != "default" {
-			conn.Auth(cp.name, "")
-		}
-
-		cp.connections = append(cp.connections, conn)
-	}
-
-	rv := cp.connections[0]
-	cp.connections = cp.connections[1:]
-
-	return rv, nil
-}
-
-func (cp *connectionPool) Return(c *memcached.Client) {
-	if cp == nil {
-		return
-	}
-	cp.mutex.Lock()
-	defer cp.mutex.Unlock()
-
-	if c != nil {
-		if c.IsHealthy() {
-			cp.connections = append(cp.connections, c)
-		} else {
-			c.Close()
-		}
-	}
-}
 
 // Execute a function on a memcached connection to the node owning key "k"
 //
