@@ -7,8 +7,6 @@ import (
 	"github.com/dustin/gomemcached/client"
 )
 
-var PoolFull = errors.New("connection pool is full")
-
 type connectionPool struct {
 	host, name  string
 	mkConn      func(host, name string) (*memcached.Client, error)
