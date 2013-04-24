@@ -301,10 +301,10 @@ func TestCommonAddressSuffixUncommon(t *testing.T) {
 func TestCommonAddressSuffixCommon(t *testing.T) {
 	b := Bucket{}
 	b.Nodes = []Node{
-		Node{Hostname: "server1.example.com:11210"},
-		Node{Hostname: "server2.example.com:11210"},
-		Node{Hostname: "server3.example.com:11210"},
-		Node{Hostname: "server4.example.com:11210"},
+		{Hostname: "server1.example.com:11210"},
+		{Hostname: "server2.example.com:11210"},
+		{Hostname: "server3.example.com:11210"},
+		{Hostname: "server4.example.com:11210"},
 	}
 	assert(t, "useful suffix", ".example.com:11210",
 		b.CommonAddressSuffix())

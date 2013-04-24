@@ -97,7 +97,7 @@ func (b *Bucket) GetStats(which string) map[string]map[string]string {
 	todo := len(b.VBucketServerMap.ServerList)
 	ch := make(chan gathered_stats, todo)
 
-	for offset, _ := range b.VBucketServerMap.ServerList {
+	for offset := range b.VBucketServerMap.ServerList {
 		go getStatsParallel(b, offset, which, ch)
 	}
 
