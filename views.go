@@ -37,6 +37,15 @@ func (b *Bucket) randomBaseURL() (*url.URL, error) {
 // Document ID type for the startkey_docid parameter in views.
 type DocId string
 
+func qParam(k, v string) string {
+	format := `"%s"`
+	switch k {
+	case "startkey_docid", "stale":
+		format = "%s"
+	}
+	return fmt.Sprintf(format, v)
+}
+
 // Build a URL for a view with the given ddoc, view name, and
 // parameters.
 func (b *Bucket) ViewURL(ddoc, name string,
@@ -52,7 +61,7 @@ func (b *Bucket) ViewURL(ddoc, name string,
 		case DocId:
 			values[k] = []string{string(t)}
 		case string:
-			values[k] = []string{fmt.Sprintf(`"%s"`, t)}
+			values[k] = []string{qParam(k, t)}
 		case int:
 			values[k] = []string{fmt.Sprintf(`%d`, t)}
 		case bool:
