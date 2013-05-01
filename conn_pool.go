@@ -33,11 +33,13 @@ func defaultMkConn(host, name string) (*memcached.Client, error) {
 	return conn, nil
 }
 
-func (cp *connectionPool) Close() error {
+func (cp *connectionPool) Close() (err error) {
+	defer func() { err, _ = recover().(error) }()
+	close(cp.connections)
 	for c := range cp.connections {
 		c.Close()
 	}
-	return nil
+	return
 }
 
 func (cp *connectionPool) Get() (*memcached.Client, error) {
