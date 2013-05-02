@@ -2,6 +2,7 @@ package couchbase
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/rand"
 	"net/url"
@@ -30,6 +31,9 @@ type ViewResult struct {
 }
 
 func (b *Bucket) randomBaseURL() (*url.URL, error) {
+	if len(b.Nodes) == 0 {
+		return nil, errors.New("no couch rest URLs")
+	}
 	node := b.Nodes[rand.Intn(len(b.Nodes))]
 	return url.Parse(node.CouchAPIBase)
 }
@@ -69,8 +73,8 @@ func (b *Bucket) ViewURL(ddoc, name string,
 		default:
 			b, err := json.Marshal(v)
 			if err != nil {
-				panic(fmt.Sprintf("unsupported value-type %T in Query, json encoder said %v",
-					t, err))
+				return "", fmt.Errorf("unsupported value-type %T in Query, "+
+					"json encoder said %v", t, err)
 			}
 			values[k] = []string{fmt.Sprintf(`%v`, string(b))}
 		}
