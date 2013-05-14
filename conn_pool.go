@@ -78,3 +78,14 @@ func (cp *connectionPool) Return(c *memcached.Client) {
 		}
 	}
 }
+
+func (cp *connectionPool) StartTapFeed(args *memcached.TapArguments) (*memcached.TapFeed, error) {
+	if cp == nil {
+		return nil, errors.New("no pool")
+	}
+	mc, err := cp.Get()
+	if err != nil {
+		return nil, err
+	}
+	return mc.StartTapFeed(*args)
+}
