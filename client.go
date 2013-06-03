@@ -20,10 +20,12 @@ package couchbase
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"sync/atomic"
+	"time"
 
 	"github.com/dustin/gomemcached"
 	"github.com/dustin/gomemcached/client"
@@ -187,54 +189,96 @@ func (b *Bucket) GetBulk(keys []string) map[string]*gomemcached.MCResponse {
 	return rv
 }
 
+// A set of option flags for the Write method.
+type WriteOptions int
+
+const (
+	// If set, value is raw []byte or nil; don't JSON-encode it.
+	Raw = WriteOptions(1 << iota)
+	// If set, Write fails with ErrKeyExists if key already has a value.
+	AddOnly
+	// If set, Write will wait until the value is written to disk.
+	Persist
+	// If set, Write will wait until the value is available to be indexed by views.
+	// (In Couchbase Server 2.x, this has the same effect as the Persist flag.)
+	Indexable
+)
+
+// Error returned from Write with AddOnly flag, when key already exists in the bucket.
+var ErrKeyExists = errors.New("Key exists")
+
+// General-purpose value setter. The Set, Add and Delete methods are just wrappers around this.
+// The interpretation of `v` depends on whether the `Raw` option is given. If it is, v must
+// be a byte array or nil. (A nil value causes a delete.) If `Raw` is not given, `v` will be
+// marshaled as JSON before being written. It must be JSON-marshalable and it must not be nil.
+func (b *Bucket) Write(k string, exp int, v interface{}, opt WriteOptions) (err error) {
+	var data []byte
+	if opt&Raw == 0 {
+		data, err = json.Marshal(v)
+		if err != nil {
+			return err
+		}
+	} else if v != nil {
+		data = v.([]byte)
+	}
+
+	var res *gomemcached.MCResponse
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		if opt&AddOnly != 0 {
+			res, err = memcached.UnwrapMemcachedError(mc.Add(vb, k, 0, exp, data))
+			if err == nil && res.Status != gomemcached.SUCCESS {
+				if res.Status == gomemcached.KEY_EEXISTS {
+					err = ErrKeyExists
+				} else {
+					err = res
+				}
+			}
+		} else if data == nil {
+			res, err = mc.Del(vb, k)
+		} else {
+			res, err = mc.Set(vb, k, 0, exp, data)
+		}
+		return err
+	})
+
+	if err == nil && (opt&(Persist|Indexable) != 0) {
+		err = b.WaitForPersistence(k, res.Cas, data == nil)
+	}
+
+	return err
+}
+
 // Set a value in this bucket.
 // The value will be serialized into a JSON document.
 func (b *Bucket) Set(k string, exp int, v interface{}) error {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return err
-	}
-	return b.SetRaw(k, exp, data)
+	return b.Write(k, exp, v, 0)
 }
 
 // Set a value in this bucket.
 // The value will be stored as raw bytes.
 func (b *Bucket) SetRaw(k string, exp int, v []byte) error {
-	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		_, err := mc.Set(vb, k, 0, exp, v)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+	return b.Write(k, exp, v, Raw)
 }
 
 // Adds a value to this bucket; like Set except that nothing happens
 // if the key exists.  The value will be serialized into a JSON
 // document.
 func (b *Bucket) Add(k string, exp int, v interface{}) (added bool, err error) {
-	data, err := json.Marshal(v)
-	if err != nil {
-		return false, err
+	err = b.Write(k, exp, v, AddOnly)
+	if err == ErrKeyExists {
+		return false, nil
 	}
-	return b.AddRaw(k, exp, data)
+	return (err == nil), err
 }
 
 // Adds a value to this bucket; like SetRaw except that nothing
 // happens if the key exists.  The value will be stored as raw bytes.
 func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
-	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		switch res, err := memcached.UnwrapMemcachedError(mc.Add(vb, k, 0, exp, v)); {
-		case err != nil:
-			return err
-		case res.Status == gomemcached.SUCCESS:
-			added = true
-		case res.Status != gomemcached.KEY_EEXISTS:
-			return res
-		}
-		return nil
-	})
-	return
+	err = b.Write(k, exp, v, AddOnly|Raw)
+	if err == ErrKeyExists {
+		return false, nil
+	}
+	return (err == nil), err
 }
 
 // Get a raw value from this bucket, including its CAS counter.
@@ -279,13 +323,7 @@ func (b *Bucket) GetRaw(k string) ([]byte, error) {
 
 // Delete a key from this bucket.
 func (b *Bucket) Delete(k string) error {
-	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		_, err := mc.Del(vb, k)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
+	return b.Write(k, 0, nil, Raw)
 }
 
 // Increment a key
@@ -319,7 +357,13 @@ const UpdateCancel = memcached.CASQuit
 // If another writer modifies the document between the get and the
 // set, the callback will be invoked again with the newer value.
 func (b *Bucket) Update(k string, exp int, callback UpdateFunc) error {
-	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
+	_, err := b.update(k, exp, callback)
+	return err
+}
+
+// internal version of Update that returns a CAS value
+func (b *Bucket) update(k string, exp int, callback UpdateFunc) (newCas uint64, err error) {
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		var callbackErr error
 		casFunc := func(current []byte) ([]byte, memcached.CasOp) {
 			var updated []byte
@@ -332,12 +376,43 @@ func (b *Bucket) Update(k string, exp int, callback UpdateFunc) error {
 				return updated, memcached.CASStore
 			}
 		}
-		_, err := mc.CAS(vb, k, casFunc, exp)
+		res, err := mc.CAS(vb, k, casFunc, exp)
 		if err == memcached.CASQuit {
 			err = callbackErr
+		} else if err == nil {
+			newCas = res.Cas
 		}
 		return err
 	})
+	return
+}
+
+// A callback function to update a document
+type WriteUpdateFunc func(current []byte) (updated []byte, opt WriteOptions, err error)
+
+// Safe update of a document, avoiding conflicts by using CAS.
+// WriteUpdate is like Update, except that the callback can return a set of WriteOptions,
+// of which Persist and Indexable are recognized: these cause the call to wait until the
+// document update has been persisted to disk and/or become available to index.
+func (b *Bucket) WriteUpdate(k string, exp int, callback WriteUpdateFunc) error {
+	var writeOpts WriteOptions
+	var deletion bool
+	// Wrap the callback in an UpdateFunc we can pass to Update:
+	updateCallback := func(current []byte) (updated []byte, err error) {
+		update, opt, err := callback(current)
+		writeOpts = opt
+		deletion = (update == nil)
+		return update, err
+	}
+	cas, err := b.update(k, exp, updateCallback)
+	if err != nil {
+		return err
+	}
+	// If callback asked, wait for persistence or indexability:
+	if writeOpts&(Persist|Indexable) != 0 {
+		err = b.WaitForPersistence(k, cas, deletion)
+	}
+	return err
 }
 
 // Install a design document.
@@ -371,4 +446,48 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 	}
 
 	return nil
+}
+
+// Observes the current state of a document.
+func (b *Bucket) Observe(k string) (result memcached.ObserveResult, err error) {
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		result, err = mc.Observe(vb, k)
+		return err
+	})
+	return
+}
+
+// Returned from WaitForPersistence (or Write, if the Persistent or Indexable flag is used)
+// if the value has been overwritten by another before being persisted.
+var ErrOverwritten = errors.New("Overwritten")
+
+// Returned from WaitForPersistence (or Write, if the Persistent or Indexable flag is used)
+// if the value hasn't been persisted by the timeout interval
+var ErrTimeout = errors.New("Timeout")
+
+func (b *Bucket) WaitForPersistence(k string, cas uint64, deletion bool) error {
+	timeout := 10 * time.Second
+	sleepDelay := 5 * time.Millisecond
+	start := time.Now()
+	for {
+		time.Sleep(sleepDelay)
+		sleepDelay += sleepDelay / 2 // multiply delay by 1.5 every time
+
+		result, err := b.Observe(k)
+		if err != nil {
+			return err
+		}
+		if persisted, overwritten := result.CheckPersistence(cas, deletion); overwritten {
+			return ErrOverwritten
+		} else if persisted {
+			return nil
+		}
+
+		if result.PersistenceTime > 0 {
+			timeout = 2 * result.PersistenceTime
+		}
+		if time.Since(start) >= timeout-sleepDelay {
+			return ErrTimeout
+		}
+	}
 }
