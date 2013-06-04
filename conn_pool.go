@@ -56,8 +56,6 @@ func (cp *connectionPool) Get() (*memcached.Client, error) {
 		// a pooled connection.
 		return cp.mkConn(cp.host, cp.name)
 	}
-
-	panic("unreachable")
 }
 
 func (cp *connectionPool) Return(c *memcached.Client) {

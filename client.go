@@ -58,7 +58,6 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) err
 			}
 		}
 	}
-	panic("Unreachable.")
 }
 
 type gathered_stats struct {
@@ -327,7 +326,6 @@ func (b *Bucket) Update(k string, exp int, callback UpdateFunc) error {
 			} else {
 				return updated, memcached.CASStore
 			}
-			panic("unreachable")
 		}
 		_, err := mc.CAS(vb, k, casFunc, exp)
 		if err == memcached.CASQuit {
