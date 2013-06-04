@@ -65,7 +65,8 @@ type gathered_stats struct {
 	vals map[string]string
 }
 
-func getStatsParallel(b *Bucket, offset int, which string, ch chan<- gathered_stats) {
+func getStatsParallel(b *Bucket, offset int, which string,
+	ch chan<- gathered_stats) {
 	sn := b.VBucketServerMap.ServerList[offset]
 
 	results := map[string]string{}
@@ -208,8 +209,9 @@ func (b *Bucket) SetRaw(k string, exp int, v []byte) error {
 	})
 }
 
-// Adds a value to this bucket; like Set except that nothing happens if the key exists.
-// The value will be serialized into a JSON document.
+// Adds a value to this bucket; like Set except that nothing happens
+// if the key exists.  The value will be serialized into a JSON
+// document.
 func (b *Bucket) Add(k string, exp int, v interface{}) (added bool, err error) {
 	data, err := json.Marshal(v)
 	if err != nil {
@@ -218,8 +220,8 @@ func (b *Bucket) Add(k string, exp int, v interface{}) (added bool, err error) {
 	return b.AddRaw(k, exp, data)
 }
 
-// Adds a value to this bucket; like SetRaw except that nothing happens if the key exists.
-// The value will be stored as raw bytes.
+// Adds a value to this bucket; like SetRaw except that nothing
+// happens if the key exists.  The value will be stored as raw bytes.
 func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		switch res, err := memcached.UnwrapMemcachedError(mc.Add(vb, k, 0, exp, v)); {
@@ -303,16 +305,19 @@ func (b *Bucket) Incr(k string, amt, def uint64, exp int) (uint64, error) {
 // A callback function to update a document
 type UpdateFunc func(current []byte) (updated []byte, err error)
 
-// Return this as the error from an UpdateFunc to cancel the Update operation.
+// Return this as the error from an UpdateFunc to cancel the Update
+// operation.
 const UpdateCancel = memcached.CASQuit
 
 // Safe update of a document, avoiding conflicts by using CAS.
-// The callback function will be invoked with the current raw document contents (or nil if the
-// document doesn't exist); it should return the updated raw contents (or nil to delete.)
-// If it decides not to change anything it can return UpdateCancel as the error.
 //
-// If another writer modifies the document between the get and the set, the callback will be
-// invoked again with the newer value.
+// The callback function will be invoked with the current raw document
+// contents (or nil if the document doesn't exist); it should return
+// the updated raw contents (or nil to delete.)  If it decides not to
+// change anything it can return UpdateCancel as the error.
+//
+// If another writer modifies the document between the get and the
+// set, the callback will be invoked again with the newer value.
 func (b *Bucket) Update(k string, exp int, callback UpdateFunc) error {
 	return b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		var callbackErr error
