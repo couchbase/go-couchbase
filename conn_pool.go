@@ -74,23 +74,21 @@ func (cp *connectionPool) Get() (*memcached.Client, error) {
 }
 
 func (cp *connectionPool) Return(c *memcached.Client) {
-	if cp == nil {
+	if cp == nil || c == nil {
 		return
 	}
 
-	if c != nil {
-		if c.IsHealthy() {
-			select {
-			case cp.connections <- c:
-			default:
-				// Overflow connection.
-				<-cp.createsem
-				c.Close()
-			}
-		} else {
+	if c.IsHealthy() {
+		select {
+		case cp.connections <- c:
+		default:
+			// Overflow connection.
 			<-cp.createsem
 			c.Close()
 		}
+	} else {
+		<-cp.createsem
+		c.Close()
 	}
 }
 
