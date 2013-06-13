@@ -3,6 +3,7 @@
 *.a
 *~
 /hello/hello
+/populate/populate
+/tools/view2go/view2go
 6.out
 _*
-/populate/populate
