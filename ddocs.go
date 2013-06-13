@@ -41,9 +41,18 @@ func (b *Bucket) GetDDocs() (DDocsResult, error) {
 	return ddocsResult, nil
 }
 
+func (b *Bucket) ddocURL(docname string) (string, error) {
+	u, err := b.randomBaseURL()
+	if err != nil {
+		return "", err
+	}
+	u.Path = fmt.Sprintf("/%s/_design/%s", b.Name, docname)
+	return u.String(), nil
+}
+
 // Install a design document.
 func (b *Bucket) PutDDoc(docname string, value interface{}) error {
-	u, err := b.randomBaseURL()
+	ddocU, err := b.ddocURL(docname)
 	if err != nil {
 		return err
 	}
@@ -53,8 +62,7 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 		return err
 	}
 
-	u.Path = fmt.Sprintf("/%s/_design/%s", b.Name, docname)
-	req, err := http.NewRequest("PUT", u.String(), bytes.NewReader(j))
+	req, err := http.NewRequest("PUT", ddocU, bytes.NewReader(j))
 	if err != nil {
 		return err
 	}
@@ -72,4 +80,32 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 	}
 
 	return nil
+}
+
+// Get a design doc.
+func (b *Bucket) GetDDoc(docname string, into interface{}) error {
+	ddocU, err := b.ddocURL(docname)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("GET", ddocU, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+
+	res, err := HttpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		body, _ := ioutil.ReadAll(res.Body)
+		return fmt.Errorf("Error installing view: %v / %s",
+			res.Status, body)
+	}
+
+	d := json.NewDecoder(res.Body)
+	return d.Decode(into)
 }
