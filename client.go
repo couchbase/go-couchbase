@@ -18,12 +18,9 @@ or a shortcut for the bucket directly
 package couchbase
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"sync/atomic"
 	"time"
 
@@ -413,39 +410,6 @@ func (b *Bucket) WriteUpdate(k string, exp int, callback WriteUpdateFunc) error 
 		err = b.WaitForPersistence(k, cas, deletion)
 	}
 	return err
-}
-
-// Install a design document.
-func (b *Bucket) PutDDoc(docname string, value interface{}) error {
-	u, err := b.randomBaseURL()
-	if err != nil {
-		return err
-	}
-
-	j, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-
-	u.Path = fmt.Sprintf("/%s/_design/%s", b.Name, docname)
-	req, err := http.NewRequest("PUT", u.String(), bytes.NewReader(j))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-
-	res, err := HttpClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 201 {
-		body, _ := ioutil.ReadAll(res.Body)
-		return fmt.Errorf("Error installing view: %v / %s",
-			res.Status, body)
-	}
-
-	return nil
 }
 
 // Observes the current state of a document.
