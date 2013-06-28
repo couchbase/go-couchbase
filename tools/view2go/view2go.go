@@ -30,6 +30,8 @@ func main() {
 	cbServ := flag.String("couchbase", "http://localhost:8091/",
 		"URL to couchbase")
 	cbBucket := flag.String("bucket", "default", "couchbase bucket")
+	objName := flag.String("objname", "designDoc",
+		"Name of the variable to create")
 	flag.Parse()
 
 	ddocName := flag.Arg(0)
@@ -48,6 +50,6 @@ func main() {
 	buf := &bytes.Buffer{}
 	err = json.Indent(buf, []byte(j), "", "  ")
 
-	fmt.Printf("const %s = `%s`\n", ddocName,
+	fmt.Printf("const %s = `%s`\n", *objName,
 		strings.Replace(buf.String(), "`", "` + \"`\" + `", 0))
 }
