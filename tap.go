@@ -30,6 +30,7 @@ func (b *Bucket) StartTapFeed(args *memcached.TapArguments) (*TapFeed, error) {
 			return nil, err
 		}
 		feed.feeds = append(feed.feeds, singleFeed)
+		feed.waiters.Add(1)
 		go feed.forwardTapEvents(singleFeed.C)
 	}
 	go feed.closeWhenDone()
@@ -41,7 +42,6 @@ func (b *Bucket) StartTapFeed(args *memcached.TapArguments) (*TapFeed, error) {
 
 // Goroutine that forwards Tap events from a single node's feed to the aggregate feed.
 func (feed *TapFeed) forwardTapEvents(singleFeed <-chan memcached.TapEvent) {
-	feed.waiters.Add(1)
 	defer feed.waiters.Done()
 	for {
 		if event, ok := <-singleFeed; ok {
