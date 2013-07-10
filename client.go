@@ -18,8 +18,8 @@ or a shortcut for the bucket directly
 in any case, you can specify authentication credentials using
 standard URL userinfo syntax:
 
- b, err := couchbase.GetBucket("http://username:password@myserver:8091/",
-         "default", "default")
+ b, err := couchbase.GetBucket("http://bucketname:bucketpass@myserver:8091/",
+         "default", "bucket")
 */
 package couchbase
 
