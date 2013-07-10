@@ -22,12 +22,12 @@ func (t testT) Close() error {
 	return nil
 }
 
-func testMkConn(h, n string) (*memcached.Client, error) {
+func testMkConn(h string, ah AuthHandler) (*memcached.Client, error) {
 	return memcached.Wrap(testT{})
 }
 
 func TestConnPool(t *testing.T) {
-	cp := newConnectionPool("h", "n", 3)
+	cp := newConnectionPool("h", &basicAuth{}, 3)
 	cp.mkConn = testMkConn
 
 	seenClients := map[*memcached.Client]bool{}

@@ -35,7 +35,11 @@ func (b *Bucket) randomBaseURL() (*url.URL, error) {
 		return nil, errors.New("no couch rest URLs")
 	}
 	node := b.Nodes[rand.Intn(len(b.Nodes))]
-	return url.Parse(node.CouchAPIBase)
+	u, err := url.Parse(node.CouchAPIBase)
+	if err == nil && b.pool != nil {
+		u.User = b.pool.client.BaseURL.User
+	}
+	return u, err
 }
 
 // Document ID type for the startkey_docid parameter in views.

@@ -10,29 +10,31 @@ import (
 var TimeoutError = errors.New("timeout waiting to build connection")
 
 type connectionPool struct {
-	host, name  string
-	mkConn      func(host, name string) (*memcached.Client, error)
+	host        string
+	mkConn      func(host string, ah AuthHandler) (*memcached.Client, error)
+	auth        AuthHandler
 	connections chan *memcached.Client
 	createsem   chan bool
 }
 
-func newConnectionPool(host, name string, poolSize int) *connectionPool {
+func newConnectionPool(host string, ah AuthHandler, poolSize int) *connectionPool {
 	return &connectionPool{
 		host:        host,
-		name:        name,
 		connections: make(chan *memcached.Client, poolSize),
 		createsem:   make(chan bool, 2*poolSize),
 		mkConn:      defaultMkConn,
+		auth:        ah,
 	}
 }
 
-func defaultMkConn(host, name string) (*memcached.Client, error) {
+func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 	conn, err := memcached.Connect("tcp", host)
 	if err != nil {
 		return nil, err
 	}
+	name, pass := ah.GetCredentials()
 	if name != "default" {
-		conn.Auth(name, "") // error checking?
+		conn.Auth(name, pass) // error checking?
 	}
 	return conn, nil
 }
@@ -62,7 +64,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (*memcached.Client, er
 			// Build a connection if we can't get a real one.
 			// This can potentially be an overflow connection, or
 			// a pooled connection.
-			return cp.mkConn(cp.host, cp.name)
+			return cp.mkConn(cp.host, cp.auth)
 		case <-time.After(d):
 			return nil, TimeoutError
 		}

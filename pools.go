@@ -14,6 +14,12 @@ import (
 // The HTTP Client To Use
 var HttpClient = http.DefaultClient
 
+// Auth callback gets the auth username and password for the given
+// bucket.
+type AuthHandler interface {
+	GetCredentials() (string, string)
+}
+
 type RestPool struct {
 	Name         string `json:"name"`
 	StreamingURI string `json:"streamingUri"`
@@ -88,6 +94,7 @@ type Bucket struct {
 	pool        *Pool
 	connections []*connectionPool
 	commonSufix string
+	auth        AuthHandler
 }
 
 // Get the (sorted) list of memcached node addresses (hostname:port).
@@ -136,14 +143,21 @@ func (c *Client) parseURLResponse(path string, out interface{}) error {
 	return nil
 }
 
+type basicAuth struct {
+	u, p string
+}
+
+func (b basicAuth) GetCredentials() (string, string) {
+	return b.u, b.p
+}
+
 // Connect to a couchbase cluster.
 func Connect(baseU string) (c Client, err error) {
 	c.BaseURL, err = url.Parse(baseU)
 	if err != nil {
 		return
 	}
-	err = c.parseURLResponse("/pools", &c.Info)
-	return
+	return c, c.parseURLResponse("/pools", &c.Info)
 }
 
 func (b *Bucket) refresh() (err error) {
@@ -156,7 +170,7 @@ func (b *Bucket) refresh() (err error) {
 	b.connections = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
 	for i := range b.connections {
 		b.connections[i] = newConnectionPool(
-			b.VBucketServerMap.ServerList[i], b.Name, 4)
+			b.VBucketServerMap.ServerList[i], b.auth, 4)
 	}
 	return nil
 }
@@ -172,6 +186,7 @@ func (p *Pool) refresh() (err error) {
 	for _, b := range buckets {
 		b.pool = p
 		b.connections = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
+		b.auth = p.getDefaultAuth(b.Name)
 
 		p.BucketMap[b.Name] = b
 	}
@@ -215,14 +230,20 @@ func bucket_finalizer(b *Bucket) {
 	}
 }
 
+func (p *Pool) getDefaultAuth(name string) AuthHandler {
+	pw, _ := p.client.BaseURL.User.Password()
+	return &basicAuth{name, pw}
+}
+
 // Get a bucket from within this pool.
-func (p *Pool) GetBucket(name string) (b *Bucket, err error) {
+func (p *Pool) GetBucket(name string) (*Bucket, error) {
 	rv, ok := p.BucketMap[name]
 	if !ok {
 		return nil, errors.New("No bucket named " + name)
 	}
 	runtime.SetFinalizer(&rv, bucket_finalizer)
 	rv.refresh()
+	rv.auth = p.getDefaultAuth(name)
 	return &rv, nil
 }
 
