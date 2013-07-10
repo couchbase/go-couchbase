@@ -231,7 +231,10 @@ func bucket_finalizer(b *Bucket) {
 }
 
 func (p *Pool) getDefaultAuth(name string) AuthHandler {
-	pw, _ := p.client.BaseURL.User.Password()
+	var pw string
+	if p.client.BaseURL.User != nil {
+		pw, _ = p.client.BaseURL.User.Password()
+	}
 	return &basicAuth{name, pw}
 }
 
