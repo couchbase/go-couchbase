@@ -343,6 +343,16 @@ func (b *Bucket) Incr(k string, amt, def uint64, exp int) (uint64, error) {
 	return rv, err
 }
 
+// Wrapper around memcached.CASNext()
+func (b *Bucket) casNext(k string, exp int, state *memcached.CASState) bool {
+	keepGoing := false
+	state.Err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		keepGoing = mc.CASNext(vb, k, exp, state)
+		return state.Err
+	})
+	return keepGoing && state.Err == nil
+}
+
 // A callback function to update a document
 type UpdateFunc func(current []byte) (updated []byte, err error)
 
@@ -366,28 +376,14 @@ func (b *Bucket) Update(k string, exp int, callback UpdateFunc) error {
 
 // internal version of Update that returns a CAS value
 func (b *Bucket) update(k string, exp int, callback UpdateFunc) (newCas uint64, err error) {
-	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		var callbackErr error
-		casFunc := func(current []byte) ([]byte, memcached.CasOp) {
-			var updated []byte
-			updated, callbackErr = callback(current)
-			if callbackErr != nil {
-				return nil, memcached.CASQuit
-			} else if updated == nil {
-				return updated, memcached.CASDelete
-			} else {
-				return updated, memcached.CASStore
-			}
+	var state memcached.CASState
+	for b.casNext(k, exp, &state) {
+		var err error
+		if state.Value, err = callback(state.Value); err != nil {
+			return 0, err
 		}
-		res, err := mc.CAS(vb, k, casFunc, exp)
-		if err == memcached.CASQuit {
-			err = callbackErr
-		} else if err == nil {
-			newCas = res.Cas
-		}
-		return err
-	})
-	return
+	}
+	return state.Cas, state.Err
 }
 
 // A callback function to update a document
