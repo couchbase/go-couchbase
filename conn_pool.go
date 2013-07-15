@@ -64,7 +64,12 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (*memcached.Client, er
 			// Build a connection if we can't get a real one.
 			// This can potentially be an overflow connection, or
 			// a pooled connection.
-			return cp.mkConn(cp.host, cp.auth)
+			rv, err := cp.mkConn(cp.host, cp.auth)
+			if err != nil {
+				// On error, release our create hold
+				<-cp.createsem
+			}
+			return rv, err
 		case <-time.After(d):
 			return nil, TimeoutError
 		}
