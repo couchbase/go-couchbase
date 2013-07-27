@@ -265,19 +265,14 @@ func (p *Pool) getDefaultAuth(name string) AuthHandler {
 
 // Get a bucket from within this pool.
 func (p *Pool) GetBucket(name string) (*Bucket, error) {
-	ah := p.getDefaultAuth(name)
-	rv := &Bucket{}
-	err := p.client.parseURLResponse("/pools/default/buckets/"+name, ah, rv)
-	if err != nil {
-		return nil, err
+	rv, ok := p.BucketMap[name]
+	if !ok {
+		return nil, errors.New("No bucket named " + name)
 	}
-	rv.pool = p
-	rv.auth = ah
-	rv.connections = make([]*connectionPool, len(rv.VBucketServerMap.ServerList))
-
-	runtime.SetFinalizer(rv, bucket_finalizer)
+	runtime.SetFinalizer(&rv, bucket_finalizer)
 	rv.refresh()
-	return rv, nil
+	rv.auth = p.getDefaultAuth(name)
+	return &rv, nil
 }
 
 // Get the pool to which this bucket belongs.
