@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
+	"net/http"
 	"net/url"
 )
 
@@ -105,7 +106,13 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 		return err
 	}
 
-	res, err := HttpClient.Get(u)
+	req, err := http.NewRequest("GET", u, nil)
+	if err != nil {
+		return err
+	}
+	maybeAddAuth(req, b.auth)
+
+	res, err := HttpClient.Do(req)
 	if err != nil {
 		return fmt.Errorf("Error starting view req at %v: %v", u, err)
 	}

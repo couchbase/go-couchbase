@@ -34,7 +34,7 @@ type DDocsResult struct {
 // Get the design documents
 func (b *Bucket) GetDDocs() (DDocsResult, error) {
 	var ddocsResult DDocsResult
-	err := b.pool.client.parseURLResponse(b.DDocs.URI, &ddocsResult)
+	err := b.pool.client.parseURLResponse(b.DDocs.URI, b.auth, &ddocsResult)
 	if err != nil {
 		return DDocsResult{}, err
 	}
@@ -67,6 +67,7 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	maybeAddAuth(req, b.auth)
 
 	res, err := HttpClient.Do(req)
 	if err != nil {
@@ -94,6 +95,7 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
+	maybeAddAuth(req, b.auth)
 
 	res, err := HttpClient.Do(req)
 	if err != nil {

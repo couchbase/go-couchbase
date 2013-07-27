@@ -1,6 +1,7 @@
 package couchbase
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"log"
@@ -121,8 +122,19 @@ type Client struct {
 	Statuses [256]uint64
 }
 
-func (c *Client) parseURLResponse(path string, out interface{}) error {
+func maybeAddAuth(req *http.Request, ah AuthHandler) {
+	if ah != nil {
+		user, pass := ah.GetCredentials()
+		req.Header.Set("Authorization", "Basic "+
+			base64.StdEncoding.EncodeToString([]byte(user+":"+pass)))
+	}
+}
+
+func (c *Client) parseURLResponse(path string, ah AuthHandler,
+	out interface{}) error {
+
 	u := *c.BaseURL
+	u.User = nil
 	if q := strings.Index(path, "?"); q > 0 {
 		u.Path = path[:q]
 		u.RawQuery = path[q+1:]
@@ -130,7 +142,13 @@ func (c *Client) parseURLResponse(path string, out interface{}) error {
 		u.Path = path
 	}
 
-	res, err := HttpClient.Get(u.String())
+	req, err := http.NewRequest("GET", u.String(), nil)
+	if err != nil {
+		return err
+	}
+	maybeAddAuth(req, ah)
+
+	res, err := HttpClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -157,17 +175,17 @@ func Connect(baseU string) (c Client, err error) {
 	if err != nil {
 		return
 	}
-	return c, c.parseURLResponse("/pools", &c.Info)
+
+	return c, c.parseURLResponse("/pools", nil, &c.Info)
 }
 
 func (b *Bucket) refresh() (err error) {
 	pool := b.pool
-	err = pool.client.parseURLResponse(b.URI, b)
+	err = pool.client.parseURLResponse(b.URI, b.auth, b)
 	if err != nil {
 		return err
 	}
 	b.pool = pool
-	b.connections = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
 	for i := range b.connections {
 		b.connections[i] = newConnectionPool(
 			b.VBucketServerMap.ServerList[i], b.auth, 4)
@@ -178,15 +196,21 @@ func (b *Bucket) refresh() (err error) {
 func (p *Pool) refresh() (err error) {
 	p.BucketMap = make(map[string]Bucket)
 
+	var ah AuthHandler
+	if user := p.client.BaseURL.User; user != nil {
+		pw, _ := user.Password()
+		ah = basicAuth{user.Username(), pw}
+	}
+
 	buckets := []Bucket{}
-	err = p.client.parseURLResponse(p.BucketURL["uri"], &buckets)
+	err = p.client.parseURLResponse(p.BucketURL["uri"], ah, &buckets)
 	if err != nil {
 		return err
 	}
 	for _, b := range buckets {
 		b.pool = p
-		b.connections = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
 		b.auth = p.getDefaultAuth(b.Name)
+		b.connections = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
 
 		p.BucketMap[b.Name] = b
 	}
@@ -204,7 +228,8 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 	if poolURI == "" {
 		return p, errors.New("No pool named " + name)
 	}
-	err = c.parseURLResponse(poolURI, &p)
+
+	err = c.parseURLResponse(poolURI, nil, &p)
 
 	p.client = *c
 
@@ -240,14 +265,19 @@ func (p *Pool) getDefaultAuth(name string) AuthHandler {
 
 // Get a bucket from within this pool.
 func (p *Pool) GetBucket(name string) (*Bucket, error) {
-	rv, ok := p.BucketMap[name]
-	if !ok {
-		return nil, errors.New("No bucket named " + name)
+	ah := p.getDefaultAuth(name)
+	rv := &Bucket{}
+	err := p.client.parseURLResponse("/pools/default/buckets/"+name, ah, rv)
+	if err != nil {
+		return nil, err
 	}
-	runtime.SetFinalizer(&rv, bucket_finalizer)
+	rv.pool = p
+	rv.auth = ah
+	rv.connections = make([]*connectionPool, len(rv.VBucketServerMap.ServerList))
+
+	runtime.SetFinalizer(rv, bucket_finalizer)
 	rv.refresh()
-	rv.auth = p.getDefaultAuth(name)
-	return &rv, nil
+	return rv, nil
 }
 
 // Get the pool to which this bucket belongs.
