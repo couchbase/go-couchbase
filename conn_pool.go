@@ -34,7 +34,10 @@ func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 	}
 	name, pass := ah.GetCredentials()
 	if name != "default" {
-		conn.Auth(name, pass) // error checking?
+		_, err = conn.Auth(name, pass)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return conn, nil
 }
