@@ -9,6 +9,8 @@ import (
 
 var TimeoutError = errors.New("timeout waiting to build connection")
 
+var ConnPoolTimeout = time.Hour * 24 * 30
+
 type connectionPool struct {
 	host        string
 	mkConn      func(host string, ah AuthHandler) (*memcached.Client, error)
@@ -80,7 +82,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (*memcached.Client, er
 }
 
 func (cp *connectionPool) Get() (*memcached.Client, error) {
-	return cp.GetWithTimeout(time.Hour * 24 * 30)
+	return cp.GetWithTimeout(ConnPoolTimeout)
 }
 
 func (cp *connectionPool) Return(c *memcached.Client) {
