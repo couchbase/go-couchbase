@@ -2,6 +2,7 @@
 *.6
 *.a
 *~
+/examples/basic/basic
 /hello/hello
 /populate/populate
 /tools/view2go/view2go
