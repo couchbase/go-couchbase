@@ -184,7 +184,8 @@ func Connect(baseU string) (c Client, err error) {
 		return
 	}
 
-	return c, c.parseURLResponse("/pools", nil, &c.Info)
+	return c, c.parseURLResponse("/pools",
+		basicAuthFromURL(c.BaseURL), &c.Info)
 }
 
 func (b *Bucket) refresh() (err error) {
@@ -201,14 +202,18 @@ func (b *Bucket) refresh() (err error) {
 	return nil
 }
 
-func (p *Pool) refresh() (err error) {
-	p.BucketMap = make(map[string]Bucket)
-
-	var ah AuthHandler
-	if user := p.client.BaseURL.User; user != nil {
+func basicAuthFromURL(u *url.URL) (ah AuthHandler) {
+	if user := u.User; user != nil {
 		pw, _ := user.Password()
 		ah = basicAuth{user.Username(), pw}
 	}
+	return
+}
+
+func (p *Pool) refresh() (err error) {
+	p.BucketMap = make(map[string]Bucket)
+
+	ah := basicAuthFromURL(p.client.BaseURL)
 
 	buckets := []Bucket{}
 	err = p.client.parseURLResponse(p.BucketURL["uri"], ah, &buckets)
@@ -237,7 +242,7 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 		return p, errors.New("No pool named " + name)
 	}
 
-	err = c.parseURLResponse(poolURI, nil, &p)
+	err = c.parseURLResponse(poolURI, basicAuthFromURL(c.BaseURL), &p)
 
 	p.client = *c
 
