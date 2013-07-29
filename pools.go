@@ -4,6 +4,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
+	"io/ioutil"
 	"log"
 	"net/http"
 	"net/url"
@@ -153,6 +156,11 @@ func (c *Client) parseURLResponse(path string, ah AuthHandler,
 		return err
 	}
 	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
+		return fmt.Errorf("HTTP error %v getting %q: %s",
+			res.Status, u.String(), bod)
+	}
 
 	d := json.NewDecoder(res.Body)
 	if err = d.Decode(&out); err != nil {
