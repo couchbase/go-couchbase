@@ -241,7 +241,7 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 
 	p.client = *c
 
-	p.refresh()
+	err = p.refresh()
 	return
 }
 
@@ -278,7 +278,10 @@ func (p *Pool) GetBucket(name string) (*Bucket, error) {
 		return nil, errors.New("No bucket named " + name)
 	}
 	runtime.SetFinalizer(&rv, bucket_finalizer)
-	rv.refresh()
+	err := rv.refresh()
+	if err != nil {
+		return nil, err
+	}
 	rv.auth = p.getDefaultAuth(name)
 	return &rv, nil
 }
