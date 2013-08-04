@@ -24,6 +24,7 @@ standard URL userinfo syntax:
 package couchbase
 
 import (
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -210,11 +211,17 @@ const (
 // Error returned from Write with AddOnly flag, when key already exists in the bucket.
 var ErrKeyExists = errors.New("Key exists")
 
-// General-purpose value setter. The Set, Add and Delete methods are just wrappers around this.
-// The interpretation of `v` depends on whether the `Raw` option is given. If it is, v must
-// be a byte array or nil. (A nil value causes a delete.) If `Raw` is not given, `v` will be
-// marshaled as JSON before being written. It must be JSON-marshalable and it must not be nil.
-func (b *Bucket) Write(k string, exp int, v interface{}, opt WriteOptions) (err error) {
+// General-purpose value setter.
+//
+// The Set, Add and Delete methods are just wrappers around this.  The
+// interpretation of `v` depends on whether the `Raw` option is
+// given. If it is, v must be a byte array or nil. (A nil value causes
+// a delete.) If `Raw` is not given, `v` will be marshaled as JSON
+// before being written. It must be JSON-marshalable and it must not
+// be nil.
+func (b *Bucket) Write(k string, flags, exp int, v interface{},
+	opt WriteOptions) (err error) {
+
 	var data []byte
 	if opt&Raw == 0 {
 		data, err = json.Marshal(v)
@@ -228,7 +235,8 @@ func (b *Bucket) Write(k string, exp int, v interface{}, opt WriteOptions) (err 
 	var res *gomemcached.MCResponse
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		if opt&AddOnly != 0 {
-			res, err = memcached.UnwrapMemcachedError(mc.Add(vb, k, 0, exp, data))
+			res, err = memcached.UnwrapMemcachedError(
+				mc.Add(vb, k, flags, exp, data))
 			if err == nil && res.Status != gomemcached.SUCCESS {
 				if res.Status == gomemcached.KEY_EEXISTS {
 					err = ErrKeyExists
@@ -239,7 +247,7 @@ func (b *Bucket) Write(k string, exp int, v interface{}, opt WriteOptions) (err 
 		} else if data == nil {
 			res, err = mc.Del(vb, k)
 		} else {
-			res, err = mc.Set(vb, k, 0, exp, data)
+			res, err = mc.Set(vb, k, flags, exp, data)
 		}
 		return err
 	})
@@ -254,20 +262,20 @@ func (b *Bucket) Write(k string, exp int, v interface{}, opt WriteOptions) (err 
 // Set a value in this bucket.
 // The value will be serialized into a JSON document.
 func (b *Bucket) Set(k string, exp int, v interface{}) error {
-	return b.Write(k, exp, v, 0)
+	return b.Write(k, 0, exp, v, 0)
 }
 
 // Set a value in this bucket.
 // The value will be stored as raw bytes.
 func (b *Bucket) SetRaw(k string, exp int, v []byte) error {
-	return b.Write(k, exp, v, Raw)
+	return b.Write(k, 0, exp, v, Raw)
 }
 
 // Adds a value to this bucket; like Set except that nothing happens
 // if the key exists.  The value will be serialized into a JSON
 // document.
 func (b *Bucket) Add(k string, exp int, v interface{}) (added bool, err error) {
-	err = b.Write(k, exp, v, AddOnly)
+	err = b.Write(k, 0, exp, v, AddOnly)
 	if err == ErrKeyExists {
 		return false, nil
 	}
@@ -277,37 +285,42 @@ func (b *Bucket) Add(k string, exp int, v interface{}) (added bool, err error) {
 // Adds a value to this bucket; like SetRaw except that nothing
 // happens if the key exists.  The value will be stored as raw bytes.
 func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
-	err = b.Write(k, exp, v, AddOnly|Raw)
+	err = b.Write(k, 0, exp, v, AddOnly|Raw)
 	if err == ErrKeyExists {
 		return false, nil
 	}
 	return (err == nil), err
 }
 
-// Get a raw value from this bucket, including its CAS counter.
-func (b *Bucket) GetsRaw(k string, cas *uint64) ([]byte, error) {
-	var data []byte
-	err := b.Do(k, func(mc *memcached.Client, vb uint16) error {
+// Get a raw value from this bucket, including its CAS counter and flags.
+func (b *Bucket) GetsRaw(k string) (data []byte, flags int,
+	cas uint64, err error) {
+
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		res, err := mc.Get(vb, k)
 		if err != nil {
 			return err
 		}
-		if cas != nil {
-			*cas = res.Cas
+		cas = res.Cas
+		if len(res.Extras) >= 4 {
+			flags = int(binary.BigEndian.Uint32(res.Extras))
 		}
 		data = res.Body
 		return nil
 	})
-	return data, err
+	return
 }
 
 // Get a value from this bucket, including its CAS counter.
 // The value is expected to be a JSON stream and will be deserialized
 // into rv.
-func (b *Bucket) Gets(k string, rv interface{}, cas *uint64) error {
-	data, err := b.GetsRaw(k, cas)
+func (b *Bucket) Gets(k string, rv interface{}, caso *uint64) error {
+	data, _, cas, err := b.GetsRaw(k)
 	if err != nil {
 		return err
+	}
+	if caso != nil {
+		*caso = cas
 	}
 	return json.Unmarshal(data, rv)
 }
@@ -321,12 +334,13 @@ func (b *Bucket) Get(k string, rv interface{}) error {
 
 // Get a raw value from this bucket.
 func (b *Bucket) GetRaw(k string) ([]byte, error) {
-	return b.GetsRaw(k, nil)
+	d, _, _, err := b.GetsRaw(k)
+	return d, err
 }
 
 // Delete a key from this bucket.
 func (b *Bucket) Delete(k string) error {
-	return b.Write(k, 0, nil, Raw)
+	return b.Write(k, 0, 0, nil, Raw)
 }
 
 // Increment a key

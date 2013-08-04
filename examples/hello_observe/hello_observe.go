@@ -46,7 +46,7 @@ func main() {
 	if *writeFlag {
 		log.Printf("Now writing to key %q with persistence...", key)
 		start := time.Now()
-		err = bucket.Write(key, 0, "observe test", couchbase.Persist)
+		err = bucket.Write(key, 0, 0, "observe test", couchbase.Persist)
 		if err != nil {
 			log.Fatalf("Write returned error %v", err)
 		}
