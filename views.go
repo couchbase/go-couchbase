@@ -110,7 +110,7 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	if err != nil {
 		return err
 	}
-	maybeAddAuth(req, b.auth)
+	maybeAddAuth(req, b.authHandler())
 
 	res, err := HttpClient.Do(req)
 	if err != nil {

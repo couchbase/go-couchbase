@@ -98,7 +98,16 @@ type Bucket struct {
 	pool        *Pool
 	connections []*connectionPool
 	commonSufix string
-	auth        AuthHandler
+}
+
+func (b Bucket) authHandler() (ah AuthHandler) {
+	if b.pool != nil {
+		ah = b.pool.client.ah
+	}
+	if ah == nil {
+		ah = &basicAuth{b.Name, ""}
+	}
+	return
 }
 
 // Get the (sorted) list of memcached node addresses (hostname:port).
@@ -121,6 +130,7 @@ func (b Bucket) CommonAddressSuffix() string {
 // The couchbase client gives access to all the things.
 type Client struct {
 	BaseURL  *url.URL
+	ah       AuthHandler
 	Info     Pools
 	Statuses [256]uint64
 }
@@ -133,9 +143,7 @@ func maybeAddAuth(req *http.Request, ah AuthHandler) {
 	}
 }
 
-func (c *Client) parseURLResponse(path string, ah AuthHandler,
-	out interface{}) error {
-
+func (c *Client) parseURLResponse(path string, out interface{}) error {
 	u := *c.BaseURL
 	u.User = nil
 	if q := strings.Index(path, "?"); q > 0 {
@@ -149,7 +157,7 @@ func (c *Client) parseURLResponse(path string, ah AuthHandler,
 	if err != nil {
 		return err
 	}
-	maybeAddAuth(req, ah)
+	maybeAddAuth(req, c.ah)
 
 	res, err := HttpClient.Do(req)
 	if err != nil {
@@ -177,32 +185,11 @@ func (b basicAuth) GetCredentials() (string, string) {
 	return b.u, b.p
 }
 
-// Connect to a couchbase cluster.
-func Connect(baseU string) (c Client, err error) {
-	c.BaseURL, err = url.Parse(baseU)
+func basicAuthFromURL(us string) (ah AuthHandler) {
+	u, err := url.Parse(us)
 	if err != nil {
 		return
 	}
-
-	return c, c.parseURLResponse("/pools",
-		basicAuthFromURL(c.BaseURL), &c.Info)
-}
-
-func (b *Bucket) refresh() (err error) {
-	pool := b.pool
-	err = pool.client.parseURLResponse(b.URI, b.auth, b)
-	if err != nil {
-		return err
-	}
-	b.pool = pool
-	for i := range b.connections {
-		b.connections[i] = newConnectionPool(
-			b.VBucketServerMap.ServerList[i], b.auth, 4)
-	}
-	return nil
-}
-
-func basicAuthFromURL(u *url.URL) (ah AuthHandler) {
 	if user := u.User; user != nil {
 		pw, _ := user.Password()
 		ah = basicAuth{user.Username(), pw}
@@ -210,19 +197,49 @@ func basicAuthFromURL(u *url.URL) (ah AuthHandler) {
 	return
 }
 
+// ConnectWithAuth connects to a couchbase cluster with the given
+// authentication handler.
+func ConnectWithAuth(baseU string, ah AuthHandler) (c Client, err error) {
+	c.BaseURL, err = url.Parse(baseU)
+	if err != nil {
+		return
+	}
+	c.ah = ah
+
+	return c, c.parseURLResponse("/pools", &c.Info)
+}
+
+// Connect to a couchbase cluster.  An authentication handler will be
+// created from the userinfo in the URL if provided.
+func Connect(baseU string) (Client, error) {
+	return ConnectWithAuth(baseU, basicAuthFromURL(baseU))
+}
+
+func (b *Bucket) refresh() (err error) {
+	pool := b.pool
+	err = pool.client.parseURLResponse(b.URI, b)
+	if err != nil {
+		return err
+	}
+	b.pool = pool
+	for i := range b.connections {
+		b.connections[i] = newConnectionPool(
+			b.VBucketServerMap.ServerList[i],
+			b.authHandler(), 4)
+	}
+	return nil
+}
+
 func (p *Pool) refresh() (err error) {
 	p.BucketMap = make(map[string]Bucket)
 
-	ah := basicAuthFromURL(p.client.BaseURL)
-
 	buckets := []Bucket{}
-	err = p.client.parseURLResponse(p.BucketURL["uri"], ah, &buckets)
+	err = p.client.parseURLResponse(p.BucketURL["uri"], &buckets)
 	if err != nil {
 		return err
 	}
 	for _, b := range buckets {
 		b.pool = p
-		b.auth = p.getDefaultAuth(b.Name)
 		b.connections = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
 
 		p.BucketMap[b.Name] = b
@@ -242,7 +259,7 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 		return p, errors.New("No pool named " + name)
 	}
 
-	err = c.parseURLResponse(poolURI, basicAuthFromURL(c.BaseURL), &p)
+	err = c.parseURLResponse(poolURI, &p)
 
 	p.client = *c
 
@@ -268,14 +285,6 @@ func bucket_finalizer(b *Bucket) {
 	}
 }
 
-func (p *Pool) getDefaultAuth(name string) AuthHandler {
-	var pw string
-	if p.client.BaseURL.User != nil {
-		pw, _ = p.client.BaseURL.User.Password()
-	}
-	return &basicAuth{name, pw}
-}
-
 // Get a bucket from within this pool.
 func (p *Pool) GetBucket(name string) (*Bucket, error) {
 	rv, ok := p.BucketMap[name]
@@ -287,7 +296,6 @@ func (p *Pool) GetBucket(name string) (*Bucket, error) {
 	if err != nil {
 		return nil, err
 	}
-	rv.auth = p.getDefaultAuth(name)
 	return &rv, nil
 }
 
