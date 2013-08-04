@@ -58,7 +58,6 @@ func report(c *couchbase.Client, b *couchbase.Bucket) {
 	fmt.Printf("Got %d success messages, %d not-my-vbucket\n",
 		c.Statuses[0], c.Statuses[7])
 	fmt.Printf("-----------------------------------------------------\n")
-	return
 	tr := tabwriter.NewWriter(os.Stdout, 8, 8, 1, ' ', 0)
 	defer tr.Flush()
 	params := map[string]interface{}{
