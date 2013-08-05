@@ -8,6 +8,7 @@ import (
 )
 
 var TimeoutError = errors.New("timeout waiting to build connection")
+var closedPool = errors.New("the pool is closed")
 
 var ConnPoolTimeout = time.Hour * 24 * 30
 
@@ -60,11 +61,17 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (*memcached.Client, er
 	}
 
 	select {
-	case rv := <-cp.connections:
+	case rv, isopen := <-cp.connections:
+		if !isopen {
+			return nil, closedPool
+		}
 		return rv, nil
 	case <-time.After(time.Millisecond):
 		select {
-		case rv := <-cp.connections:
+		case rv, isopen := <-cp.connections:
+			if !isopen {
+				return nil, closedPool
+			}
 			return rv, nil
 		case cp.createsem <- true:
 			// Build a connection if we can't get a real one.
