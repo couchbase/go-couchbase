@@ -104,7 +104,7 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		body, _ := ioutil.ReadAll(res.Body)
-		return fmt.Errorf("Error installing view: %v / %s",
+		return fmt.Errorf("Error reading view: %v / %s",
 			res.Status, body)
 	}
 
