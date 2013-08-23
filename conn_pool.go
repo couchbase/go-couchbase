@@ -120,5 +120,10 @@ func (cp *connectionPool) StartTapFeed(args *memcached.TapArguments) (*memcached
 	if err != nil {
 		return nil, err
 	}
+
+	// A connection can't be used after TAP; Dont' count it against the
+	// connection pool capacity
+	<-cp.createsem
+
 	return mc.StartTapFeed(*args)
 }
