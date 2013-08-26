@@ -10,11 +10,11 @@ import (
 
 type ViewDefinition struct {
 	Map    string `json:"map"`
-	Reduce string `json:"reduce"`
+	Reduce string `json:"reduce,omitempty"`
 }
 
 type DDocJSON struct {
-	Language string                    `json:"language"`
+	Language string                    `json:"language,omitempty"`
 	Views    map[string]ViewDefinition `json:"views"`
 }
 
