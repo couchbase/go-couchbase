@@ -111,3 +111,31 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 	d := json.NewDecoder(res.Body)
 	return d.Decode(into)
 }
+
+// Delete a design document.
+func (b *Bucket) DeleteDDoc(docname string) error {
+	ddocU, err := b.ddocURL(docname)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("DELETE", ddocU, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	maybeAddAuth(req, b.authHandler())
+
+	res, err := HttpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		body, _ := ioutil.ReadAll(res.Body)
+		return fmt.Errorf("Error deleting view: %v / %s",
+			res.Status, body)
+	}
+
+	return nil
+}
