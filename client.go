@@ -445,6 +445,12 @@ var ErrOverwritten = errors.New("Overwritten")
 // if the value hasn't been persisted by the timeout interval
 var ErrTimeout = errors.New("Timeout")
 
+// WaitForPersistence waits for an item to be considered durable.
+//
+// Besides transport errors, ErrOverwritten may be returned if the
+// item is overwritten before it reaches durability.  ErrTimeout may
+// occur if the item isn't found durable in a reasonable amount of
+// time.
 func (b *Bucket) WaitForPersistence(k string, cas uint64, deletion bool) error {
 	timeout := 10 * time.Second
 	sleepDelay := 5 * time.Millisecond
