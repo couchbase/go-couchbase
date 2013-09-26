@@ -28,12 +28,18 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
 	"github.com/dustin/gomemcached"
 	"github.com/dustin/gomemcached/client"
 )
+
+// Maximum number of times to retry a chunk of a bulk get on error.
+var MaxBulkRetries = 10
 
 // Execute a function on a memcached connection to the node owning key "k"
 //
@@ -118,44 +124,97 @@ func (b *Bucket) GetStats(which string) map[string]map[string]string {
 	return rv
 }
 
+// Errors that are not considered fatal for our fetch loop
+func isConnError(err error) bool {
+	if err == io.EOF {
+		return true
+	}
+	estr := err.Error()
+	return strings.Contains(estr, "broken pipe") ||
+		strings.Contains(estr, "connection reset")
+}
+
 func (b *Bucket) doBulkGet(vb uint16, keys []string,
-	ch chan<- map[string]*gomemcached.MCResponse) {
+	ch chan<- map[string]*gomemcached.MCResponse, ech chan error) {
 
-	masterId := b.VBucketServerMap.VBucketMap[vb][0]
-	conn, err := b.connections[masterId].Get()
-	if err != nil {
-		ch <- map[string]*gomemcached.MCResponse{}
-		return
-	}
-	defer b.connections[masterId].Return(conn)
+	rv := map[string]*gomemcached.MCResponse{}
 
-	m, err := conn.GetBulk(vb, keys)
-	switch err.(type) {
-	default:
-		ch <- m
-	case *gomemcached.MCResponse:
-		fmt.Printf("Got a memcached error")
-		st := err.(*gomemcached.MCResponse).Status
-		atomic.AddUint64(&b.pool.client.Statuses[st], 1)
-		if st == gomemcached.NOT_MY_VBUCKET {
-			b.refresh()
+	attempts := 0
+	done := false
+	for attempts < MaxBulkRetries && !done {
+		masterId := b.VBucketServerMap.VBucketMap[vb][0]
+		attempts++
+
+		// This stack frame exists to ensure we can clean up
+		// connection at a reasonable time.
+		err := func() error {
+			conn, err := b.connections[masterId].Get()
+			if err != nil {
+				ch <- map[string]*gomemcached.MCResponse{}
+				return err
+			}
+			defer b.connections[masterId].Return(conn)
+
+			m, err := conn.GetBulk(vb, keys)
+			switch err.(type) {
+			case *gomemcached.MCResponse:
+				st := err.(*gomemcached.MCResponse).Status
+				atomic.AddUint64(&b.pool.client.Statuses[st], 1)
+				if st == gomemcached.NOT_MY_VBUCKET {
+					b.refresh()
+				}
+				// retry
+				return nil
+			case error:
+				if !isConnError(err) {
+					ech <- err
+					ch <- rv
+					return err
+				}
+				// retry
+				return nil
+			}
+			if m != nil {
+				if len(rv) == 0 {
+					rv = m
+				} else {
+					for k, v := range m {
+						rv[k] = v
+					}
+				}
+			}
+			done = true
+			return nil
+		}()
+
+		if err != nil {
+			return
 		}
-		ch <- map[string]*gomemcached.MCResponse{}
 	}
+
+	if attempts > MaxBulkRetries {
+		ech <- fmt.Errorf("BulkGet exceeded MaxBulkRetries for vbucket %d", vb)
+	}
+
+	ch <- rv
 }
 
 func (b *Bucket) processBulkGet(kdm map[uint16][]string,
-	ch chan map[string]*gomemcached.MCResponse) {
-
+	ch chan map[string]*gomemcached.MCResponse, ech chan error) {
 	wch := make(chan uint16)
+	defer close(ch)
+	defer close(ech)
 
+	wg := &sync.WaitGroup{}
 	worker := func() {
+		defer wg.Done()
 		for k := range wch {
-			b.doBulkGet(k, kdm[k], ch)
+			b.doBulkGet(k, kdm[k], ch, ech)
 		}
 	}
 
 	for i := 0; i < 4; i++ {
+		wg.Add(1)
 		go worker()
 	}
 
@@ -163,9 +222,39 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 		wch <- k
 	}
 	close(wch)
-
+	wg.Wait()
 }
-func (b *Bucket) GetBulk(keys []string) map[string]*gomemcached.MCResponse {
+
+type multiError []error
+
+func (m multiError) Error() string {
+	if len(m) == 0 {
+		panic("Error of none")
+	}
+
+	return fmt.Sprintf("{%v errors, starting with %v}", len(m), m[0].Error())
+}
+
+// Convert a stream of errors from ech into a multiError (or nil) and
+// send down eout.
+//
+// At least one send is guaranteed on eout, but two is possible, so
+// buffer the out channel appropriately.
+func errorCollector(ech <-chan error, eout chan<- error) {
+	defer func() { eout <- nil }()
+	var errs multiError
+	for e := range ech {
+		if e != nil {
+			errs = append(errs, e)
+		}
+	}
+
+	if len(errs) > 0 {
+		eout <- errs
+	}
+}
+
+func (b *Bucket) GetBulk(keys []string) (map[string]*gomemcached.MCResponse, error) {
 	// Organize by vbucket
 	kdm := map[uint16][]string{}
 	for _, k := range keys {
@@ -177,20 +266,24 @@ func (b *Bucket) GetBulk(keys []string) map[string]*gomemcached.MCResponse {
 		kdm[vb] = append(a, k)
 	}
 
-	ch := make(chan map[string]*gomemcached.MCResponse)
-	defer close(ch)
+	eout := make(chan error, 2)
 
-	go b.processBulkGet(kdm, ch)
+	// processBulkGet will own both of these channels and
+	// guarantee they're closed before it returns.
+	ch := make(chan map[string]*gomemcached.MCResponse)
+	ech := make(chan error)
+	go b.processBulkGet(kdm, ch, ech)
+
+	go errorCollector(ech, eout)
 
 	rv := map[string]*gomemcached.MCResponse{}
-	for _ = range kdm {
-		m := <-ch
+	for m := range ch {
 		for k, v := range m {
 			rv[k] = v
 		}
 	}
 
-	return rv
+	return rv, <-eout
 }
 
 // A set of option flags for the Write method.
