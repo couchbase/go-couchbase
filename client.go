@@ -244,9 +244,7 @@ func errorCollector(ech <-chan error, eout chan<- error) {
 	defer func() { eout <- nil }()
 	var errs multiError
 	for e := range ech {
-		if e != nil {
-			errs = append(errs, e)
-		}
+		errs = append(errs, e)
 	}
 
 	if len(errs) > 0 {
