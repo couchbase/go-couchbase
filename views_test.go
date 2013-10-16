@@ -1,7 +1,6 @@
 package couchbase
 
 import (
-	"net/url"
 	"testing"
 )
 
@@ -61,7 +60,7 @@ func TestViewURL(t *testing.T) {
 			continue
 		}
 
-		u, err := url.Parse(us)
+		u, err := ParseURL(us)
 		if err != nil {
 			t.Errorf("Failed on %v", test)
 			continue

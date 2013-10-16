@@ -1,6 +1,10 @@
 package couchbase
 
-import "strings"
+import (
+	"fmt"
+	"net/url"
+	"strings"
+)
 
 // Return the hostname with the given suffix removed.
 func CleanupHost(h, commonSuffix string) string {
@@ -31,4 +35,15 @@ func FindCommonSuffix(input []string) string {
 		}
 	}
 	return rv
+}
+
+// Some sanity-checking around URL.Parse, which is woefully trusting of bogus URL strings
+// like "" or "foo bar".
+func ParseURL(urlStr string) (url *url.URL, err error) {
+	url, err = url.Parse(urlStr)
+	if url != nil && url.Scheme == "" {
+		url = nil
+		err = fmt.Errorf("Invalid URL <%s>", urlStr)
+	}
+	return
 }

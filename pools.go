@@ -186,7 +186,7 @@ func (b basicAuth) GetCredentials() (string, string) {
 }
 
 func basicAuthFromURL(us string) (ah AuthHandler) {
-	u, err := url.Parse(us)
+	u, err := ParseURL(us)
 	if err != nil {
 		return
 	}
@@ -200,7 +200,7 @@ func basicAuthFromURL(us string) (ah AuthHandler) {
 // ConnectWithAuth connects to a couchbase cluster with the given
 // authentication handler.
 func ConnectWithAuth(baseU string, ah AuthHandler) (c Client, err error) {
-	c.BaseURL, err = url.Parse(baseU)
+	c.BaseURL, err = ParseURL(baseU)
 	if err != nil {
 		return
 	}
