@@ -39,10 +39,10 @@ func FindCommonSuffix(input []string) string {
 
 // Some sanity-checking around URL.Parse, which is woefully trusting of bogus URL strings
 // like "" or "foo bar".
-func ParseURL(urlStr string) (url *url.URL, err error) {
-	url, err = url.Parse(urlStr)
-	if url != nil && url.Scheme == "" {
-		url = nil
+func ParseURL(urlStr string) (result *url.URL, err error) {
+	result, err = url.Parse(urlStr)
+	if result != nil && result.Scheme == "" {
+		result = nil
 		err = fmt.Errorf("Invalid URL <%s>", urlStr)
 	}
 	return

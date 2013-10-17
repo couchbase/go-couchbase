@@ -12,6 +12,13 @@ func TestViewURL(t *testing.T) {
 		t.Errorf("Expected error on empty bucket, got %v", v)
 	}
 
+	// Missing URL
+	b = Bucket{Nodes: []Node{{}}}
+	v, err = b.ViewURL("a", "b", nil)
+	if err == nil {
+		t.Errorf("Expected error on missing URL, got %v", v)
+	}
+
 	// Invalidish URL
 	b = Bucket{Nodes: []Node{{CouchAPIBase: "::gopher:://localhost:80x92/"}}}
 	v, err = b.ViewURL("a", "b", nil)

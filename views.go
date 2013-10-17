@@ -35,9 +35,13 @@ func (b *Bucket) randomBaseURL() (*url.URL, error) {
 	if len(b.Nodes) == 0 {
 		return nil, errors.New("no couch rest URLs")
 	}
-	node := b.Nodes[rand.Intn(len(b.Nodes))]
+	nodeNo := rand.Intn(len(b.Nodes))
+	node := b.Nodes[nodeNo]
 	u, err := ParseURL(node.CouchAPIBase)
-	if err == nil && b.pool != nil {
+	if err != nil {
+		return nil, fmt.Errorf("Config error: Bucket %q node #%d CouchAPIBase=%q: %v",
+			b.Name, nodeNo, node.CouchAPIBase, err)
+	} else if b.pool != nil {
 		u.User = b.pool.client.BaseURL.User
 	}
 	return u, err
