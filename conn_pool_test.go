@@ -27,7 +27,7 @@ func testMkConn(h string, ah AuthHandler) (*memcached.Client, error) {
 }
 
 func TestConnPool(t *testing.T) {
-	cp := newConnectionPool("h", &basicAuth{}, 3)
+	cp := newConnectionPool("h", &basicAuth{}, 3, 6)
 	cp.mkConn = testMkConn
 
 	seenClients := map[*memcached.Client]bool{}

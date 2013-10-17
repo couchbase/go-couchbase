@@ -18,6 +18,12 @@ import (
 // The HTTP Client To Use
 var HttpClient = http.DefaultClient
 
+// Size of the connection pools (per host).
+var PoolSize = 4
+
+// Number of overflow connections allowed in a pool.
+var PoolOverflow = PoolSize * 2
+
 // Auth callback gets the auth username and password for the given
 // bucket.
 type AuthHandler interface {
@@ -225,7 +231,7 @@ func (b *Bucket) refresh() (err error) {
 	for i := range b.connections {
 		b.connections[i] = newConnectionPool(
 			b.VBucketServerMap.ServerList[i],
-			b.authHandler(), 4)
+			b.authHandler(), PoolSize, PoolOverflow)
 	}
 	return nil
 }

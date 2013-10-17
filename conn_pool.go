@@ -20,11 +20,11 @@ type connectionPool struct {
 	createsem   chan bool
 }
 
-func newConnectionPool(host string, ah AuthHandler, poolSize int) *connectionPool {
+func newConnectionPool(host string, ah AuthHandler, poolSize, poolOverflow int) *connectionPool {
 	return &connectionPool{
 		host:        host,
 		connections: make(chan *memcached.Client, poolSize),
-		createsem:   make(chan bool, 2*poolSize),
+		createsem:   make(chan bool, poolOverflow),
 		mkConn:      defaultMkConn,
 		auth:        ah,
 	}
