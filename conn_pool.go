@@ -24,7 +24,7 @@ func newConnectionPool(host string, ah AuthHandler, poolSize, poolOverflow int) 
 	return &connectionPool{
 		host:        host,
 		connections: make(chan *memcached.Client, poolSize),
-		createsem:   make(chan bool, poolOverflow),
+		createsem:   make(chan bool, poolSize+poolOverflow),
 		mkConn:      defaultMkConn,
 		auth:        ah,
 	}

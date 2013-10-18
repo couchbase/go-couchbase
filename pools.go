@@ -22,7 +22,7 @@ var HttpClient = http.DefaultClient
 var PoolSize = 4
 
 // Number of overflow connections allowed in a pool.
-var PoolOverflow = PoolSize * 2
+var PoolOverflow = PoolSize
 
 // Auth callback gets the auth username and password for the given
 // bucket.
