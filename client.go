@@ -48,7 +48,7 @@ var MaxBulkRetries = 10
 // your command will only be executed only once.
 func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) error {
 	vb := b.VBHash(k)
-	for {
+	for i := 0; i < len(b.connections)*2; i++ {
 		masterId := b.VBucketServerMap.VBucketMap[vb][0]
 		conn, err := b.connections[masterId].Get()
 		defer b.connections[masterId].Return(conn)
@@ -70,6 +70,9 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) err
 			}
 		}
 	}
+
+	return fmt.Errorf("Unable to complete action after %v retries",
+		len(b.connections)*2)
 }
 
 type gathered_stats struct {
