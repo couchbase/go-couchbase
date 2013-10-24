@@ -102,8 +102,20 @@ type Bucket struct {
 	Controllers map[string]interface{} `json:"controllers,omitempty"`
 
 	pool        *Pool
-	connections []*connectionPool
+	connPools   []*connectionPool
 	commonSufix string
+}
+
+func (b Bucket) getConnPools() []*connectionPool {
+	return b.connPools
+}
+
+func (b Bucket) getConnPool(i int) *connectionPool {
+	p := b.getConnPools()
+	if len(p) > i {
+		return p[i]
+	}
+	return nil
 }
 
 func (b Bucket) authHandler() (ah AuthHandler) {
@@ -228,8 +240,8 @@ func (b *Bucket) refresh() (err error) {
 		return err
 	}
 	b.pool = pool
-	for i := range b.connections {
-		b.connections[i] = newConnectionPool(
+	for i := range b.connPools {
+		b.connPools[i] = newConnectionPool(
 			b.VBucketServerMap.ServerList[i],
 			b.authHandler(), PoolSize, PoolOverflow)
 	}
@@ -246,7 +258,7 @@ func (p *Pool) refresh() (err error) {
 	}
 	for _, b := range buckets {
 		b.pool = p
-		b.connections = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
+		b.connPools = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
 
 		p.BucketMap[b.Name] = b
 	}
@@ -275,18 +287,18 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 
 // Mark this bucket as no longer needed, closing connections it may have open.
 func (b *Bucket) Close() {
-	if b.connections != nil {
-		for _, c := range b.connections {
+	if b.connPools != nil {
+		for _, c := range b.connPools {
 			if c != nil {
 				c.Close()
 			}
 		}
-		b.connections = nil
+		b.connPools = nil
 	}
 }
 
 func bucket_finalizer(b *Bucket) {
-	if b.connections != nil {
+	if b.connPools != nil {
 		log.Printf("Warning: Finalizing a bucket with active connections.")
 	}
 }

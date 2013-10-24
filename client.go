@@ -48,10 +48,12 @@ var MaxBulkRetries = 10
 // your command will only be executed only once.
 func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) error {
 	vb := b.VBHash(k)
-	for i := 0; i < len(b.connections)*2; i++ {
+	maxTries := len(b.VBucketServerMap.ServerList) * 2
+	for i := 0; i < maxTries; i++ {
 		masterId := b.VBucketServerMap.VBucketMap[vb][0]
-		conn, err := b.connections[masterId].Get()
-		defer b.connections[masterId].Return(conn)
+		pool := b.getConnPool(masterId)
+		conn, err := pool.Get()
+		defer pool.Return(conn)
 		if err != nil {
 			return err
 		}
@@ -71,8 +73,8 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) err
 		}
 	}
 
-	return fmt.Errorf("Unable to complete action after %v retries",
-		len(b.connections)*2)
+	return fmt.Errorf("Unable to complete action after %v attemps",
+		maxTries)
 }
 
 type gathered_stats struct {
@@ -85,8 +87,9 @@ func getStatsParallel(b *Bucket, offset int, which string,
 	sn := b.VBucketServerMap.ServerList[offset]
 
 	results := map[string]string{}
-	conn, err := b.connections[offset].Get()
-	defer b.connections[offset].Return(conn)
+	pool := b.getConnPool(offset)
+	conn, err := pool.Get()
+	defer pool.Return(conn)
 	if err != nil {
 		ch <- gathered_stats{sn, results}
 	} else {
@@ -151,12 +154,13 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 		// This stack frame exists to ensure we can clean up
 		// connection at a reasonable time.
 		err := func() error {
-			conn, err := b.connections[masterId].Get()
+			pool := b.getConnPool(masterId)
+			conn, err := pool.Get()
 			if err != nil {
 				ch <- map[string]*gomemcached.MCResponse{}
 				return err
 			}
-			defer b.connections[masterId].Return(conn)
+			defer pool.Return(conn)
 
 			m, err := conn.GetBulk(vb, keys)
 			switch err.(type) {
