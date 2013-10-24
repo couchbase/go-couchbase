@@ -233,9 +233,9 @@ func Connect(baseU string) (Client, error) {
 	return ConnectWithAuth(baseU, basicAuthFromURL(baseU))
 }
 
-func (b *Bucket) refresh() (err error) {
+func (b *Bucket) refresh() error {
 	pool := b.pool
-	err = pool.client.parseURLResponse(b.URI, b)
+	err := pool.client.parseURLResponse(b.URI, b)
 	if err != nil {
 		return err
 	}
