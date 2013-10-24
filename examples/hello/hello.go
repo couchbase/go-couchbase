@@ -35,11 +35,11 @@ func doOps(b *couchbase.Bucket) {
 }
 
 func exploreBucket(bucket *couchbase.Bucket) {
-	fmt.Printf("     %v uses %s\n", bucket.Name,
-		bucket.VBucketServerMap.HashAlgorithm)
-	for pos, server := range bucket.VBucketServerMap.ServerList {
+	vbm := bucket.VBServerMap()
+	fmt.Printf("     %v uses %s\n", bucket.Name, vbm.HashAlgorithm)
+	for pos, server := range vbm.ServerList {
 		vbs := make([]string, 0, 1024)
-		for vb, a := range bucket.VBucketServerMap.VBucketMap {
+		for vb, a := range vbm.VBucketMap {
 			if a[0] == pos {
 				vbs = append(vbs, strconv.Itoa(vb))
 			}

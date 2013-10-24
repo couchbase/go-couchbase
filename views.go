@@ -32,11 +32,12 @@ type ViewResult struct {
 }
 
 func (b *Bucket) randomBaseURL() (*url.URL, error) {
-	if len(b.Nodes) == 0 {
+	if len(b.Nodes()) == 0 {
 		return nil, errors.New("no couch rest URLs")
 	}
-	nodeNo := rand.Intn(len(b.Nodes))
-	node := b.Nodes[nodeNo]
+	nodes := b.Nodes()
+	nodeNo := rand.Intn(len(nodes))
+	node := nodes[nodeNo]
 	if node.CouchAPIBase == "" {
 		// Probably in "warmup" state
 		return nil, fmt.Errorf("Bucket is in %q state, not ready for view queries", node.Status)

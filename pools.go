@@ -13,6 +13,8 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync/atomic"
+	"unsafe"
 )
 
 // The HTTP Client To Use
@@ -73,6 +75,13 @@ type Pool struct {
 	client Client
 }
 
+type VBucketServerMap struct {
+	HashAlgorithm string   `json:"hashAlgorithm"`
+	NumReplicas   int      `json:"numReplicas"`
+	ServerList    []string `json:"serverList"`
+	VBucketMap    [][]int  `json:"vBucketMap"`
+}
+
 // An individual bucket.  Herein lives the most useful stuff.
 type Bucket struct {
 	AuthType            string             `json:"authType"`
@@ -81,7 +90,6 @@ type Bucket struct {
 	Type                string             `json:"bucketType"`
 	Name                string             `json:"name"`
 	NodeLocator         string             `json:"nodeLocator"`
-	Nodes               []Node             `json:"nodes"`
 	Quota               map[string]float64 `json:"quota,omitempty"`
 	Replicas            int                `json:"replicaNumber"`
 	Password            string             `json:"saslPassword"`
@@ -92,22 +100,46 @@ type Bucket struct {
 	DDocs               struct {
 		URI string `json:"uri"`
 	} `json:"ddocs,omitempty"`
-	VBucketServerMap struct {
-		HashAlgorithm string   `json:"hashAlgorithm"`
-		NumReplicas   int      `json:"numReplicas"`
-		ServerList    []string `json:"serverList"`
-		VBucketMap    [][]int  `json:"vBucketMap"`
-	} `json:"vBucketServerMap"`
 	BasicStats  map[string]interface{} `json:"basicStats,omitempty"`
 	Controllers map[string]interface{} `json:"controllers,omitempty"`
 
-	pool        *Pool
-	connPools   []*connectionPool
-	commonSufix string
+	// These are used for JSON IO, but isn't used for processing
+	// since it needs to be swapped out safely.
+	VBSMJson  VBucketServerMap `json:"vBucketServerMap"`
+	NodesJson []Node           `json:"nodes"`
+
+	pool             *Pool
+	connPools        unsafe.Pointer // *[]*connectionPool
+	vBucketServerMap unsafe.Pointer // *VBucketServerMap
+	nodeList         unsafe.Pointer // *[]Node
+	commonSufix      string
+}
+
+// Get the current vbucket server map
+func (b Bucket) VBServerMap() *VBucketServerMap {
+	return (*VBucketServerMap)(atomic.LoadPointer(&b.vBucketServerMap))
+}
+
+func (b Bucket) Nodes() []Node {
+	return *(*[]Node)(atomic.LoadPointer(&b.nodeList))
 }
 
 func (b Bucket) getConnPools() []*connectionPool {
-	return b.connPools
+	return *(*[]*connectionPool)(atomic.LoadPointer(&b.connPools))
+}
+
+func (b *Bucket) replaceConnPools(with []*connectionPool) {
+	for {
+		old := atomic.LoadPointer(&b.connPools)
+		if atomic.CompareAndSwapPointer(&b.connPools, old, unsafe.Pointer(&with)) {
+			if old != nil {
+				for _, pool := range *(*[]*connectionPool)(old) {
+					pool.Close()
+				}
+			}
+			return
+		}
+	}
 }
 
 func (b Bucket) getConnPool(i int) *connectionPool {
@@ -130,8 +162,9 @@ func (b Bucket) authHandler() (ah AuthHandler) {
 
 // Get the (sorted) list of memcached node addresses (hostname:port).
 func (b Bucket) NodeAddresses() []string {
-	rv := make([]string, len(b.VBucketServerMap.ServerList))
-	copy(rv, b.VBucketServerMap.ServerList)
+	vsm := b.VBServerMap()
+	rv := make([]string, len(vsm.ServerList))
+	copy(rv, vsm.ServerList)
 	sort.Strings(rv)
 	return rv
 }
@@ -139,7 +172,7 @@ func (b Bucket) NodeAddresses() []string {
 // Get the longest common suffix of all host:port strings in the node list.
 func (b Bucket) CommonAddressSuffix() string {
 	input := []string{}
-	for _, n := range b.Nodes {
+	for _, n := range b.Nodes() {
 		input = append(input, n.Hostname)
 	}
 	return FindCommonSuffix(input)
@@ -235,16 +268,20 @@ func Connect(baseU string) (Client, error) {
 
 func (b *Bucket) refresh() error {
 	pool := b.pool
-	err := pool.client.parseURLResponse(b.URI, b)
+	tmpb := &Bucket{}
+	err := pool.client.parseURLResponse(b.URI, tmpb)
 	if err != nil {
 		return err
 	}
-	b.pool = pool
-	for i := range b.connPools {
-		b.connPools[i] = newConnectionPool(
-			b.VBucketServerMap.ServerList[i],
+	newcps := make([]*connectionPool, len(b.VBSMJson.ServerList))
+	for i := range newcps {
+		newcps[i] = newConnectionPool(
+			tmpb.VBSMJson.ServerList[i],
 			b.authHandler(), PoolSize, PoolOverflow)
 	}
+	b.replaceConnPools(newcps)
+	atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&b.VBSMJson))
+	atomic.StorePointer(&b.nodeList, unsafe.Pointer(&b.NodesJson))
 	return nil
 }
 
@@ -258,7 +295,8 @@ func (p *Pool) refresh() (err error) {
 	}
 	for _, b := range buckets {
 		b.pool = p
-		b.connPools = make([]*connectionPool, len(b.VBucketServerMap.ServerList))
+		b.nodeList = unsafe.Pointer(&b.NodesJson)
+		b.replaceConnPools(make([]*connectionPool, len(b.VBSMJson.ServerList)))
 
 		p.BucketMap[b.Name] = b
 	}
@@ -288,7 +326,7 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 // Mark this bucket as no longer needed, closing connections it may have open.
 func (b *Bucket) Close() {
 	if b.connPools != nil {
-		for _, c := range b.connPools {
+		for _, c := range b.getConnPools() {
 			if c != nil {
 				c.Close()
 			}

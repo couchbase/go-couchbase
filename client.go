@@ -48,9 +48,10 @@ var MaxBulkRetries = 10
 // your command will only be executed only once.
 func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) error {
 	vb := b.VBHash(k)
-	maxTries := len(b.VBucketServerMap.ServerList) * 2
+	maxTries := len(b.Nodes()) * 2
 	for i := 0; i < maxTries; i++ {
-		masterId := b.VBucketServerMap.VBucketMap[vb][0]
+		vbm := b.VBServerMap()
+		masterId := vbm.VBucketMap[vb][0]
 		pool := b.getConnPool(masterId)
 		conn, err := pool.Get()
 		defer pool.Return(conn)
@@ -84,7 +85,7 @@ type gathered_stats struct {
 
 func getStatsParallel(b *Bucket, offset int, which string,
 	ch chan<- gathered_stats) {
-	sn := b.VBucketServerMap.ServerList[offset]
+	sn := b.VBServerMap().ServerList[offset]
 
 	results := map[string]string{}
 	pool := b.getConnPool(offset)
@@ -108,19 +109,20 @@ func getStatsParallel(b *Bucket, offset int, which string,
 func (b *Bucket) GetStats(which string) map[string]map[string]string {
 	rv := map[string]map[string]string{}
 
-	if b.VBucketServerMap.ServerList == nil {
+	vsm := b.VBServerMap()
+	if vsm.ServerList == nil {
 		return rv
 	}
 	// Go grab all the things at once.
-	todo := len(b.VBucketServerMap.ServerList)
+	todo := len(vsm.ServerList)
 	ch := make(chan gathered_stats, todo)
 
-	for offset := range b.VBucketServerMap.ServerList {
+	for offset := range vsm.ServerList {
 		go getStatsParallel(b, offset, which, ch)
 	}
 
 	// Gather the results
-	for i := 0; i < len(b.VBucketServerMap.ServerList); i++ {
+	for i := 0; i < len(vsm.ServerList); i++ {
 		g := <-ch
 		if len(g.vals) > 0 {
 			rv[g.sn] = g.vals
@@ -148,7 +150,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 	attempts := 0
 	done := false
 	for attempts < MaxBulkRetries && !done {
-		masterId := b.VBucketServerMap.VBucketMap[vb][0]
+		masterId := b.VBServerMap().VBucketMap[vb][0]
 		attempts++
 
 		// This stack frame exists to ensure we can clean up

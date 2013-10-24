@@ -2,11 +2,13 @@ package couchbase
 
 import (
 	"testing"
+	"unsafe"
 )
 
 func testBucket() Bucket {
-	b := Bucket{}
-	b.VBucketServerMap.VBucketMap = make([][]int, 256)
+	b := Bucket{vBucketServerMap: unsafe.Pointer(&VBucketServerMap{
+		VBucketMap: make([][]int, 256),
+	})}
 	return b
 }
 

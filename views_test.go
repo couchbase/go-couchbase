@@ -2,32 +2,30 @@ package couchbase
 
 import (
 	"testing"
+	"unsafe"
 )
 
-func TestViewURL(t *testing.T) {
-	b := Bucket{}
-	// No URLs
-	v, err := b.ViewURL("a", "b", nil)
-	if err == nil {
-		t.Errorf("Expected error on empty bucket, got %v", v)
-	}
+func mkNL(in []Node) unsafe.Pointer {
+	return unsafe.Pointer(&in)
+}
 
+func TestViewURL(t *testing.T) {
 	// Missing URL
-	b = Bucket{Nodes: []Node{{}}}
-	v, err = b.ViewURL("a", "b", nil)
+	b := Bucket{nodeList: mkNL([]Node{{}})}
+	v, err := b.ViewURL("a", "b", nil)
 	if err == nil {
 		t.Errorf("Expected error on missing URL, got %v", v)
 	}
 
 	// Invalidish URL
-	b = Bucket{Nodes: []Node{{CouchAPIBase: "::gopher:://localhost:80x92/"}}}
+	b = Bucket{nodeList: mkNL([]Node{{CouchAPIBase: "::gopher:://localhost:80x92/"}})}
 	v, err = b.ViewURL("a", "b", nil)
 	if err == nil {
 		t.Errorf("Expected error on broken URL, got %v", v)
 	}
 
 	// Unmarshallable parameter
-	b = Bucket{Nodes: []Node{{CouchAPIBase: "http:://localhost:8092/"}}}
+	b = Bucket{nodeList: mkNL([]Node{{CouchAPIBase: "http:://localhost:8092/"}})}
 	v, err = b.ViewURL("a", "b",
 		map[string]interface{}{"ch": make(chan bool)})
 	if err == nil {
@@ -59,7 +57,8 @@ func TestViewURL(t *testing.T) {
 		{"", "_all_docs", nil, "/x/_all_docs", map[string]string{}},
 	}
 
-	b = Bucket{Name: "x", Nodes: []Node{{CouchAPIBase: "http://localhost:8092/"}}}
+	b = Bucket{Name: "x",
+		nodeList: mkNL([]Node{{CouchAPIBase: "http://localhost:8092/"}})}
 	for _, test := range tests {
 		us, err := b.ViewURL(test.ddoc, test.name, test.params)
 		if err != nil {

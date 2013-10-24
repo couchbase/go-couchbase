@@ -74,5 +74,6 @@ func (b *Bucket) VBHash(key string) uint32 {
 	for x := 0; x < len(key); x++ {
 		crc = (crc >> 8) ^ crc32tab[(uint64(crc)^uint64(key[x]))&0xff]
 	}
-	return ((^crc) >> 16) & 0x7fff & (uint32(len(b.VBucketServerMap.VBucketMap)) - 1)
+	vbm := b.VBServerMap()
+	return ((^crc) >> 16) & 0x7fff & (uint32(len(vbm.VBucketMap)) - 1)
 }

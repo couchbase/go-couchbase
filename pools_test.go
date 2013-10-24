@@ -3,6 +3,7 @@ package couchbase
 import (
 	"encoding/json"
 	"testing"
+	"unsafe"
 )
 
 var samplePools = `{
@@ -288,24 +289,25 @@ func TestPool(t *testing.T) {
 }
 
 func TestCommonAddressSuffixEmpty(t *testing.T) {
-	b := Bucket{}
+	b := Bucket{nodeList: mkNL([]Node{})}
 	assert(t, "empty", "", b.CommonAddressSuffix())
 }
 
 func TestCommonAddressSuffixUncommon(t *testing.T) {
-	b := Bucket{}
-	b.VBucketServerMap.ServerList = []string{"somestring", "unrelated"}
+	b := Bucket{vBucketServerMap: unsafe.Pointer(&VBucketServerMap{
+		ServerList: []string{"somestring", "unrelated"}}),
+		nodeList: mkNL([]Node{}),
+	}
 	assert(t, "shouldn't match", "", b.CommonAddressSuffix())
 }
 
 func TestCommonAddressSuffixCommon(t *testing.T) {
-	b := Bucket{}
-	b.Nodes = []Node{
+	b := Bucket{nodeList: unsafe.Pointer(&[]Node{
 		{Hostname: "server1.example.com:11210"},
 		{Hostname: "server2.example.com:11210"},
 		{Hostname: "server3.example.com:11210"},
 		{Hostname: "server4.example.com:11210"},
-	}
+	})}
 	assert(t, "useful suffix", ".example.com:11210",
 		b.CommonAddressSuffix())
 }
