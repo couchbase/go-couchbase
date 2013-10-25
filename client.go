@@ -201,7 +201,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 		}
 	}
 
-	if attempts > MaxBulkRetries {
+	if attempts == MaxBulkRetries {
 		ech <- fmt.Errorf("BulkGet exceeded MaxBulkRetries for vbucket %d", vb)
 	}
 
