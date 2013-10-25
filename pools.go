@@ -273,7 +273,7 @@ func (b *Bucket) refresh() error {
 	if err != nil {
 		return err
 	}
-	newcps := make([]*connectionPool, len(b.VBSMJson.ServerList))
+	newcps := make([]*connectionPool, len(tmpb.VBSMJson.ServerList))
 	for i := range newcps {
 		newcps[i] = newConnectionPool(
 			tmpb.VBSMJson.ServerList[i],
