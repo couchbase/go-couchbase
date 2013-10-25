@@ -280,8 +280,8 @@ func (b *Bucket) refresh() error {
 			b.authHandler(), PoolSize, PoolOverflow)
 	}
 	b.replaceConnPools(newcps)
-	atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&b.VBSMJson))
-	atomic.StorePointer(&b.nodeList, unsafe.Pointer(&b.NodesJson))
+	atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&tmpb.VBSMJson))
+	atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJson))
 	return nil
 }
 
