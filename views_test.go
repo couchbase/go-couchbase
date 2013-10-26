@@ -58,11 +58,11 @@ func TestViewURL(t *testing.T) {
 	}
 
 	b = Bucket{Name: "x",
-		nodeList: mkNL([]Node{{CouchAPIBase: "http://localhost:8092/"}})}
+		nodeList: mkNL([]Node{{CouchAPIBase: "http://localhost:8092/", Status: "healthy"}})}
 	for _, test := range tests {
 		us, err := b.ViewURL(test.ddoc, test.name, test.params)
 		if err != nil {
-			t.Errorf("Failed on %v", test)
+			t.Errorf("Failed on %v: %v", test, err)
 			continue
 		}
 

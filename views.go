@@ -32,10 +32,15 @@ type ViewResult struct {
 }
 
 func (b *Bucket) randomBaseURL() (*url.URL, error) {
-	if len(b.Nodes()) == 0 {
-		return nil, errors.New("no couch rest URLs")
+	nodes := []Node{}
+	for _, n := range b.Nodes() {
+		if n.Status == "healthy" {
+			nodes = append(nodes, n)
+		}
 	}
-	nodes := b.Nodes()
+	if len(nodes) == 0 {
+		return nil, errors.New("no available couch rest URLs")
+	}
 	nodeNo := rand.Intn(len(nodes))
 	node := nodes[nodeNo]
 	if node.CouchAPIBase == "" {
