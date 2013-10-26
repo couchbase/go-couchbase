@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math/rand"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -194,8 +195,12 @@ func maybeAddAuth(req *http.Request, ah AuthHandler) {
 	}
 }
 
-func (c *Client) parseURLResponse(path string, out interface{}) error {
-	u := *c.BaseURL
+func queryRestAPI(
+	baseUrl *url.URL,
+	path string,
+	authHandler AuthHandler,
+	out interface{}) error {
+	u := *baseUrl
 	u.User = nil
 	if q := strings.Index(path, "?"); q > 0 {
 		u.Path = path[:q]
@@ -208,7 +213,7 @@ func (c *Client) parseURLResponse(path string, out interface{}) error {
 	if err != nil {
 		return err
 	}
-	maybeAddAuth(req, c.ah)
+	maybeAddAuth(req, authHandler)
 
 	res, err := HttpClient.Do(req)
 	if err != nil {
@@ -226,6 +231,39 @@ func (c *Client) parseURLResponse(path string, out interface{}) error {
 		return err
 	}
 	return nil
+}
+
+func (c *Client) parseURLResponse(path string, out interface{}) error {
+	return queryRestAPI(c.BaseURL, path, c.ah, out)
+}
+
+func (b *Bucket) parseURLResponse(path string, out interface{}) error {
+	nodes := b.Nodes()
+	if len(nodes) == 0 {
+		return errors.New("no couch rest URLs")
+	}
+
+	// Pick a random node to start querying.
+	startNode := rand.Intn(len(nodes))
+	maxRetries := len(nodes)
+	for i := 0; i < maxRetries; i++ {
+		node := nodes[(startNode+i)%len(nodes)] // Wrap around the nodes list.
+		// Skip non-healthy nodes.
+		if node.Status != "healthy" {
+			continue
+		}
+
+		url := &url.URL{
+			Host:   node.Hostname,
+			Scheme: "http",
+		}
+
+		err := queryRestAPI(url, path, b.pool.client.ah, out)
+		if err == nil {
+			return err
+		}
+	}
+	return errors.New("All nodes failed to respond.")
 }
 
 type basicAuth struct {
