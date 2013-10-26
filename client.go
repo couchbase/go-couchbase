@@ -50,27 +50,34 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) err
 	vb := b.VBHash(k)
 	maxTries := len(b.Nodes()) * 2
 	for i := 0; i < maxTries; i++ {
-		vbm := b.VBServerMap()
-		masterId := vbm.VBucketMap[vb][0]
-		pool := b.getConnPool(masterId)
-		conn, err := pool.Get()
-		defer pool.Return(conn)
-		if err != nil {
-			return err
-		}
-
-		err = f(conn, uint16(vb))
-		switch i := err.(type) {
-		default:
-			return err
-		case *gomemcached.MCResponse:
-			st := i.Status
-			atomic.AddUint64(&b.pool.client.Statuses[st], 1)
-			if st == gomemcached.NOT_MY_VBUCKET {
-				b.refresh()
-			} else {
-				return err
+		// We encapsulate the attempt within an anonymous function to allow
+		// "defer" statement to work as intended.
+		retry, err := func() (retry bool, err error) {
+			vbm := b.VBServerMap()
+			masterId := vbm.VBucketMap[vb][0]
+			pool := b.getConnPool(masterId)
+			conn, err := pool.Get()
+			defer pool.Return(conn)
+			if err != nil {
+				return
 			}
+
+			err = f(conn, uint16(vb))
+			switch i := err.(type) {
+			case *gomemcached.MCResponse:
+				st := i.Status
+				atomic.AddUint64(&b.pool.client.Statuses[st], 1)
+				if st == gomemcached.NOT_MY_VBUCKET {
+					retry = true
+				}
+			}
+			return
+		}()
+
+		if retry {
+			b.refresh()
+		} else {
+			return err
 		}
 	}
 
