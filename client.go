@@ -67,9 +67,7 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) err
 			case *gomemcached.MCResponse:
 				st := i.Status
 				atomic.AddUint64(&b.pool.client.Statuses[st], 1)
-				if st == gomemcached.NOT_MY_VBUCKET {
-					retry = true
-				}
+				retry = st == gomemcached.NOT_MY_VBUCKET
 			}
 			return
 		}()
