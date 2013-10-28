@@ -34,7 +34,7 @@ type ViewResult struct {
 func (b *Bucket) randomBaseURL() (*url.URL, error) {
 	nodes := []Node{}
 	for _, n := range b.Nodes() {
-		if n.Status == "healthy" {
+		if n.Status == "healthy" && n.CouchAPIBase != "" {
 			nodes = append(nodes, n)
 		}
 	}
@@ -43,10 +43,6 @@ func (b *Bucket) randomBaseURL() (*url.URL, error) {
 	}
 	nodeNo := rand.Intn(len(nodes))
 	node := nodes[nodeNo]
-	if node.CouchAPIBase == "" {
-		// Probably in "warmup" state
-		return nil, fmt.Errorf("Bucket is in %q state, not ready for view queries", node.Status)
-	}
 	u, err := ParseURL(node.CouchAPIBase)
 	if err != nil {
 		return nil, fmt.Errorf("Config error: Bucket %q node #%d CouchAPIBase=%q: %v",
