@@ -92,3 +92,17 @@ func TestViewURL(t *testing.T) {
 		}
 	}
 }
+
+func TestBadViewParam(t *testing.T) {
+	b := Bucket{Name: "x",
+		nodeList: mkNL([]Node{{CouchAPIBase: "http://localhost:8092/",
+			Status: "healthy"}})}
+	thing, err := b.ViewURL("adoc", "aview", map[string]interface{}{
+		"aparam": make(chan bool),
+	})
+	if err == nil {
+		t.Errorf("Failed to build a view with a bad param, got %v",
+			thing)
+	}
+
+}
