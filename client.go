@@ -164,8 +164,8 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 			pool := b.getConnPool(masterId)
 			conn, err := pool.Get()
 			if err != nil {
-				ch <- map[string]*gomemcached.MCResponse{}
-				return err
+				// retry
+				return nil
 			}
 			defer pool.Return(conn)
 
