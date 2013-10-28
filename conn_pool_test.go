@@ -118,3 +118,16 @@ func TestConnPoolNil(t *testing.T) {
 	// This just shouldn't error.
 	cp.Return(c)
 }
+
+func TestConnPoolClosed(t *testing.T) {
+	cp := newConnectionPool("h", &basicAuth{}, 3, 6)
+	cp.mkConn = testMkConn
+	c, err := cp.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp.Close()
+
+	// This just shouldn't error.
+	cp.Return(c)
+}
