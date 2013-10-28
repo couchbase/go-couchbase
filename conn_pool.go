@@ -7,9 +7,11 @@ import (
 	"github.com/dustin/gomemcached/client"
 )
 
+// Error raised when a connection can't be retrieved from a pool.
 var TimeoutError = errors.New("timeout waiting to build connection")
 var closedPool = errors.New("the pool is closed")
 
+// Default timeout for retrieving a connection from the pool.
 var ConnPoolTimeout = time.Hour * 24 * 30
 
 type connectionPool struct {
