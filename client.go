@@ -311,6 +311,8 @@ const (
 	// If set, Write will wait until the value is available to be indexed by views.
 	// (In Couchbase Server 2.x, this has the same effect as the Persist flag.)
 	Indexable
+	// If set, data is appended to existing value instead of replacing it.
+	Append
 )
 
 // Error returned from Write with AddOnly flag, when key already exists in the bucket.
@@ -349,6 +351,8 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 					err = res
 				}
 			}
+		} else if opt&Append != 0 {
+			res, err = mc.Append(vb, k, data)
 		} else if data == nil {
 			res, err = mc.Del(vb, k)
 		} else {
@@ -395,6 +399,10 @@ func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
 		return false, nil
 	}
 	return (err == nil), err
+}
+
+func (b *Bucket) Append(k string, data []byte) error {
+	return b.Write(k, 0, 0, data, Append|Raw)
 }
 
 // Get a raw value from this bucket, including its CAS counter and flags.
