@@ -39,7 +39,7 @@ import (
 )
 
 // Maximum number of times to retry a chunk of a bulk get on error.
-var MaxBulkRetries = 10
+var MaxBulkRetries = 1000
 
 // Execute a function on a memcached connection to the node owning key "k"
 //
