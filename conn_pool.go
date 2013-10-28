@@ -98,17 +98,17 @@ func (cp *connectionPool) Return(c *memcached.Client) {
 		return
 	}
 
-	defer func() {
-		if recover() != nil {
-			// This happens when the pool ahs alread been
-			// closed and we're trying to return a
-			// connection to it anyway.  Just close the
-			// connection.
-			c.Close()
-		}
-	}()
-
 	if c.IsHealthy() {
+		defer func() {
+			if recover() != nil {
+				// This happens when the pool has already been
+				// closed and we're trying to return a
+				// connection to it anyway.  Just close the
+				// connection.
+				c.Close()
+			}
+		}()
+
 		select {
 		case cp.connections <- c:
 		default:
