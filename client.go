@@ -176,9 +176,10 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 				atomic.AddUint64(&b.pool.client.Statuses[st], 1)
 				if st == gomemcached.NOT_MY_VBUCKET {
 					b.refresh()
+					// retry
+					err = nil
 				}
-				// retry
-				return nil
+				return err
 			case error:
 				if !isConnError(err) {
 					ech <- err
