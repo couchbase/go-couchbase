@@ -62,13 +62,17 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (*memcached.Client, er
 		return nil, errors.New("no pool")
 	}
 
+	t := time.NewTimer(time.Millisecond)
+	defer t.Stop()
+
 	select {
 	case rv, isopen := <-cp.connections:
 		if !isopen {
 			return nil, closedPool
 		}
 		return rv, nil
-	case <-time.After(time.Millisecond):
+	case <-t.C:
+		t.Reset(d) // Reuse the timer for the full timeout.
 		select {
 		case rv, isopen := <-cp.connections:
 			if !isopen {
@@ -85,7 +89,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (*memcached.Client, er
 				<-cp.createsem
 			}
 			return rv, err
-		case <-time.After(d):
+		case <-t.C:
 			return nil, TimeoutError
 		}
 	}
