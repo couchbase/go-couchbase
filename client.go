@@ -31,7 +31,6 @@ import (
 	"io"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/dustin/gomemcached"
@@ -66,7 +65,6 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) err
 			switch i := err.(type) {
 			case *gomemcached.MCResponse:
 				st := i.Status
-				atomic.AddUint64(&b.pool.client.Statuses[st], 1)
 				retry = st == gomemcached.NOT_MY_VBUCKET
 			}
 			return
@@ -173,7 +171,6 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 			switch err.(type) {
 			case *gomemcached.MCResponse:
 				st := err.(*gomemcached.MCResponse).Status
-				atomic.AddUint64(&b.pool.client.Statuses[st], 1)
 				if st == gomemcached.NOT_MY_VBUCKET {
 					b.refresh()
 					// retry

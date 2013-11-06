@@ -181,10 +181,9 @@ func (b Bucket) CommonAddressSuffix() string {
 
 // The couchbase client gives access to all the things.
 type Client struct {
-	BaseURL  *url.URL
-	ah       AuthHandler
-	Info     Pools
-	Statuses [256]uint64
+	BaseURL *url.URL
+	ah      AuthHandler
+	Info    Pools
 }
 
 func maybeAddAuth(req *http.Request, ah AuthHandler) {
