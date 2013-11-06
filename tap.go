@@ -85,21 +85,25 @@ func (feed *TapFeed) connectToNodes() (killSwitch chan bool, err error) {
 		var singleFeed *memcached.TapFeed
 		singleFeed, err = serverConn.StartTapFeed(feed.args)
 		if err != nil {
+			log.Printf("go-couchbase: Error connecting to tap feed of %s: %v", serverConn.host, err)
 			feed.closeNodeFeeds()
 			return
 		}
 		feed.nodeFeeds = append(feed.nodeFeeds, singleFeed)
-		go feed.forwardTapEvents(singleFeed, killSwitch)
+		go feed.forwardTapEvents(singleFeed, killSwitch, serverConn.host)
 	}
 	return
 }
 
 // Goroutine that forwards Tap events from a single node's feed to the aggregate feed.
-func (feed *TapFeed) forwardTapEvents(singleFeed *memcached.TapFeed, killSwitch chan bool) {
+func (feed *TapFeed) forwardTapEvents(singleFeed *memcached.TapFeed, killSwitch chan bool, host string) {
 	for {
 		select {
 		case event, ok := <-singleFeed.C:
 			if !ok {
+				if singleFeed.Error != nil {
+					log.Printf("go-couchbase: Tap feed from %s failed: %v", host, singleFeed.Error)
+				}
 				killSwitch <- true
 				return
 			}
