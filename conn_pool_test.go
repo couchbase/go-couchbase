@@ -6,6 +6,7 @@ import (
 
 	"github.com/dustin/gomemcached"
 	"github.com/dustin/gomemcached/client"
+	"time"
 )
 
 type testT struct{}
@@ -106,10 +107,127 @@ func TestConnPool(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected error on second pool close")
 	}
+}
 
-	sc, err = cp.Get()
+func TestConnPoolClosedFull(t *testing.T) {
+	cp := newConnectionPool("h", &basicAuth{}, 3, 4)
+	cp.mkConn = testMkConn
+
+	seenClients := map[*memcached.Client]bool{}
+
+	// build some connections
+
+	for {
+		sc, err := cp.GetWithTimeout(time.Millisecond)
+		if err == TimeoutError {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Error getting connection from pool: %v", err)
+		}
+		seenClients[sc] = true
+	}
+
+	time.AfterFunc(2*time.Millisecond, func() { cp.Close() })
+
+	sc, err := cp.Get()
 	if err != closedPool {
 		t.Errorf("Expected closed pool error after closed, got %v/%v", sc, err)
+	}
+}
+
+func TestConnPoolWaitFull(t *testing.T) {
+	cp := newConnectionPool("h", &basicAuth{}, 3, 4)
+	cp.mkConn = testMkConn
+
+	seenClients := map[*memcached.Client]bool{}
+
+	// build some connections
+
+	var aClient *memcached.Client
+	for {
+		sc, err := cp.GetWithTimeout(time.Millisecond)
+		if err == TimeoutError {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Error getting connection from pool: %v", err)
+		}
+		aClient = sc
+		seenClients[sc] = true
+	}
+
+	time.AfterFunc(2*time.Millisecond, func() { cp.Return(aClient) })
+
+	sc, err := cp.Get()
+	if err != nil || sc != aClient {
+		t.Errorf("Expected a successful connection, got %v/%v", sc, err)
+	}
+}
+
+func TestConnPoolWaitFailFull(t *testing.T) {
+	cp := newConnectionPool("h", &basicAuth{}, 3, 4)
+	cp.mkConn = testMkConn
+
+	seenClients := map[*memcached.Client]bool{}
+
+	// build some connections
+
+	var aClient *memcached.Client
+	for {
+		sc, err := cp.GetWithTimeout(time.Millisecond)
+		if err == TimeoutError {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Error getting connection from pool: %v", err)
+		}
+		aClient = sc
+		seenClients[sc] = true
+	}
+
+	// causes failure
+	aClient.Transmit(&gomemcached.MCRequest{})
+	time.AfterFunc(2*time.Millisecond, func() { cp.Return(aClient) })
+
+	sc, err := cp.Get()
+	if err != nil || sc == aClient {
+		t.Errorf("Expected a new successful connection, got %v/%v", sc, err)
+	}
+}
+
+func TestConnPoolWaitDoubleFailFull(t *testing.T) {
+	cp := newConnectionPool("h", &basicAuth{}, 3, 4)
+	cp.mkConn = testMkConn
+
+	seenClients := map[*memcached.Client]bool{}
+
+	// build some connections
+
+	var aClient *memcached.Client
+	for {
+		sc, err := cp.GetWithTimeout(time.Millisecond)
+		if err == TimeoutError {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Error getting connection from pool: %v", err)
+		}
+		aClient = sc
+		seenClients[sc] = true
+	}
+
+	cp.mkConn = func(h string, ah AuthHandler) (*memcached.Client, error) {
+		return nil, io.EOF
+	}
+
+	// causes failure
+	aClient.Transmit(&gomemcached.MCRequest{})
+	time.AfterFunc(2*time.Millisecond, func() { cp.Return(aClient) })
+
+	sc, err := cp.Get()
+	if err != io.EOF {
+		t.Errorf("Expected to fail getting a new connection, got %v/%v", sc, err)
 	}
 }
 
@@ -135,4 +253,9 @@ func TestConnPoolClosed(t *testing.T) {
 
 	// This just shouldn't error.
 	cp.Return(c)
+
+	sc, err := cp.Get()
+	if err != closedPool {
+		t.Errorf("Expected closed pool error after closed, got %v/%v", sc, err)
+	}
 }
