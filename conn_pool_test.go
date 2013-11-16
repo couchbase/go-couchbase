@@ -112,8 +112,6 @@ func TestConnPool(t *testing.T) {
 func TestConnPoolSoonAvailable(t *testing.T) {
 	defer func(d time.Duration) { connPoolAvailTimer = d }(connPoolAvailTimer)
 
-	connPoolAvailTimer = time.Second
-
 	cp := newConnectionPool("h", &basicAuth{}, 3, 4)
 	cp.mkConn = testMkConn
 
@@ -135,6 +133,8 @@ func TestConnPoolSoonAvailable(t *testing.T) {
 	}
 
 	time.AfterFunc(time.Millisecond, func() { cp.Return(aClient) })
+
+	connPoolAvailTimer = time.Second
 
 	sc, err := cp.Get()
 	if err != nil || sc != aClient {
