@@ -62,8 +62,7 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) err
 			}
 
 			err = f(conn, uint16(vb))
-			switch i := err.(type) {
-			case *gomemcached.MCResponse:
+			if i, ok := err.(*gomemcached.MCResponse); ok {
 				st := i.Status
 				retry = st == gomemcached.NOT_MY_VBUCKET
 			}
