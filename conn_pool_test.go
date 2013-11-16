@@ -259,3 +259,16 @@ func TestConnPoolClosed(t *testing.T) {
 		t.Errorf("Expected closed pool error after closed, got %v/%v", sc, err)
 	}
 }
+
+func BenchmarkBestCaseCPGet(b *testing.B) {
+	cp := newConnectionPool("h", &basicAuth{}, 3, 6)
+	cp.mkConn = testMkConn
+
+	for i := 0; i < b.N; i++ {
+		c, err := cp.Get()
+		if err != nil {
+			b.Fatalf("Error getting from pool: %v", err)
+		}
+		cp.Return(c)
+	}
+}
