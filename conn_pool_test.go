@@ -109,6 +109,47 @@ func TestConnPool(t *testing.T) {
 	}
 }
 
+func TestConnPoolSoonAvailable(t *testing.T) {
+	defer func(d time.Duration) { connPoolAvailTimer = d }(connPoolAvailTimer)
+
+	connPoolAvailTimer = time.Second
+
+	cp := newConnectionPool("h", &basicAuth{}, 3, 4)
+	cp.mkConn = testMkConn
+
+	seenClients := map[*memcached.Client]bool{}
+
+	// build some connections
+
+	var aClient *memcached.Client
+	for {
+		sc, err := cp.GetWithTimeout(time.Millisecond)
+		if err == TimeoutError {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Error getting connection from pool: %v", err)
+		}
+		aClient = sc
+		seenClients[sc] = true
+	}
+
+	time.AfterFunc(time.Millisecond, func() { cp.Return(aClient) })
+
+	sc, err := cp.Get()
+	if err != nil || sc != aClient {
+		t.Errorf("Expected a successful connection, got %v/%v", sc, err)
+	}
+
+	// Try again, but let's close it while we're stuck in secondary wait
+	time.AfterFunc(time.Millisecond, func() { cp.Close() })
+
+	sc, err = cp.Get()
+	if err != closedPool {
+		t.Errorf("Expected a closed pool, got %v/%v", sc, err)
+	}
+}
+
 func TestConnPoolClosedFull(t *testing.T) {
 	cp := newConnectionPool("h", &basicAuth{}, 3, 4)
 	cp.mkConn = testMkConn
