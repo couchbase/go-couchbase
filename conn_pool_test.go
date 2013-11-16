@@ -301,6 +301,29 @@ func TestConnPoolClosed(t *testing.T) {
 	}
 }
 
+func TestConnPoolStartTapFeed(t *testing.T) {
+	var cp *connectionPool
+	args := memcached.DefaultTapArguments()
+	tf, err := cp.StartTapFeed(&args)
+	if err != errNoPool {
+		t.Errorf("Expected no pool error with no pool, got %v/%v", tf, err)
+	}
+
+	cp = newConnectionPool("h", &basicAuth{}, 3, 6)
+	cp.mkConn = testMkConn
+
+	tf, err = cp.StartTapFeed(&args)
+	if err != io.EOF {
+		t.Errorf("Expected to fail a tap feed with EOF, got %v/%v", tf, err)
+	}
+
+	cp.Close()
+	tf, err = cp.StartTapFeed(&args)
+	if err != closedPool {
+		t.Errorf("Expected a closed pool, got %v/%v", tf, err)
+	}
+}
+
 func BenchmarkBestCaseCPGet(b *testing.B) {
 	cp := newConnectionPool("h", &basicAuth{}, 3, 6)
 	cp.mkConn = testMkConn
