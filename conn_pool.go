@@ -10,6 +10,7 @@ import (
 // Error raised when a connection can't be retrieved from a pool.
 var TimeoutError = errors.New("timeout waiting to build connection")
 var closedPool = errors.New("the pool is closed")
+var errNoPool = errors.New("no pool")
 
 // Default timeout for retrieving a connection from the pool.
 var ConnPoolTimeout = time.Hour * 24 * 30
@@ -59,7 +60,7 @@ func (cp *connectionPool) Close() (err error) {
 
 func (cp *connectionPool) GetWithTimeout(d time.Duration) (*memcached.Client, error) {
 	if cp == nil {
-		return nil, errors.New("no pool")
+		return nil, errNoPool
 	}
 
 	t := time.NewTimer(time.Millisecond)
@@ -130,7 +131,7 @@ func (cp *connectionPool) Return(c *memcached.Client) {
 
 func (cp *connectionPool) StartTapFeed(args *memcached.TapArguments) (*memcached.TapFeed, error) {
 	if cp == nil {
-		return nil, errors.New("no pool")
+		return nil, errNoPool
 	}
 	mc, err := cp.Get()
 	if err != nil {
