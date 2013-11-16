@@ -106,6 +106,11 @@ func TestConnPool(t *testing.T) {
 	if err == nil {
 		t.Errorf("Expected error on second pool close")
 	}
+
+	sc, err = cp.Get()
+	if err != closedPool {
+		t.Errorf("Expected closed pool error after closed, got %v/%v", sc, err)
+	}
 }
 
 func TestConnPoolNil(t *testing.T) {
