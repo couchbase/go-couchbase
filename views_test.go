@@ -5,6 +5,14 @@ import (
 	"unsafe"
 )
 
+func TestViewError(t *testing.T) {
+	e := ViewError{"f", "r"}
+	exp := `Node: f, reason: r`
+	if e.Error() != exp {
+		t.Errorf("Expected %q, got %q", exp, e.Error())
+	}
+}
+
 func mkNL(in []Node) unsafe.Pointer {
 	return unsafe.Pointer(&in)
 }

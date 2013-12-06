@@ -22,7 +22,7 @@ type ViewError struct {
 }
 
 func (ve ViewError) Error() string {
-	return fmt.Sprintf("Node: %v, reason: %v", ve.From, ve.Reason)
+	return "Node: " + ve.From + ", reason: " + ve.Reason
 }
 
 type ViewResult struct {
