@@ -2,6 +2,7 @@ package couchbase
 
 import (
 	"encoding/json"
+	"sync"
 	"testing"
 	"unsafe"
 )
@@ -310,4 +311,32 @@ func TestCommonAddressSuffixCommon(t *testing.T) {
 	})}
 	assert(t, "useful suffix", ".example.com:11210",
 		b.CommonAddressSuffix())
+}
+
+func TestBucketConnPool(t *testing.T) {
+	b := Bucket{}
+	b.replaceConnPools([]*connectionPool{})
+	p := b.getConnPool(3)
+	if p != nil {
+		t.Fatalf("Successfully got a pool where there was none: %v", p)
+	}
+	// TODO: I have a few more cases to cover here.
+}
+
+// No assertions, but this is meant to be tested with the race
+// detector to verify the connection pool stuff is clean.
+func TestBucketConnPoolConcurrent(t *testing.T) {
+	b := Bucket{}
+
+	wg := sync.WaitGroup{}
+	for i := 0; i < 16; i++ {
+		wg.Add(1)
+		go func() {
+			for i := 0; i < 100; i++ {
+				b.replaceConnPools([]*connectionPool{})
+			}
+			wg.Done()
+		}()
+	}
+	wg.Wait()
 }
