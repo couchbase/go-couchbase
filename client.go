@@ -29,6 +29,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -40,12 +42,26 @@ import (
 // Maximum number of times to retry a chunk of a bulk get on error.
 var MaxBulkRetries = 1000
 
+// If this is set to a nonzero duration, Do() and ViewCustom() will log a warning if the call
+// takes longer than that.
+var SlowServerCallWarningThreshold = 0 * time.Millisecond
+
 // Execute a function on a memcached connection to the node owning key "k"
 //
 // Note that this automatically handles transient errors by replaying
 // your function on a "not-my-vbucket" error, so don't assume
 // your command will only be executed only once.
 func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) error {
+	if SlowServerCallWarningThreshold > 0 {
+		defer func(startTime time.Time) {
+			if elapsed := time.Now().Sub(startTime); elapsed > SlowServerCallWarningThreshold {
+				pc, _, _, _ := runtime.Caller(2)
+				caller := runtime.FuncForPC(pc).Name()
+				log.Printf("Go-Couchbase: Call to Do(%q) in %s took %v", k, caller, elapsed)
+			}
+		}(time.Now())
+	}
+
 	vb := b.VBHash(k)
 	maxTries := len(b.Nodes()) * 2
 	for i := 0; i < maxTries; i++ {
@@ -146,6 +162,13 @@ func isConnError(err error) bool {
 
 func (b *Bucket) doBulkGet(vb uint16, keys []string,
 	ch chan<- map[string]*gomemcached.MCResponse, ech chan error) {
+	if SlowServerCallWarningThreshold > 0 {
+		defer func(startTime time.Time) {
+			if elapsed := time.Now().Sub(startTime); elapsed > SlowServerCallWarningThreshold {
+				log.Printf("Go-Couchbase: Call to doBulkGet(%d, %d keys) took %v", vb, len(keys), elapsed)
+			}
+		}(time.Now())
+	}
 
 	rv := map[string]*gomemcached.MCResponse{}
 

@@ -4,9 +4,11 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 type ViewRow struct {
@@ -110,6 +112,13 @@ func (b *Bucket) ViewURL(ddoc, name string,
 // See the source to View for an example usage.
 func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	vres interface{}) error {
+	if SlowServerCallWarningThreshold > 0 {
+		defer func(startTime time.Time) {
+			if elapsed := time.Now().Sub(startTime); elapsed > SlowServerCallWarningThreshold {
+				log.Printf("Go-Couchbase: Call to ViewCustom(%q, %q) took %v", ddoc, name, elapsed)
+			}
+		}(time.Now())
+	}
 
 	u, err := b.ViewURL(ddoc, name, params)
 	if err != nil {
