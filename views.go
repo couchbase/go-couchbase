@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -113,11 +112,7 @@ func (b *Bucket) ViewURL(ddoc, name string,
 func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	vres interface{}) error {
 	if SlowServerCallWarningThreshold > 0 {
-		defer func(startTime time.Time) {
-			if elapsed := time.Now().Sub(startTime); elapsed > SlowServerCallWarningThreshold {
-				log.Printf("Go-Couchbase: Call to ViewCustom(%q, %q) took %v", ddoc, name, elapsed)
-			}
-		}(time.Now())
+		defer slowLog(time.Now(), "call to ViewCustom(%q, %q)", ddoc, name)
 	}
 
 	u, err := b.ViewURL(ddoc, name, params)
