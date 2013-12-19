@@ -71,6 +71,10 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) err
 		// "defer" statement to work as intended.
 		retry, err := func() (retry bool, err error) {
 			vbm := b.VBServerMap()
+			if len(vbm.VBucketMap) < int(vb) {
+				return false, fmt.Errorf("vbmap smaller than vbucket list: %v vs. %v",
+					vb, vbm.VBucketMap)
+			}
 			masterId := vbm.VBucketMap[vb][0]
 			pool := b.getConnPool(masterId)
 			conn, err := pool.Get()
