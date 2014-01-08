@@ -15,6 +15,11 @@ var errNoPool = errors.New("no pool")
 // Default timeout for retrieving a connection from the pool.
 var ConnPoolTimeout = time.Hour * 24 * 30
 
+// ConnPoolAvailWaitTime is the amount of time to wait for an existing
+// connection from the pool before considering the creation of a new
+// one.
+var ConnPoolAvailWaitTime = time.Millisecond
+
 type connectionPool struct {
 	host        string
 	mkConn      func(host string, ah AuthHandler) (*memcached.Client, error)
@@ -75,7 +80,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (*memcached.Client, er
 	default:
 	}
 
-	t := time.NewTimer(connPoolAvailTimer)
+	t := time.NewTimer(ConnPoolAvailWaitTime)
 	defer t.Stop()
 
 	// Try to grab an available connection within 1ms
