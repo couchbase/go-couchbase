@@ -38,6 +38,9 @@ func newConnectionPool(host string, ah AuthHandler, poolSize, poolOverflow int) 
 	}
 }
 
+// ConnPoolTimeout is notified whenever connections are acquired from a pool.
+var ConnPoolCallback func(host string, source string, start time.Time, err error)
+
 func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 	conn, err := memcached.Connect("tcp", host)
 	if err != nil {
@@ -63,12 +66,20 @@ func (cp *connectionPool) Close() (err error) {
 	return
 }
 
-var connPoolAvailTimer = time.Millisecond
-
-func (cp *connectionPool) GetWithTimeout(d time.Duration) (*memcached.Client, error) {
+func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client, err error) {
 	if cp == nil {
 		return nil, errNoPool
 	}
+
+	path := ""
+
+	if ConnPoolCallback != nil {
+		defer func(path *string, start time.Time) {
+			ConnPoolCallback(cp.host, *path, start, err)
+		}(&path, time.Now())
+	}
+
+	path = "short-circuit"
 
 	// short-circuit available connetions.
 	select {
@@ -86,6 +97,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (*memcached.Client, er
 	// Try to grab an available connection within 1ms
 	select {
 	case rv, isopen := <-cp.connections:
+		path = "avail1"
 		if !isopen {
 			return nil, closedPool
 		}
@@ -96,11 +108,13 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (*memcached.Client, er
 		t.Reset(d) // Reuse the timer for the full timeout.
 		select {
 		case rv, isopen := <-cp.connections:
+			path = "avail2"
 			if !isopen {
 				return nil, closedPool
 			}
 			return rv, nil
 		case cp.createsem <- true:
+			path = "create"
 			// Build a connection if we can't get a real one.
 			// This can potentially be an overflow connection, or
 			// a pooled connection.

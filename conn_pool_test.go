@@ -3,10 +3,10 @@ package couchbase
 import (
 	"io"
 	"testing"
+	"time"
 
 	"github.com/dustin/gomemcached"
 	"github.com/dustin/gomemcached/client"
-	"time"
 )
 
 type testT struct{}
@@ -111,6 +111,14 @@ func TestConnPool(t *testing.T) {
 
 func TestConnPoolSoonAvailable(t *testing.T) {
 	defer func(d time.Duration) { ConnPoolAvailWaitTime = d }(ConnPoolAvailWaitTime)
+	defer func() { ConnPoolCallback = nil }()
+
+	m := map[string]int{}
+	timings := []time.Duration{}
+	ConnPoolCallback = func(host string, source string, start time.Time, err error) {
+		m[source] = m[source] + 1
+		timings = append(timings, time.Since(start))
+	}
 
 	cp := newConnectionPool("h", &basicAuth{}, 3, 4)
 	cp.mkConn = testMkConn
@@ -148,6 +156,8 @@ func TestConnPoolSoonAvailable(t *testing.T) {
 	if err != closedPool {
 		t.Errorf("Expected a closed pool, got %v/%v", sc, err)
 	}
+
+	t.Logf("Callback report: %v, timings: %v", m, timings)
 }
 
 func TestConnPoolClosedFull(t *testing.T) {
