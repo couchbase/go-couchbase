@@ -54,17 +54,21 @@ func slowLog(startTime time.Time, format string, args ...interface{}) {
 	}
 }
 
+// ClientOpCallback is called for each invocation of Do.
+var ClientOpCallback func(opname, k string, start time.Time, err error)
+
 // Execute a function on a memcached connection to the node owning key "k"
 //
 // Note that this automatically handles transient errors by replaying
 // your function on a "not-my-vbucket" error, so don't assume
 // your command will only be executed only once.
-func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) error {
+func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (err error) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to Do(%q)", k)
 	}
 
 	vb := b.VBHash(k)
+
 	maxTries := len(b.Nodes()) * 2
 	for i := 0; i < maxTries; i++ {
 		// We encapsulate the attempt within an anonymous function to allow
@@ -337,6 +341,23 @@ const (
 	Append
 )
 
+// String representation of WriteOptions
+func (w WriteOptions) String() string {
+	switch w {
+	case Raw:
+		return "raw"
+	case AddOnly:
+		return "addonly"
+	case Persist:
+		return "persist"
+	case Indexable:
+		return "indexable"
+	case Append:
+		return "append"
+	}
+	return fmt.Sprintf("0x%x", int(w))
+}
+
 // Error returned from Write with AddOnly flag, when key already exists in the bucket.
 var ErrKeyExists = errors.New("Key exists")
 
@@ -350,6 +371,12 @@ var ErrKeyExists = errors.New("Key exists")
 // be nil.
 func (b *Bucket) Write(k string, flags, exp int, v interface{},
 	opt WriteOptions) (err error) {
+
+	if ClientOpCallback != nil {
+		defer func(t time.Time) {
+			ClientOpCallback(fmt.Sprintf("Write(%v)", opt), k, t, err)
+		}(time.Now())
+	}
 
 	var data []byte
 	if opt&Raw == 0 {
@@ -431,6 +458,10 @@ func (b *Bucket) Append(k string, data []byte) error {
 func (b *Bucket) GetsRaw(k string) (data []byte, flags int,
 	cas uint64, err error) {
 
+	if ClientOpCallback != nil {
+		defer func(t time.Time) { ClientOpCallback("GetsRaw", k, t, err) }(time.Now())
+	}
+
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		res, err := mc.Get(vb, k)
 		if err != nil {
@@ -479,9 +510,13 @@ func (b *Bucket) Delete(k string) error {
 }
 
 // Increment a key
-func (b *Bucket) Incr(k string, amt, def uint64, exp int) (uint64, error) {
+func (b *Bucket) Incr(k string, amt, def uint64, exp int) (val uint64, err error) {
+	if ClientOpCallback != nil {
+		defer func(t time.Time) { ClientOpCallback("Incr", k, t, err) }(time.Now())
+	}
+
 	var rv uint64
-	err := b.Do(k, func(mc *memcached.Client, vb uint16) error {
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		res, err := mc.Incr(vb, k, amt, def, exp)
 		if err != nil {
 			return err
@@ -494,6 +529,12 @@ func (b *Bucket) Incr(k string, amt, def uint64, exp int) (uint64, error) {
 
 // Wrapper around memcached.CASNext()
 func (b *Bucket) casNext(k string, exp int, state *memcached.CASState) bool {
+	if ClientOpCallback != nil {
+		defer func(t time.Time) {
+			ClientOpCallback("casNext", k, t, state.Err)
+		}(time.Now())
+	}
+
 	keepGoing := false
 	state.Err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		keepGoing = mc.CASNext(vb, k, exp, state)
@@ -565,6 +606,10 @@ func (b *Bucket) WriteUpdate(k string, exp int, callback WriteUpdateFunc) error 
 
 // Observes the current state of a document.
 func (b *Bucket) Observe(k string) (result memcached.ObserveResult, err error) {
+	if ClientOpCallback != nil {
+		defer func(t time.Time) { ClientOpCallback("Observe", k, t, err) }(time.Now())
+	}
+
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		result, err = mc.Observe(vb, k)
 		return err
