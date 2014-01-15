@@ -106,13 +106,20 @@ func (b *Bucket) ViewURL(ddoc, name string,
 	return u.String(), nil
 }
 
+// ViewCallback is called for each view invocation.
+var ViewCallback func(ddoc, name string, start time.Time, err error)
+
 // Perform a view request that can map row values to a custom type.
 //
 // See the source to View for an example usage.
 func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
-	vres interface{}) error {
+	vres interface{}) (err error) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to ViewCustom(%q, %q)", ddoc, name)
+	}
+
+	if ViewCallback != nil {
+		defer func(t time.Time) { ViewCallback(ddoc, name, t, err) }(time.Now())
 	}
 
 	u, err := b.ViewURL(ddoc, name, params)
