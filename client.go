@@ -343,19 +343,31 @@ const (
 
 // String representation of WriteOptions
 func (w WriteOptions) String() string {
-	switch w {
-	case Raw:
-		return "raw"
-	case AddOnly:
-		return "addonly"
-	case Persist:
-		return "persist"
-	case Indexable:
-		return "indexable"
-	case Append:
-		return "append"
+	f := []string{}
+	if Raw&w != 0 {
+		f = append(f, "raw")
+		w &= ^Raw
 	}
-	return fmt.Sprintf("0x%x", int(w))
+	if AddOnly&w != 0 {
+		f = append(f, "addonly")
+		w &= ^AddOnly
+	}
+	if Persist&w != 0 {
+		f = append(f, "persist")
+		w &= ^Persist
+	}
+	if Indexable&w != 0 {
+		f = append(f, "indexable")
+		w &= ^Indexable
+	}
+	if Append&w != 0 {
+		f = append(f, "append")
+		w &= ^Append
+	}
+	if len(f) == 0 || w != 0 {
+		f = append(f, fmt.Sprintf("0x%x", int(w)))
+	}
+	return strings.Join(f, "|")
 }
 
 // Error returned from Write with AddOnly flag, when key already exists in the bucket.
