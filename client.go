@@ -341,28 +341,23 @@ const (
 	Append
 )
 
+var optNames = []struct {
+	opt  WriteOptions
+	name string
+}{
+	{Raw, "raw"},
+	{AddOnly, "addonly"}, {Persist, "persist"},
+	{Indexable, "indexable"}, {Append, "append"},
+}
+
 // String representation of WriteOptions
 func (w WriteOptions) String() string {
 	f := []string{}
-	if Raw&w != 0 {
-		f = append(f, "raw")
-		w &= ^Raw
-	}
-	if AddOnly&w != 0 {
-		f = append(f, "addonly")
-		w &= ^AddOnly
-	}
-	if Persist&w != 0 {
-		f = append(f, "persist")
-		w &= ^Persist
-	}
-	if Indexable&w != 0 {
-		f = append(f, "indexable")
-		w &= ^Indexable
-	}
-	if Append&w != 0 {
-		f = append(f, "append")
-		w &= ^Append
+	for _, on := range optNames {
+		if w&on.opt != 0 {
+			f = append(f, on.name)
+			w &= ^on.opt
+		}
 	}
 	if len(f) == 0 || w != 0 {
 		f = append(f, fmt.Sprintf("0x%x", int(w)))
