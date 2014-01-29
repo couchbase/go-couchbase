@@ -4,19 +4,42 @@ import (
 	"testing"
 )
 
-func TestCleanupHostEmpty(t *testing.T) {
-	assert(t, "empty", CleanupHost("", ""), "")
-	assert(t, "empty suffix", CleanupHost("aprefix", ""), "aprefix")
-	assert(t, "empty host", CleanupHost("", "asuffix"), "")
-	assert(t, "matched suffix",
-		CleanupHost("server1.example.com:11210", ".example.com:11210"),
-		"server1")
+func TestCleanupHost(t *testing.T) {
+	tests := []struct {
+		name, full, suffix, exp string
+	}{
+		{"empty", "", "", ""},
+		{"empty suffix", "aprefix", "", "aprefix"},
+		{"empty host", "", "asuffix", ""},
+		{"matched suffix", "server1.example.com:11210", ".example.com:11210", "server1"},
+	}
+
+	for _, test := range tests {
+		got := CleanupHost(test.full, test.suffix)
+		if got != test.exp {
+			t.Errorf("Error on %v: got %q, expected %q",
+				test.name, got, test.exp)
+		}
+	}
 }
 
 func TestFindCommonSuffix(t *testing.T) {
-	assert(t, "empty", FindCommonSuffix([]string{}), "")
-	assert(t, "one", FindCommonSuffix([]string{"blah"}), "")
-	assert(t, "two", FindCommonSuffix([]string{"blah.com", "foo.com"}), ".com")
+	tests := []struct {
+		name, exp string
+		strings   []string
+	}{
+		{"empty", "", nil},
+		{"one", "", []string{"blah"}},
+		{"two", ".com", []string{"blah.com", "foo.com"}},
+	}
+
+	for _, test := range tests {
+		got := FindCommonSuffix(test.strings)
+		if got != test.exp {
+			t.Errorf("Error on %v: got %q, expected %q",
+				test.name, got, test.exp)
+		}
+	}
 }
 
 func TestParseURL(t *testing.T) {
