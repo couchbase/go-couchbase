@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/dustin/gomemcached/client"
+	"github.com/prataprc/gomemcached/client"
 )
 
 var errClosedPool = errors.New("the pool is closed")
@@ -179,4 +179,12 @@ func (cp *connectionPool) StartTapFeed(args *memcached.TapArguments) (*memcached
 	<-cp.createsem
 
 	return mc.StartTapFeed(*args)
+}
+
+// TODO: Remove this after goupr merge
+func (cp *connectionPool) Createsem() {
+	<-cp.createsem
+}
+func (cp *connectionPool) Host() string {
+	return cp.host
 }

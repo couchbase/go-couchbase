@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dustin/gomemcached"
-	"github.com/dustin/gomemcached/client"
+	"github.com/prataprc/gomemcached"
+	"github.com/prataprc/gomemcached/client"
 )
 
 type testT struct {

@@ -428,3 +428,11 @@ func GetBucket(endpoint, poolname, bucketname string) (*Bucket, error) {
 
 	return pool.GetBucket(bucketname)
 }
+
+// TODO: Remove this after goupr merge
+func (b Bucket) GetConnPools() []*connectionPool {
+	return b.getConnPools()
+}
+func (b *Bucket) Refresh() error {
+	return b.refresh()
+}
