@@ -1,6 +1,7 @@
 package couchbase
 
 import (
+	"errors"
 	"io"
 	"testing"
 	"time"
@@ -9,7 +10,9 @@ import (
 	"github.com/dustin/gomemcached/client"
 )
 
-type testT struct{}
+type testT struct {
+	closed bool
+}
 
 func (t testT) Read([]byte) (int, error) {
 	return 0, io.EOF
@@ -19,12 +22,18 @@ func (t testT) Write([]byte) (int, error) {
 	return 0, io.EOF
 }
 
-func (t testT) Close() error {
+var alreadyClosed = errors.New("already closed")
+
+func (t *testT) Close() error {
+	if t.closed {
+		return alreadyClosed
+	}
+	t.closed = true
 	return nil
 }
 
 func testMkConn(h string, ah AuthHandler) (*memcached.Client, error) {
-	return memcached.Wrap(testT{})
+	return memcached.Wrap(&testT{})
 }
 
 func TestConnPool(t *testing.T) {
@@ -302,12 +311,55 @@ func TestConnPoolClosed(t *testing.T) {
 	}
 	cp.Close()
 
-	// This just shouldn't error.
+	// This should cause the connection to be closed
 	cp.Return(c)
+	if err = c.Close(); err != alreadyClosed {
+		t.Errorf("Expected to close connection, wasn't closed (%v)", err)
+	}
 
 	sc, err := cp.Get()
 	if err != closedPool {
 		t.Errorf("Expected closed pool error after closed, got %v/%v", sc, err)
+	}
+}
+
+func TestConnPoolCloseWrongPool(t *testing.T) {
+	cp := newConnectionPool("h", &basicAuth{}, 3, 6)
+	cp.mkConn = testMkConn
+	c, err := cp.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp.Close()
+
+	// Return to a different pool.  Should still be OK.
+	cp = newConnectionPool("h", &basicAuth{}, 3, 6)
+	cp.mkConn = testMkConn
+	c, err = cp.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp.Close()
+
+	cp.Return(c)
+	if err = c.Close(); err != alreadyClosed {
+		t.Errorf("Expected to close connection, wasn't closed (%v)", err)
+	}
+}
+
+func TestConnPoolCloseNil(t *testing.T) {
+	cp := newConnectionPool("h", &basicAuth{}, 3, 6)
+	cp.mkConn = testMkConn
+	c, err := cp.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp.Close()
+
+	cp = nil
+	cp.Return(c)
+	if err = c.Close(); err != alreadyClosed {
+		t.Errorf("Expected to close connection, wasn't closed (%v)", err)
 	}
 }
 

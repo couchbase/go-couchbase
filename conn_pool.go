@@ -135,8 +135,12 @@ func (cp *connectionPool) Get() (*memcached.Client, error) {
 }
 
 func (cp *connectionPool) Return(c *memcached.Client) {
-	if cp == nil || c == nil {
+	if c == nil {
 		return
+	}
+
+	if cp == nil {
+		c.Close()
 	}
 
 	if c.IsHealthy() {
