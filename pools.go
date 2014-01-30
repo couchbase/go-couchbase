@@ -140,7 +140,9 @@ func (b *Bucket) replaceConnPools(with []*connectionPool) {
 		if atomic.CompareAndSwapPointer(&b.connPools, old, unsafe.Pointer(&with)) {
 			if old != nil {
 				for _, pool := range *(*[]*connectionPool)(old) {
-					pool.Close()
+					if pool != nil {
+						pool.Close()
+					}
 				}
 			}
 			return
