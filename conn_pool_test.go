@@ -22,11 +22,11 @@ func (t testT) Write([]byte) (int, error) {
 	return 0, io.EOF
 }
 
-var alreadyClosed = errors.New("already closed")
+var errAlreadyClosed = errors.New("already closed")
 
 func (t *testT) Close() error {
 	if t.closed {
-		return alreadyClosed
+		return errAlreadyClosed
 	}
 	t.closed = true
 	return nil
@@ -139,7 +139,7 @@ func TestConnPoolSoonAvailable(t *testing.T) {
 	var aClient *memcached.Client
 	for {
 		sc, err := cp.GetWithTimeout(time.Millisecond)
-		if err == TimeoutError {
+		if err == ErrTimeout {
 			break
 		}
 		if err != nil {
@@ -162,7 +162,7 @@ func TestConnPoolSoonAvailable(t *testing.T) {
 	time.AfterFunc(time.Millisecond, func() { cp.Close() })
 
 	sc, err = cp.Get()
-	if err != closedPool {
+	if err != errClosedPool {
 		t.Errorf("Expected a closed pool, got %v/%v", sc, err)
 	}
 
@@ -179,7 +179,7 @@ func TestConnPoolClosedFull(t *testing.T) {
 
 	for {
 		sc, err := cp.GetWithTimeout(time.Millisecond)
-		if err == TimeoutError {
+		if err == ErrTimeout {
 			break
 		}
 		if err != nil {
@@ -191,7 +191,7 @@ func TestConnPoolClosedFull(t *testing.T) {
 	time.AfterFunc(2*time.Millisecond, func() { cp.Close() })
 
 	sc, err := cp.Get()
-	if err != closedPool {
+	if err != errClosedPool {
 		t.Errorf("Expected closed pool error after closed, got %v/%v", sc, err)
 	}
 }
@@ -207,7 +207,7 @@ func TestConnPoolWaitFull(t *testing.T) {
 	var aClient *memcached.Client
 	for {
 		sc, err := cp.GetWithTimeout(time.Millisecond)
-		if err == TimeoutError {
+		if err == ErrTimeout {
 			break
 		}
 		if err != nil {
@@ -236,7 +236,7 @@ func TestConnPoolWaitFailFull(t *testing.T) {
 	var aClient *memcached.Client
 	for {
 		sc, err := cp.GetWithTimeout(time.Millisecond)
-		if err == TimeoutError {
+		if err == ErrTimeout {
 			break
 		}
 		if err != nil {
@@ -267,7 +267,7 @@ func TestConnPoolWaitDoubleFailFull(t *testing.T) {
 	var aClient *memcached.Client
 	for {
 		sc, err := cp.GetWithTimeout(time.Millisecond)
-		if err == TimeoutError {
+		if err == ErrTimeout {
 			break
 		}
 		if err != nil {
@@ -313,12 +313,12 @@ func TestConnPoolClosed(t *testing.T) {
 
 	// This should cause the connection to be closed
 	cp.Return(c)
-	if err = c.Close(); err != alreadyClosed {
+	if err = c.Close(); err != errAlreadyClosed {
 		t.Errorf("Expected to close connection, wasn't closed (%v)", err)
 	}
 
 	sc, err := cp.Get()
-	if err != closedPool {
+	if err != errClosedPool {
 		t.Errorf("Expected closed pool error after closed, got %v/%v", sc, err)
 	}
 }
@@ -342,7 +342,7 @@ func TestConnPoolCloseWrongPool(t *testing.T) {
 	cp.Close()
 
 	cp.Return(c)
-	if err = c.Close(); err != alreadyClosed {
+	if err = c.Close(); err != errAlreadyClosed {
 		t.Errorf("Expected to close connection, wasn't closed (%v)", err)
 	}
 }
@@ -358,7 +358,7 @@ func TestConnPoolCloseNil(t *testing.T) {
 
 	cp = nil
 	cp.Return(c)
-	if err = c.Close(); err != alreadyClosed {
+	if err = c.Close(); err != errAlreadyClosed {
 		t.Errorf("Expected to close connection, wasn't closed (%v)", err)
 	}
 }
@@ -381,7 +381,7 @@ func TestConnPoolStartTapFeed(t *testing.T) {
 
 	cp.Close()
 	tf, err = cp.StartTapFeed(&args)
-	if err != closedPool {
+	if err != errClosedPool {
 		t.Errorf("Expected a closed pool, got %v/%v", tf, err)
 	}
 }

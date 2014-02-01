@@ -7,9 +7,7 @@ import (
 	"github.com/dustin/gomemcached/client"
 )
 
-// Error raised when a connection can't be retrieved from a pool.
-var TimeoutError = errors.New("timeout waiting to build connection")
-var closedPool = errors.New("the pool is closed")
+var errClosedPool = errors.New("the pool is closed")
 var errNoPool = errors.New("no pool")
 
 // Default timeout for retrieving a connection from the pool.
@@ -85,7 +83,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 	select {
 	case rv, isopen := <-cp.connections:
 		if !isopen {
-			return nil, closedPool
+			return nil, errClosedPool
 		}
 		return rv, nil
 	default:
@@ -99,7 +97,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 	case rv, isopen := <-cp.connections:
 		path = "avail1"
 		if !isopen {
-			return nil, closedPool
+			return nil, errClosedPool
 		}
 		return rv, nil
 	case <-t.C:
@@ -110,7 +108,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 		case rv, isopen := <-cp.connections:
 			path = "avail2"
 			if !isopen {
-				return nil, closedPool
+				return nil, errClosedPool
 			}
 			return rv, nil
 		case cp.createsem <- true:
@@ -125,7 +123,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 			}
 			return rv, err
 		case <-t.C:
-			return nil, TimeoutError
+			return nil, ErrTimeout
 		}
 	}
 }

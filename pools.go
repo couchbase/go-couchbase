@@ -262,7 +262,7 @@ func (b *Bucket) parseURLResponse(path string, out interface{}) error {
 			return err
 		}
 	}
-	return errors.New("All nodes failed to respond.")
+	return errors.New("all nodes failed to respond")
 }
 
 type basicAuth struct {

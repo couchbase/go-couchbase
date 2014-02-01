@@ -46,7 +46,7 @@ func (b *Bucket) randomBaseURL() (*url.URL, error) {
 	node := nodes[nodeNo]
 	u, err := ParseURL(node.CouchAPIBase)
 	if err != nil {
-		return nil, fmt.Errorf("Config error: Bucket %q node #%d CouchAPIBase=%q: %v",
+		return nil, fmt.Errorf("config error: Bucket %q node #%d CouchAPIBase=%q: %v",
 			b.Name, nodeNo, node.CouchAPIBase, err)
 	} else if b.pool != nil {
 		u.User = b.pool.client.BaseURL.User
@@ -135,14 +135,14 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 
 	res, err := HttpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("Error starting view req at %v: %v", u, err)
+		return fmt.Errorf("error starting view req at %v: %v", u, err)
 	}
 	defer res.Body.Close()
 
 	if res.StatusCode != 200 {
 		bod := make([]byte, 512)
 		l, _ := res.Body.Read(bod)
-		return fmt.Errorf("Error executing view req at %v: %v - %s",
+		return fmt.Errorf("error executing view req at %v: %v - %s",
 			u, res.Status, bod[:l])
 	}
 

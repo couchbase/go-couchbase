@@ -43,7 +43,7 @@ func ParseURL(urlStr string) (result *url.URL, err error) {
 	result, err = url.Parse(urlStr)
 	if result != nil && result.Scheme == "" {
 		result = nil
-		err = fmt.Errorf("Invalid URL <%s>", urlStr)
+		err = fmt.Errorf("invalid URL <%s>", urlStr)
 	}
 	return
 }
