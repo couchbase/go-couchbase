@@ -27,12 +27,13 @@ var PoolSize = 4
 // Number of overflow connections allowed in a pool.
 var PoolOverflow = PoolSize
 
-// Auth callback gets the auth username and password for the given
-// bucket.
+// AuthHandler is a callback that gets the auth username and password
+// for the given bucket.
 type AuthHandler interface {
 	GetCredentials() (string, string)
 }
 
+// RestPool represents a single pool returned from the pools REST API.
 type RestPool struct {
 	Name         string `json:"name"`
 	StreamingURI string `json:"streamingUri"`
