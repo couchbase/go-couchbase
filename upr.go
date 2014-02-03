@@ -10,8 +10,7 @@ import (
 	"time"
 )
 
-// UprStream will maintain stream information, per vbucket opened on a
-// connection.
+// UprStream will maintain stream information per vbucket
 type UprStream struct {
 	Vbucket  uint16 // vbucket id
 	Vuuid    uint64 // vbucket uuid
@@ -37,7 +36,8 @@ type UprEvent struct {
 // vbucket streams.
 type UprFeed struct {
 	// Exported channel where an aggregate of all UprEvent are sent to app.
-	C chan UprEvent
+	C <-chan UprEvent
+	c chan UprEvent
 
 	bucket  *Bucket                   // upr client for bucket
 	name    string                    // name of the connection used in UPR_OPEN
@@ -51,6 +51,12 @@ type UprFeed struct {
 type uprConnection struct {
 	host string // host to which `mc` is connected.
 	conn *mc.Client
+}
+
+type msgT struct {
+	uprconn *uprConnection
+	pkt     mcd.MCRequest
+	err     error
 }
 
 var eventTypes = map[mcd.CommandCode]string{ // Refer UprEvent
@@ -80,8 +86,9 @@ func StartUprFeed(b *Bucket, name string,
 			vbmap:   vbmap,
 			streams: streams,
 			quit:    make(chan bool),
-			C:       make(chan UprEvent, 16),
+			c:       make(chan UprEvent, 16),
 		}
+		feed.C = feed.c
 		go feed.doSession(uprconns)
 	}
 	return feed, err
@@ -144,7 +151,7 @@ func freshStreams(vbmaps map[uint16]*uprConnection) map[uint16]*UprStream {
 // connect with all servers holding data for `feed.bucket` and try reconnecting
 // until `feed` is closed.
 func (feed *UprFeed) doSession(uprconns []*uprConnection) {
-	msgch := make(chan []interface{})
+	msgch := make(chan msgT)
 	killSwitch := make(chan bool)
 
 	for _, uprconn := range uprconns {
@@ -154,7 +161,7 @@ func (feed *UprFeed) doSession(uprconns []*uprConnection) {
 
 	close(killSwitch)
 	closeConnections(uprconns)
-	close(feed.C)
+	close(feed.c)
 }
 
 // exponential backoff while connection retry.
@@ -194,24 +201,20 @@ func (feed *UprFeed) retryConnections(
 	return uprconns, false
 }
 
-func (feed *UprFeed) doEvents(msgch chan []interface{}) bool {
+func (feed *UprFeed) doEvents(msgch <-chan msgT) bool {
 	for {
 		select {
-		case mcevent, ok := <-msgch:
+		case msg, ok := <-msgch:
 			if !ok {
 				return false
 			}
-			uprconn := mcevent[0].(*uprConnection)
-			if err, ok := mcevent[1].(error); ok {
+			if msg.err != nil {
 				log.Printf(
-					"doSession: Received error from %v (%p): %v\n",
-					uprconn.host, uprconn.conn, err)
+					"Received error from %v: %v\n", msg.uprconn.host, msg.err)
 				return false
-			} else if req, ok := mcevent[1].(mcd.MCRequest); ok {
-				if err := handleUprMessage(feed, &req); err != nil {
-					log.Println(err)
-					return false
-				}
+			} else if err := handleUprMessage(feed, &msg.pkt); err != nil {
+				log.Println(err)
+				return false
 			}
 		case <-feed.quit:
 			return true
@@ -241,7 +244,7 @@ func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
 	case mcd.UPR_MUTATION, mcd.UPR_DELETION:
 		e := feed.makeUprEvent(req)
 		stream.Startseq = e.Seqno
-		feed.C <- e
+		feed.c <- e
 	case mcd.UPR_STREAM_END:
 		res := mc.Request2Response(req)
 		err = fmt.Errorf("Stream %v is ending", uint16(res.Opaque))
@@ -350,10 +353,10 @@ func startStreams(streams map[uint16]*UprStream,
 }
 
 func doReceive(uprconn *uprConnection, host string,
-	msgch chan []interface{}, killSwitch chan bool) {
+	msgch chan msgT, killSwitch chan bool) {
 
 	var hdr [mcd.HDR_LEN]byte
-	var msg []interface{}
+	var msg msgT
 	var pkt mcd.MCRequest
 	var err error
 
@@ -362,9 +365,9 @@ func doReceive(uprconn *uprConnection, host string,
 loop:
 	for {
 		if _, err = pkt.Receive(mcconn, hdr[:]); err != nil {
-			msg = []interface{}{uprconn, err}
+			msg = msgT{uprconn: uprconn, err: err}
 		} else {
-			msg = []interface{}{uprconn, pkt}
+			msg = msgT{uprconn: uprconn, pkt: pkt}
 		}
 		select {
 		case msgch <- msg:

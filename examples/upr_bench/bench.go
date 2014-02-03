@@ -35,8 +35,7 @@ func main() {
 	start := time.Now().UnixNano()
 	end := start
 	for {
-		e := <-feed.C
-		log.Println(e.Opstr, e.Seqno, "helo world", "bucket", string(e.Key), string(e.Value))
+		<-feed.C
 		mutations += 1
 		if mutationCount == mutations {
 			break
