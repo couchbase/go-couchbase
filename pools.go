@@ -18,13 +18,14 @@ import (
 	"unsafe"
 )
 
-// The HTTP Client To Use
-var HttpClient = http.DefaultClient
+// HTTPClient to use for REST and view operations.
+var HTTPClient = http.DefaultClient
 
-// Size of the connection pools (per host).
+// PoolSize is the size of each connection pool (per host).
 var PoolSize = 4
 
-// Number of overflow connections allowed in a pool.
+// PoolOverflow is the number of overflow connections allowed in a
+// pool.
 var PoolOverflow = PoolSize
 
 // AuthHandler is a callback that gets the auth username and password
@@ -40,6 +41,7 @@ type RestPool struct {
 	URI          string `json:"uri"`
 }
 
+// Pools represents the collection of pools as returned from the REST API.
 type Pools struct {
 	ComponentsVersion     map[string]string `json:"componentsVersion,omitempty"`
 	ImplementationVersion string            `json:"implementationVersion"`
@@ -48,7 +50,7 @@ type Pools struct {
 	Pools                 []RestPool        `json:"pools"`
 }
 
-// A computer in a cluster running the couchbase software.
+// A Node is a computer in a cluster running the couchbase software.
 type Node struct {
 	ClusterCompatibility int                `json:"clusterCompatibility"`
 	ClusterMembership    string             `json:"clusterMembership"`
@@ -67,7 +69,7 @@ type Node struct {
 	ThisNode             bool               `json:"thisNode,omitempty"`
 }
 
-// A pool of nodes and buckets.
+// A Pool of nodes and buckets.
 type Pool struct {
 	BucketMap map[string]Bucket
 	Nodes     []Node
@@ -77,6 +79,7 @@ type Pool struct {
 	client Client
 }
 
+// VBucketServerMap is the a mapping of vbuckets to nodes.
 type VBucketServerMap struct {
 	HashAlgorithm string   `json:"hashAlgorithm"`
 	NumReplicas   int      `json:"numReplicas"`
@@ -84,7 +87,7 @@ type VBucketServerMap struct {
 	VBucketMap    [][]int  `json:"vBucketMap"`
 }
 
-// An individual bucket.  Herein lives the most useful stuff.
+// Bucket is the primary entry point for most data operations.
 type Bucket struct {
 	AuthType            string             `json:"authType"`
 	Capabilities        []string           `json:"bucketCapabilities"`
@@ -108,7 +111,7 @@ type Bucket struct {
 	// These are used for JSON IO, but isn't used for processing
 	// since it needs to be swapped out safely.
 	VBSMJson  VBucketServerMap `json:"vBucketServerMap"`
-	NodesJson []Node           `json:"nodes"`
+	NodesJSON []Node           `json:"nodes"`
 
 	pool             *Pool
 	connPools        unsafe.Pointer // *[]*connectionPool
@@ -117,11 +120,12 @@ type Bucket struct {
 	commonSufix      string
 }
 
-// Get the current vbucket server map
+// VBServerMap returns the current VBucketServerMap.
 func (b Bucket) VBServerMap() *VBucketServerMap {
 	return (*VBucketServerMap)(atomic.LoadPointer(&b.vBucketServerMap))
 }
 
+// Nodes returns teh current list of nodes servicing this bucket.
 func (b Bucket) Nodes() []Node {
 	return *(*[]Node)(atomic.LoadPointer(&b.nodeList))
 }
@@ -162,7 +166,8 @@ func (b Bucket) authHandler() (ah AuthHandler) {
 	return
 }
 
-// Get the (sorted) list of memcached node addresses (hostname:port).
+// NodeAddresses gets the (sorted) list of memcached node addresses
+// (hostname:port).
 func (b Bucket) NodeAddresses() []string {
 	vsm := b.VBServerMap()
 	rv := make([]string, len(vsm.ServerList))
@@ -171,7 +176,8 @@ func (b Bucket) NodeAddresses() []string {
 	return rv
 }
 
-// Get the longest common suffix of all host:port strings in the node list.
+// CommonAddressSuffix finds the longest common suffix of all
+// host:port strings in the node list.
 func (b Bucket) CommonAddressSuffix() string {
 	input := []string{}
 	for _, n := range b.Nodes() {
@@ -180,7 +186,8 @@ func (b Bucket) CommonAddressSuffix() string {
 	return FindCommonSuffix(input)
 }
 
-// The couchbase client gives access to all the things.
+// A Client is the starting point for all services across all buckets
+// in a Couchbase cluster.
 type Client struct {
 	BaseURL *url.URL
 	ah      AuthHandler
@@ -196,11 +203,11 @@ func maybeAddAuth(req *http.Request, ah AuthHandler) {
 }
 
 func queryRestAPI(
-	baseUrl *url.URL,
+	baseURL *url.URL,
 	path string,
 	authHandler AuthHandler,
 	out interface{}) error {
-	u := *baseUrl
+	u := *baseURL
 	u.User = nil
 	if q := strings.Index(path, "?"); q > 0 {
 		u.Path = path[:q]
@@ -215,7 +222,7 @@ func queryRestAPI(
 	}
 	maybeAddAuth(req, authHandler)
 
-	res, err := HttpClient.Do(req)
+	res, err := HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -319,7 +326,7 @@ func (b *Bucket) refresh() error {
 	}
 	b.replaceConnPools(newcps)
 	atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&tmpb.VBSMJson))
-	atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJson))
+	atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJSON))
 	return nil
 }
 
@@ -333,7 +340,7 @@ func (p *Pool) refresh() (err error) {
 	}
 	for _, b := range buckets {
 		b.pool = p
-		b.nodeList = unsafe.Pointer(&b.NodesJson)
+		b.nodeList = unsafe.Pointer(&b.NodesJSON)
 		b.replaceConnPools(make([]*connectionPool, len(b.VBSMJson.ServerList)))
 
 		p.BucketMap[b.Name] = b
@@ -341,7 +348,8 @@ func (p *Pool) refresh() (err error) {
 	return nil
 }
 
-// Get a pool from within the couchbase cluster (usually "default").
+// GetPool gets a pool from within the couchbase cluster (usually
+// "default").
 func (c *Client) GetPool(name string) (p Pool, err error) {
 	var poolURI string
 	for _, p := range c.Info.Pools {
@@ -361,7 +369,8 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 	return
 }
 
-// Mark this bucket as no longer needed, closing connections it may have open.
+// Close marks this bucket as no longer needed, closing connections it
+// may have open.
 func (b *Bucket) Close() {
 	if b.connPools != nil {
 		for _, c := range b.getConnPools() {
@@ -373,19 +382,19 @@ func (b *Bucket) Close() {
 	}
 }
 
-func bucket_finalizer(b *Bucket) {
+func bucketFinalizer(b *Bucket) {
 	if b.connPools != nil {
 		log.Printf("Warning: Finalizing a bucket with active connections.")
 	}
 }
 
-// Get a bucket from within this pool.
+// GetBucket gets a bucket from within this pool.
 func (p *Pool) GetBucket(name string) (*Bucket, error) {
 	rv, ok := p.BucketMap[name]
 	if !ok {
 		return nil, errors.New("No bucket named " + name)
 	}
-	runtime.SetFinalizer(&rv, bucket_finalizer)
+	runtime.SetFinalizer(&rv, bucketFinalizer)
 	err := rv.refresh()
 	if err != nil {
 		return nil, err
@@ -393,17 +402,18 @@ func (p *Pool) GetBucket(name string) (*Bucket, error) {
 	return &rv, nil
 }
 
-// Get the pool to which this bucket belongs.
+// GetPool gets the pool to which this bucket belongs.
 func (b *Bucket) GetPool() *Pool {
 	return b.pool
 }
 
-// Get the client from which we got this pool.
+// GetClient gets the client from which we got this pool.
 func (p *Pool) GetClient() *Client {
 	return &p.client
 }
 
-// Convenience function for getting a named bucket from a URL
+// GetBucket is a convenience function for getting a named bucket from
+// a URL
 func GetBucket(endpoint, poolname, bucketname string) (*Bucket, error) {
 	var err error
 	client, err := Connect(endpoint)

@@ -30,7 +30,7 @@ func main() {
 	maybeFatal(err, "Error connecting to couchbase: %v\n", err)
 
 	for _, filename := range flag.Args() {
-		key := pathToId(filename, *includeExt)
+		key := pathToID(filename, *includeExt)
 		bytes, err := ioutil.ReadFile(filename)
 		maybeFatal(err, "Error reading file contents: %v\n", err)
 		b.SetRaw(key, 0, bytes)
@@ -43,7 +43,7 @@ func main() {
 	}
 }
 
-func pathToId(p string, includeExt bool) string {
+func pathToID(p string, includeExt bool) string {
 	_, file := path.Split(p)
 	if includeExt {
 		return file

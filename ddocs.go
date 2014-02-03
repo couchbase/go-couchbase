@@ -26,7 +26,7 @@ type DDocsResult struct {
 	Rows []struct {
 		DDoc struct {
 			Meta map[string]interface{}
-			Json DDoc
+			JSON DDoc
 		} `json:"doc"`
 	} `json:"rows"`
 }
@@ -69,7 +69,7 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 	req.Header.Set("Content-Type", "application/json")
 	maybeAddAuth(req, b.authHandler())
 
-	res, err := HttpClient.Do(req)
+	res, err := HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -97,7 +97,7 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 	req.Header.Set("Content-Type", "application/json")
 	maybeAddAuth(req, b.authHandler())
 
-	res, err := HttpClient.Do(req)
+	res, err := HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -126,7 +126,7 @@ func (b *Bucket) DeleteDDoc(docname string) error {
 	req.Header.Set("Content-Type", "application/json")
 	maybeAddAuth(req, b.authHandler())
 
-	res, err := HttpClient.Do(req)
+	res, err := HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}

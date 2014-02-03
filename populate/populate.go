@@ -3,12 +3,13 @@ package main
 import (
 	"flag"
 	"fmt"
-	"github.com/couchbaselabs/go-couchbase"
 	"log"
 	"math/rand"
 	"os"
 	"text/tabwriter"
 	"time"
+
+	"github.com/couchbaselabs/go-couchbase"
 )
 
 var poolName = flag.String("pool", "default", "Pool to connect to")
@@ -45,7 +46,7 @@ var projects = []string{
 	"ep-engine", "couchdb", "ns_server", "moxi", "libcouchbase",
 }
 
-type Record struct {
+type record struct {
 	Author   string `json:"author"`
 	Reviewer string `json:"reviewer"`
 	Action   string `json:"action"`
@@ -87,7 +88,7 @@ func harass(c *couchbase.Client, b *couchbase.Bucket) {
 	}()
 
 	for {
-		r := Record{
+		r := record{
 			Author:   names[rand.Intn(len(names))],
 			Reviewer: names[rand.Intn(len(names))],
 			Action:   actions[rand.Intn(len(actions))],
