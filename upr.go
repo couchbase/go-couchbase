@@ -164,10 +164,6 @@ func (feed *UprFeed) doSession(uprconns []*uprConnection) {
 	close(feed.c)
 }
 
-// exponential backoff while connection retry.
-const initialRetryInterval = 1 * time.Second
-const maximumRetryInterval = 30 * time.Second
-
 // TODO: This function is not used at present.
 func (feed *UprFeed) retryConnections(
 	uprconns []*uprConnection) ([]*uprConnection, bool) {
