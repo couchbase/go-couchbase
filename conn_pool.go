@@ -180,11 +180,3 @@ func (cp *connectionPool) StartTapFeed(args *memcached.TapArguments) (*memcached
 
 	return mc.StartTapFeed(*args)
 }
-
-// TODO: Remove this after goupr merge
-func (cp *connectionPool) Createsem() {
-	<-cp.createsem
-}
-func (cp *connectionPool) Host() string {
-	return cp.host
-}
