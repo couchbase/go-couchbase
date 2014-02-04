@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/prataprc/gomemcached/client"
+	"github.com/dustin/gomemcached/client"
 )
 
 var errClosedPool = errors.New("the pool is closed")

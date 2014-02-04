@@ -4,10 +4,28 @@ package couchbase
 import (
 	"encoding/binary"
 	"fmt"
-	mcd "github.com/prataprc/gomemcached"
-	mc "github.com/prataprc/gomemcached/client"
+	mcd "github.com/dustin/gomemcached"
+	mc "github.com/dustin/gomemcached/client"
 	"log"
 	"time"
+)
+
+const (
+	UPR_OPEN         = mcd.CommandCode(0x50) // Open a upr connection with `name`
+	UPR_ADD_STREAM   = mcd.CommandCode(0x51) // Sent by ebucketmigrator to upr consumer
+	UPR_CLOSE_STREAM = mcd.CommandCode(0x52) // Sent by ebucketmigrator to upr consumer
+	UPR_FAILOVER_LOG = mcd.CommandCode(0x54) // Request all known failover ids for restart
+	UPR_STREAM_REQ   = mcd.CommandCode(0x53) // Stream request from consumer to producer
+	UPR_STREAM_END   = mcd.CommandCode(0x55) // Sent by producer when it is going to end stream
+	UPR_SNAPSHOTM    = mcd.CommandCode(0x56) // Sent by producer for a new snapshot
+	UPR_MUTATION     = mcd.CommandCode(0x57) // Notifies SET/ADD/REPLACE/etc.  on the server
+	UPR_DELETION     = mcd.CommandCode(0x58) // Notifies DELETE on the server
+	UPR_EXPIRATION   = mcd.CommandCode(0x59) // Notifies key expiration
+	UPR_FLUSH        = mcd.CommandCode(0x5a) // Notifies vbucket flush
+)
+
+const (
+	ROLLBACK = mcd.Status(0x23)
 )
 
 // UprStream will maintain stream information per vbucket
@@ -18,7 +36,7 @@ type UprStream struct {
 	Highseq  uint64 // to be supplied by the application
 	Startseq uint64 // to be supplied by the application
 	Endseq   uint64 // to be supplied by the application
-	Flog     mc.FailoverLog
+	Flog     FailoverLog
 }
 
 // UprEvent objects will be created for stream mutations and deletions and
@@ -60,8 +78,8 @@ type msgT struct {
 }
 
 var eventTypes = map[mcd.CommandCode]string{ // Refer UprEvent
-	mcd.UPR_MUTATION: "UPR_MUTATION",
-	mcd.UPR_DELETION: "UPR_DELETION",
+	UPR_MUTATION: "UPR_MUTATION",
+	UPR_DELETION: "UPR_DELETION",
 }
 
 // StartUprFeed creates a feed that aggregates all mutations for the bucket
@@ -96,16 +114,16 @@ func StartUprFeed(b *Bucket, name string,
 
 // GetFailoverLogs return a list of vuuid and sequence number for all
 // vbuckets.
-func GetFailoverLogs(b *Bucket, name string) ([]mc.FailoverLog, error) {
+func GetFailoverLogs(b *Bucket, name string) ([]FailoverLog, error) {
 
-	var flog mc.FailoverLog
+	var flog FailoverLog
 	var err error
 	uprconns, err := connectToNodes(b, name)
 	if err == nil {
-		flogs := make([]mc.FailoverLog, 0)
+		flogs := make([]FailoverLog, 0)
 		vbmap := vbConns(b, uprconns)
 		for vb, uprconn := range vbmap {
-			if flog, err = mc.RequestFailoverLog(uprconn.conn, vb); err != nil {
+			if flog, err = RequestFailoverLog(uprconn.conn, vb); err != nil {
 				return nil, err
 			}
 			flogs = append(flogs, flog)
@@ -222,8 +240,8 @@ func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
 	vb := uint16(req.Opaque)
 	stream := feed.streams[uint16(req.Opaque)]
 	switch req.Opcode {
-	case mcd.UPR_STREAM_REQ:
-		rollb, flog, err := handleStreamResponse(mc.Request2Response(req))
+	case UPR_STREAM_REQ:
+		rollb, flog, err := handleStreamResponse(Request2Response(req))
 		if err == nil {
 			if flog != nil {
 				stream.Flog = flog
@@ -232,20 +250,20 @@ func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
 				log.Println("Requesting a rollback for %v to sequence %v",
 					vb, rollb)
 				flags := uint32(0)
-				err = mc.RequestStream(
+				err = RequestStream(
 					uprconn.conn, flags, req.Opaque, vb, stream.Vuuid,
 					rollb, stream.Endseq, stream.Highseq)
 			}
 		}
-	case mcd.UPR_MUTATION, mcd.UPR_DELETION:
+	case UPR_MUTATION, UPR_DELETION:
 		e := feed.makeUprEvent(req)
 		stream.Startseq = e.Seqno
 		feed.c <- e
-	case mcd.UPR_STREAM_END:
-		res := mc.Request2Response(req)
+	case UPR_STREAM_END:
+		res := Request2Response(req)
 		err = fmt.Errorf("Stream %v is ending", uint16(res.Opaque))
-	case mcd.UPR_SNAPSHOTM:
-	case mcd.UPR_CLOSE_STREAM, mcd.UPR_EXPIRATION, mcd.UPR_FLUSH, mcd.UPR_ADD_STREAM:
+	case UPR_SNAPSHOTM:
+	case UPR_CLOSE_STREAM, UPR_EXPIRATION, UPR_FLUSH, UPR_ADD_STREAM:
 		err = fmt.Errorf("Opcode %v not implemented", req.Opcode)
 	default:
 		err = fmt.Errorf("ERROR: un-known opcode received %v", req)
@@ -253,15 +271,15 @@ func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
 	return
 }
 
-func handleStreamResponse(res *mcd.MCResponse) (uint64, mc.FailoverLog, error) {
+func handleStreamResponse(res *mcd.MCResponse) (uint64, FailoverLog, error) {
 	var rollback uint64
 	var err error
-	var flog mc.FailoverLog
+	var flog FailoverLog
 
 	switch {
-	case res.Status == mcd.ROLLBACK && len(res.Extras) != 8:
+	case res.Status == ROLLBACK && len(res.Extras) != 8:
 		err = fmt.Errorf("invalid rollback %v\n", res.Extras)
-	case res.Status == mcd.ROLLBACK:
+	case res.Status == ROLLBACK:
 		rollback = binary.BigEndian.Uint64(res.Extras)
 	case res.Status != mcd.SUCCESS:
 		err = fmt.Errorf("Unexpected status %v", res.Status)
@@ -270,7 +288,7 @@ func handleStreamResponse(res *mcd.MCResponse) (uint64, mc.FailoverLog, error) {
 		if rollback > 0 {
 			return rollback, flog, err
 		} else {
-			flog, err = mc.ParseFailoverLog(res.Body[:])
+			flog, err = ParseFailoverLog(res.Body[:])
 		}
 	}
 	return rollback, flog, err
@@ -302,7 +320,7 @@ func connectToNodes(b *Bucket, name string) ([]*uprConnection, error) {
 
 func connectToNode(b *Bucket, conn *mc.Client,
 	name, host string) (uprconn *uprConnection, err error) {
-	if err = mc.UprOpen(conn, name, uint32(0x1) /*flags*/); err != nil {
+	if err = UprOpen(conn, name, uint32(0x1) /*flags*/); err != nil {
 		return
 	}
 	uprconn = &uprConnection{
@@ -335,7 +353,7 @@ func startStreams(streams map[uint16]*UprStream,
 	for vb, uprconn := range vbmap {
 		stream := streams[vb]
 		flags := uint32(0)
-		err := mc.RequestStream(
+		err := RequestStream(
 			uprconn.conn, flags, uint32(vb), vb, stream.Vuuid,
 			stream.Startseq, stream.Endseq, stream.Highseq)
 		if err != nil {
