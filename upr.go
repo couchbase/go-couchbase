@@ -374,7 +374,7 @@ func doReceive(uprconn *uprConnection, host string,
 	var pkt mcd.MCRequest
 	var err error
 
-	mcconn := uprconn.conn.GetConnection()
+	mcconn := uprconn.conn.Hijack()
 
 loop:
 	for {
