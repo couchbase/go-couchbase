@@ -10,6 +10,9 @@ import (
 	"time"
 )
 
+// ViewRow represents a single result from a view.
+//
+// Doc is present only if include_docs was set on the request.
 type ViewRow struct {
 	ID    string
 	Key   interface{}
@@ -17,6 +20,8 @@ type ViewRow struct {
 	Doc   *interface{}
 }
 
+// A ViewError is a node-specific error indicating a partial failure
+// within a view result.
 type ViewError struct {
 	From   string
 	Reason string
@@ -26,6 +31,8 @@ func (ve ViewError) Error() string {
 	return "Node: " + ve.From + ", reason: " + ve.Reason
 }
 
+// ViewResult holds the entire result set from a view request,
+// including the rows and the errors.
 type ViewResult struct {
 	TotalRows int `json:"total_rows"`
 	Rows      []ViewRow
@@ -54,8 +61,9 @@ func (b *Bucket) randomBaseURL() (*url.URL, error) {
 	return u, err
 }
 
-// Document ID type for the startkey_docid parameter in views.
-type DocId string
+// DocID is the document ID type for the startkey_docid parameter in
+// views.
+type DocID string
 
 func qParam(k, v string) string {
 	format := `"%s"`
@@ -66,8 +74,8 @@ func qParam(k, v string) string {
 	return fmt.Sprintf(format, v)
 }
 
-// Build a URL for a view with the given ddoc, view name, and
-// parameters.
+// ViewURL constructs a URL for a view with the given ddoc, view name,
+// and parameters.
 func (b *Bucket) ViewURL(ddoc, name string,
 	params map[string]interface{}) (string, error) {
 	u, err := b.randomBaseURL()
@@ -78,7 +86,7 @@ func (b *Bucket) ViewURL(ddoc, name string,
 	values := url.Values{}
 	for k, v := range params {
 		switch t := v.(type) {
-		case DocId:
+		case DocID:
 			values[k] = []string{string(t)}
 		case string:
 			values[k] = []string{qParam(k, t)}
@@ -109,7 +117,8 @@ func (b *Bucket) ViewURL(ddoc, name string,
 // ViewCallback is called for each view invocation.
 var ViewCallback func(ddoc, name string, start time.Time, err error)
 
-// Perform a view request that can map row values to a custom type.
+// ViewCustom performs a view request that can map row values to a
+// custom type.
 //
 // See the source to View for an example usage.
 func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
@@ -153,7 +162,7 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	return nil
 }
 
-// Execute a view.
+// View executes a view.
 //
 // The ddoc parameter is just the bare name of your design doc without
 // the "_design/" prefix.

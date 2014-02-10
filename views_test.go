@@ -51,7 +51,7 @@ func TestViewURL(t *testing.T) {
 			"/x/_design/a/_view/b",
 			map[string]string{"i": "1", "b": "true", "s": `"ess"`}},
 		{"a", "b",
-			map[string]interface{}{"unk": DocId("le"), "startkey_docid": "ess"},
+			map[string]interface{}{"unk": DocID("le"), "startkey_docid": "ess"},
 			"/x/_design/a/_view/b",
 			map[string]string{"unk": "le", "startkey_docid": "ess"}},
 		{"a", "b",
