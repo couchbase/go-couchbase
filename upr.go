@@ -139,7 +139,6 @@ func (feed *UprFeed) Close() {
 	if feed.hasQuit() {
 		return
 	}
-	log.Println("Closing feed")
 	close(feed.quit)
 	feed.vbmap = nil
 	feed.streams = nil
