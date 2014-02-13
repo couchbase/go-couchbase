@@ -11,21 +11,21 @@ import (
 )
 
 const (
-	UPR_OPEN         = mcd.CommandCode(0x50) // Open a upr connection with `name`
-	UPR_ADD_STREAM   = mcd.CommandCode(0x51) // Sent by ebucketmigrator to upr consumer
-	UPR_CLOSE_STREAM = mcd.CommandCode(0x52) // Sent by ebucketmigrator to upr consumer
-	UPR_FAILOVER_LOG = mcd.CommandCode(0x54) // Request all known failover ids for restart
-	UPR_STREAM_REQ   = mcd.CommandCode(0x53) // Stream request from consumer to producer
-	UPR_STREAM_END   = mcd.CommandCode(0x55) // Sent by producer when it is going to end stream
-	UPR_SNAPSHOTM    = mcd.CommandCode(0x56) // Sent by producer for a new snapshot
-	UPR_MUTATION     = mcd.CommandCode(0x57) // Notifies SET/ADD/REPLACE/etc.  on the server
-	UPR_DELETION     = mcd.CommandCode(0x58) // Notifies DELETE on the server
-	UPR_EXPIRATION   = mcd.CommandCode(0x59) // Notifies key expiration
-	UPR_FLUSH        = mcd.CommandCode(0x5a) // Notifies vbucket flush
+	uprOPEN        = mcd.CommandCode(0x50) // Open a upr connection with `name`
+	uprAddSTREAM   = mcd.CommandCode(0x51) // Sent by ebucketmigrator to upr consumer
+	uprCloseSTREAM = mcd.CommandCode(0x52) // Sent by ebucketmigrator to upr consumer
+	uprFailoverLOG = mcd.CommandCode(0x54) // Request all known failover ids for restart
+	uprStreamREQ   = mcd.CommandCode(0x53) // Stream request from consumer to producer
+	uprStreamEND   = mcd.CommandCode(0x55) // Sent by producer when it is going to end stream
+	uprSnapshotM   = mcd.CommandCode(0x56) // Sent by producer for a new snapshot
+	uprMUTATION    = mcd.CommandCode(0x57) // Notifies SET/ADD/REPLACE/etc.  on the server
+	uprDELETION    = mcd.CommandCode(0x58) // Notifies DELETE on the server
+	uprEXPIRATION  = mcd.CommandCode(0x59) // Notifies key expiration
+	uprFLUSH       = mcd.CommandCode(0x5a) // Notifies vbucket flush
 )
 
 const (
-	ROLLBACK = mcd.Status(0x23)
+	rollBack = mcd.Status(0x23)
 )
 
 // UprStream will maintain stream information per vbucket
@@ -58,7 +58,7 @@ type UprFeed struct {
 	c chan UprEvent
 
 	bucket  *Bucket                   // upr client for bucket
-	name    string                    // name of the connection used in UPR_OPEN
+	name    string                    // name of the connection used in uprOPEN
 	vbmap   map[uint16]*uprConnection // vbucket-number->connection mapping
 	streams map[uint16]*UprStream     // vbucket-number->stream mapping
 	// `quit` channel is used to signal that a Close() is called on UprFeed
@@ -78,8 +78,8 @@ type msgT struct {
 }
 
 var eventTypes = map[mcd.CommandCode]string{ // Refer UprEvent
-	UPR_MUTATION: "UPR_MUTATION",
-	UPR_DELETION: "UPR_DELETION",
+	uprMUTATION: "UPR_MUTATION",
+	uprDELETION: "UPR_DELETION",
 }
 
 // StartUprFeed creates a feed that aggregates all mutations for the bucket
@@ -239,7 +239,7 @@ func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
 	vb := uint16(req.Opaque)
 	stream := feed.streams[uint16(req.Opaque)]
 	switch req.Opcode {
-	case UPR_STREAM_REQ:
+	case uprStreamREQ:
 		rollb, flog, err := handleStreamResponse(Request2Response(req))
 		if err == nil {
 			if flog != nil {
@@ -254,15 +254,15 @@ func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
 					rollb, stream.Endseq, stream.Highseq)
 			}
 		}
-	case UPR_MUTATION, UPR_DELETION:
+	case uprMUTATION, uprDELETION:
 		e := feed.makeUprEvent(req)
 		stream.Startseq = e.Seqno
 		feed.c <- e
-	case UPR_STREAM_END:
+	case uprStreamEND:
 		res := Request2Response(req)
 		err = fmt.Errorf("Stream %v is ending", uint16(res.Opaque))
-	case UPR_SNAPSHOTM:
-	case UPR_CLOSE_STREAM, UPR_EXPIRATION, UPR_FLUSH, UPR_ADD_STREAM:
+	case uprSnapshotM:
+	case uprCloseSTREAM, uprEXPIRATION, uprFLUSH, uprAddSTREAM:
 		err = fmt.Errorf("Opcode %v not implemented", req.Opcode)
 	default:
 		err = fmt.Errorf("ERROR: un-known opcode received %v", req)
@@ -276,9 +276,9 @@ func handleStreamResponse(res *mcd.MCResponse) (uint64, FailoverLog, error) {
 	var flog FailoverLog
 
 	switch {
-	case res.Status == ROLLBACK && len(res.Extras) != 8:
+	case res.Status == rollBack && len(res.Extras) != 8:
 		err = fmt.Errorf("invalid rollback %v\n", res.Extras)
-	case res.Status == ROLLBACK:
+	case res.Status == rollBack:
 		rollback = binary.BigEndian.Uint64(res.Extras)
 	case res.Status != mcd.SUCCESS:
 		err = fmt.Errorf("Unexpected status %v", res.Status)

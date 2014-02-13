@@ -7,8 +7,6 @@ import (
 	"testing"
 )
 
-const TESTURL = "http://localhost:9000"
-
 type testConn struct {
 	req      *mcd.MCRequest
 	transmit func(*mcd.MCRequest) error
@@ -55,8 +53,8 @@ func TestUprOpen(t *testing.T) {
 	conn.send = func(req *mcd.MCRequest) (*mcd.MCResponse, error) {
 		if string(req.Key) != name {
 			t.Fatal("name mistmatch")
-		} else if req.Opcode != UPR_OPEN {
-			t.Fatal("opcode is not UPR_OPEN")
+		} else if req.Opcode != uprOPEN {
+			t.Fatal("opcode is not uprOPEN")
 		}
 		res := Request2Response(req)
 		res.Status = mcd.SUCCESS
@@ -80,8 +78,8 @@ func TestRequestFailoverLog(t *testing.T) {
 	conn := &testConn{}
 	vbucket := uint16(0x15)
 	conn.send = func(req *mcd.MCRequest) (*mcd.MCResponse, error) {
-		if req.Opcode != UPR_FAILOVER_LOG {
-			t.Fatal("opcode is not UPR_OPEN")
+		if req.Opcode != uprFailoverLOG {
+			t.Fatal("opcode is not uprOPEN")
 		} else if req.VBucket != vbucket {
 			t.Fatal("mismatch in requested vbucket")
 		} else if req.VBucket != uint16(req.Opaque) {
@@ -107,8 +105,8 @@ func TestRequestStream(t *testing.T) {
 	flags := uint32(0)
 	s, e, h := uint64(0), uint64(0xFFFFFFFFFFFFFFFF), uint64(0)
 	conn.transmit = func(req *mcd.MCRequest) error {
-		if req.Opcode != UPR_STREAM_REQ {
-			t.Fatal("opcode is not UPR_STREAM_REQ")
+		if req.Opcode != uprStreamREQ {
+			t.Fatal("opcode is not uprStreamREQ")
 		} else if req.VBucket != vbucket {
 			t.Fatal("mismatch in requested vbucket")
 		} else if req.VBucket != uint16(req.Opaque) {
