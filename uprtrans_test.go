@@ -38,7 +38,7 @@ func TestParseFailoverLog(t *testing.T) {
 		binary.BigEndian.PutUint64(buf[offset+8:], x[1])
 		offset += 16
 	}
-	if flogsOut, err := ParseFailoverLog(buf); err != nil {
+	if flogsOut, err := parseFailoverLog(buf); err != nil {
 		t.Fatal(err)
 	} else if flogsOut[0][0] != flogsIn[0][0] || flogsOut[0][1] != flogsIn[0][1] ||
 		flogsOut[1][0] != flogsIn[1][0] || flogsOut[1][1] != flogsIn[1][1] {
@@ -56,11 +56,11 @@ func TestUprOpen(t *testing.T) {
 		} else if req.Opcode != uprOPEN {
 			t.Fatal("opcode is not uprOPEN")
 		}
-		res := Request2Response(req)
+		res := request2Response(req)
 		res.Status = mcd.SUCCESS
 		return res, nil
 	}
-	UprOpen(conn, name, 0x1 /*flags*/)
+	uprOpen(conn, name, 0x1 /*flags*/)
 }
 
 func TestRequestFailoverLog(t *testing.T) {
@@ -85,12 +85,12 @@ func TestRequestFailoverLog(t *testing.T) {
 		} else if req.VBucket != uint16(req.Opaque) {
 			t.Fatal("vbucket and opaque are expected to be same")
 		}
-		res := Request2Response(req)
+		res := request2Response(req)
 		res.Body = buf
 		res.Status = mcd.SUCCESS
 		return res, nil
 	}
-	if flogsOut, err := RequestFailoverLog(conn, vbucket); err != nil {
+	if flogsOut, err := requestFailoverLog(conn, vbucket); err != nil {
 		t.Fatal(err)
 	} else if flogsOut[0][0] != flogsIn[0][0] || flogsOut[0][1] != flogsIn[0][1] ||
 		flogsOut[1][0] != flogsIn[1][0] || flogsOut[1][1] != flogsIn[1][1] {
@@ -128,5 +128,5 @@ func TestRequestStream(t *testing.T) {
 		}
 		return nil
 	}
-	RequestStream(conn, flags, uint32(vbucket), vbucket, vuuid, s, e, h)
+	requestStream(conn, flags, uint32(vbucket), vbucket, vuuid, s, e, h)
 }

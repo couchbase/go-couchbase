@@ -28,6 +28,10 @@ const (
 	rollBack = mcd.Status(0x23)
 )
 
+// FailoverLog is a slice of 2 element array, containing a list of,
+// [[vuuid, sequence-no], [vuuid, sequence-no] ...]
+type FailoverLog [][2]uint64
+
 // UprStream will maintain stream information per vbucket
 type UprStream struct {
 	Vbucket  uint16 // vbucket id
@@ -123,7 +127,7 @@ func GetFailoverLogs(b *Bucket, name string) ([]FailoverLog, error) {
 		flogs := make([]FailoverLog, 0)
 		vbmap := vbConns(b, uprconns)
 		for vb, uprconn := range vbmap {
-			if flog, err = RequestFailoverLog(uprconn.conn, vb); err != nil {
+			if flog, err = requestFailoverLog(uprconn.conn, vb); err != nil {
 				return nil, err
 			}
 			flogs = append(flogs, flog)
@@ -240,7 +244,7 @@ func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
 	stream := feed.streams[uint16(req.Opaque)]
 	switch req.Opcode {
 	case uprStreamREQ:
-		rollb, flog, err := handleStreamResponse(Request2Response(req))
+		rollb, flog, err := handleStreamResponse(request2Response(req))
 		if err == nil {
 			if flog != nil {
 				stream.Flog = flog
@@ -249,7 +253,7 @@ func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
 				log.Println("Requesting a rollback for %v to sequence %v",
 					vb, rollb)
 				flags := uint32(0)
-				err = RequestStream(
+				err = requestStream(
 					uprconn.conn, flags, req.Opaque, vb, stream.Vuuid,
 					rollb, stream.Endseq, stream.Highseq)
 			}
@@ -259,7 +263,7 @@ func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
 		stream.Startseq = e.Seqno
 		feed.c <- e
 	case uprStreamEND:
-		res := Request2Response(req)
+		res := request2Response(req)
 		err = fmt.Errorf("Stream %v is ending", uint16(res.Opaque))
 	case uprSnapshotM:
 	case uprCloseSTREAM, uprEXPIRATION, uprFLUSH, uprAddSTREAM:
@@ -287,7 +291,7 @@ func handleStreamResponse(res *mcd.MCResponse) (uint64, FailoverLog, error) {
 		if rollback > 0 {
 			return rollback, flog, err
 		} else {
-			flog, err = ParseFailoverLog(res.Body[:])
+			flog, err = parseFailoverLog(res.Body[:])
 		}
 	}
 	return rollback, flog, err
@@ -319,7 +323,7 @@ func connectToNodes(b *Bucket, name string) ([]*uprConnection, error) {
 
 func connectToNode(b *Bucket, conn *mc.Client,
 	name, host string) (uprconn *uprConnection, err error) {
-	if err = UprOpen(conn, name, uint32(0x1) /*flags*/); err != nil {
+	if err = uprOpen(conn, name, uint32(0x1) /*flags*/); err != nil {
 		return
 	}
 	uprconn = &uprConnection{
@@ -352,7 +356,7 @@ func startStreams(streams map[uint16]*UprStream,
 	for vb, uprconn := range vbmap {
 		stream := streams[vb]
 		flags := uint32(0)
-		err := RequestStream(
+		err := requestStream(
 			uprconn.conn, flags, uint32(vb), vb, stream.Vuuid,
 			stream.Startseq, stream.Endseq, stream.Highseq)
 		if err != nil {

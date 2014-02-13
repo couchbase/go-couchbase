@@ -15,15 +15,11 @@ type transporter interface {
 	Send(*mcd.MCRequest) (*mcd.MCResponse, error)
 }
 
-// FailoverLog is a slice of 2 element array, containing a list of,
-// [[vuuid, sequence-no], [vuuid, sequence-no] ...]
-type FailoverLog [][2]uint64
-
-// UprOpen sends uprOPEN request with `name`. The API will wait for a
+// uprOpen sends uprOPEN request with `name`. The API will wait for a
 // response before returning back to the caller.
-func UprOpen(conn transporter, name string, flags uint32) error {
+func uprOpen(conn transporter, name string, flags uint32) error {
 	if len(name) > 65535 {
-		return fmt.Errorf("UprOpen: name cannot exceed 65535")
+		return fmt.Errorf("uprOpen: name cannot exceed 65535")
 	}
 
 	req := &mcd.MCRequest{Opcode: uprOPEN, Opaque: opaqueOpen}
@@ -46,11 +42,9 @@ func UprOpen(conn transporter, name string, flags uint32) error {
 	return nil
 }
 
-// RequestFailoverLog sends uprFailoverLOG request for `vbucket` and waits
+// requestFailoverLog sends uprFailoverLOG request for `vbucket` and waits
 // for a response before returning.
-func RequestFailoverLog(conn transporter,
-	vbucket uint16) (flog FailoverLog, err error) {
-
+func requestFailoverLog(conn transporter, vbucket uint16) (flog FailoverLog, err error) {
 	var res *mcd.MCResponse
 
 	req := &mcd.MCRequest{
@@ -69,16 +63,16 @@ func RequestFailoverLog(conn transporter,
 	} else if res.Status != mcd.SUCCESS {
 		return nil, fmt.Errorf("status %v", res.Status)
 	}
-	if flog, err = ParseFailoverLog(res.Body); err != nil {
+	if flog, err = parseFailoverLog(res.Body); err != nil {
 		return nil, err
 	}
 	return flog, err
 }
 
-// RequestStream sends uprStreamREQ request for `vbucket`. The call will
+// requestStream sends uprStreamREQ request for `vbucket`. The call will
 // return back immediate to the caller, it is upto the caller to handle the
 // response sent back from the producer.
-func RequestStream(conn transporter, flags, opq uint32, vb uint16,
+func requestStream(conn transporter, flags, opq uint32, vb uint16,
 	vuuid, startSeqno, endSeqno, highSeqno uint64) error {
 
 	req := &mcd.MCRequest{Opcode: uprStreamREQ, Opaque: opq, VBucket: vb}
@@ -93,10 +87,10 @@ func RequestStream(conn transporter, flags, opq uint32, vb uint16,
 	return conn.Transmit(req)
 }
 
-// EndStream sends uprStreamEND request for `vbucket`. The call will
+// endStream sends uprStreamEND request for `vbucket`. The call will
 // return back immediate to the caller, it is upto the caller to handle the
 // response sent back from the producer.
-func EndStream(conn transporter, flags uint32, vbucket uint16) error {
+func endStream(conn transporter, flags uint32, vbucket uint16) error {
 	req := &mcd.MCRequest{
 		Opcode:  uprStreamEND,
 		Opaque:  uint32(vbucket),
@@ -107,9 +101,9 @@ func EndStream(conn transporter, flags uint32, vbucket uint16) error {
 	return conn.Transmit(req)
 }
 
-// ParseFailoverLog parses response body from uprFailvoerLOG and
+// parseFailoverLog parses response body from uprFailvoerLOG and
 // uprStreamREQ response.
-func ParseFailoverLog(body []byte) (FailoverLog, error) {
+func parseFailoverLog(body []byte) (FailoverLog, error) {
 	if len(body)%16 != 0 {
 		err := fmt.Errorf("invalid body length %v, in failover-log", len(body))
 		return nil, err
@@ -124,10 +118,10 @@ func ParseFailoverLog(body []byte) (FailoverLog, error) {
 	return log, nil
 }
 
-// Request2Response converts will interpret VBucket field as Status field and
+// request2Response converts will interpret VBucket field as Status field and
 // re-interpret the request packate as response packet. This is required for
 // UPR streams which are full duplex.
-func Request2Response(req *mcd.MCRequest) *mcd.MCResponse {
+func request2Response(req *mcd.MCRequest) *mcd.MCResponse {
 	return &mcd.MCResponse{
 		Opcode: req.Opcode,
 		Cas:    req.Cas,
