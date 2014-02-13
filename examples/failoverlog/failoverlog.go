@@ -15,7 +15,7 @@ func main() {
 	}
 
 	// Get failover log for a vbucket
-	flogs, err := couchbase.GetFailoverLogs(bucket, "failoverlog")
+	flogs, err := bucket.GetFailoverLogs("failoverlog")
 	if err != nil {
 		panic(err)
 	}

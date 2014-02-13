@@ -1,5 +1,30 @@
-// goupr package provides client sdk for UPR connections and streaming.
+// provides client sdk for UPR connections and streaming.
+//
+// concurrency model for smart UPR client.
+//
+//     doSession() ----------------*
+//         |                       |
+//      (spawns)               doEvents()
+//         |
+//         *--> doReceive()
+//         |
+//         *--> doReceive()
+//         |    ...
+//         |    ...
+//         *--> doReceive()
+//
+// a call to StartUprFeed spawns doSession() routine, which further spawns
+// doReceive() for each upr-connection. A single upr connection can stream all
+// vbucket mutations that are active on the node.
+//
+// doSession() acts as the supervisor routine for doReceive() worker routines
+// and listens for messages and anamolies from doReceive()
+
 package couchbase
+
+// TODO:
+//  performance consideration,
+//      try to adjust buffer size for feed.C channel
 
 import (
 	"encoding/binary"
@@ -10,6 +35,7 @@ import (
 	"time"
 )
 
+// constants used for memcached protocol
 const (
 	uprOPEN        = mcd.CommandCode(0x50) // Open a upr connection with `name`
 	uprAddSTREAM   = mcd.CommandCode(0x51) // Sent by ebucketmigrator to upr consumer
@@ -23,7 +49,6 @@ const (
 	uprEXPIRATION  = mcd.CommandCode(0x59) // Notifies key expiration
 	uprFLUSH       = mcd.CommandCode(0x5a) // Notifies vbucket flush
 )
-
 const (
 	rollBack = mcd.Status(0x23)
 )
@@ -86,62 +111,65 @@ var eventTypes = map[mcd.CommandCode]string{ // Refer UprEvent
 	uprDELETION: "UPR_DELETION",
 }
 
-// StartUprFeed creates a feed that aggregates all mutations for the bucket
-// and publishes them as UprEvent on UprFeed:C channel.
-func StartUprFeed(b *Bucket, name string,
-	streams map[uint16]*UprStream) (feed *UprFeed, err error) {
-
-	uprconns, err := connectToNodes(b, name)
-	if err == nil {
-		vbmap := vbConns(b, uprconns)
-		if streams == nil {
-			streams = freshStreams(vbmap)
-		}
-		streams, err = startStreams(streams, vbmap)
-		if err != nil {
-			closeConnections(uprconns)
-			return nil, err
-		}
-		feed = &UprFeed{
-			bucket:  b,
-			name:    name,
-			vbmap:   vbmap,
-			streams: streams,
-			quit:    make(chan bool),
-			c:       make(chan UprEvent, 16),
-		}
-		feed.C = feed.c
-		go feed.doSession(uprconns)
-	}
-	return feed, err
-}
-
 // GetFailoverLogs return a list of vuuid and sequence number for all vbuckets.
 func (b *Bucket) GetFailoverLogs(name string) ([]FailoverLog, error) {
-
 	var flog FailoverLog
 	var err error
+
 	uprconns, err := connectToNodes(b, name)
-	if err == nil {
-		flogs := make([]FailoverLog, 0)
-		vbmap := vbConns(b, uprconns)
-		for vb, uprconn := range vbmap {
-			if flog, err = requestFailoverLog(uprconn.conn, vb); err != nil {
-				return nil, err
-			}
-			flogs = append(flogs, flog)
-		}
-		closeConnections(uprconns)
-		return flogs, nil
+	if err != nil {
+		return nil, err
 	}
-	return nil, err
+	flogs := make([]FailoverLog, 0)
+	for vb, uprconn := range vbConns(b, uprconns) {
+		if flog, err = requestFailoverLog(uprconn.conn, vb); err != nil {
+			break
+		}
+		flogs = append(flogs, flog)
+	}
+	if err != nil {
+		closeConnections(uprconns)
+		return nil, err
+	}
+	return flogs, nil
+}
+
+// StartUprFeed creates a feed that aggregates all mutations for the bucket
+// and publishes them as UprEvent on UprFeed:C channel.
+func StartUprFeed(
+	b *Bucket, name string, streams map[uint16]*UprStream) (*UprFeed, error) {
+	var feed *UprFeed
+	var err error
+
+	uprconns, err := connectToNodes(b, name)
+	if err != nil {
+		return nil, err
+	}
+
+	vbmap := vbConns(b, uprconns)
+	if streams == nil { // Start from beginning
+		streams = freshStreams(vbmap)
+	}
+	streams, err = startStreams(streams, vbmap)
+	if err != nil {
+		closeConnections(uprconns)
+		return nil, err
+	}
+	feed = &UprFeed{
+		bucket:  b,
+		name:    name,
+		vbmap:   vbmap,
+		streams: streams,
+		quit:    make(chan bool),
+		c:       make(chan UprEvent, 16),
+	}
+	feed.C = feed.c
+	go feed.doSession(uprconns)
+	return feed, err
 }
 
 // Close UprFeed. Does the opposite of StartUprFeed()
 func (feed *UprFeed) Close() {
-	if feed.hasQuit() {
-		return
-	}
 	close(feed.quit)
 	feed.vbmap = nil
 	feed.streams = nil
@@ -168,26 +196,23 @@ func freshStreams(vbmaps map[uint16]*uprConnection) map[uint16]*UprStream {
 	return streams
 }
 
-// connect with all servers holding data for `feed.bucket` and try reconnecting
-// until `feed` is closed.
+// connect with all servers holding data for `feed.bucket`.
 func (feed *UprFeed) doSession(uprconns []*uprConnection) {
 	msgch := make(chan msgT)
 	killSwitch := make(chan bool)
-
 	for _, uprconn := range uprconns {
 		go doReceive(uprconn, uprconn.host, msgch, killSwitch)
 	}
-	feed.doEvents(msgch)
+
+	feed.doEvents(msgch) // Blocking call
 
 	close(killSwitch)
-	closeConnections(uprconns)
 	close(feed.c)
+	closeConnections(uprconns)
 }
 
 // TODO: This function is not used at present.
-func (feed *UprFeed) retryConnections(
-	uprconns []*uprConnection) ([]*uprConnection, bool) {
-
+func (feed *UprFeed) retryConnections(uprconns []*uprConnection) ([]*uprConnection, bool) {
 	var err error
 
 	log.Println("Retrying connections ...")
@@ -217,25 +242,28 @@ func (feed *UprFeed) retryConnections(
 	return uprconns, false
 }
 
-func (feed *UprFeed) doEvents(msgch <-chan msgT) bool {
+// Upr feed for a bucket will be looping inside this function listening for
+// UprEvents from vbucket connections.
+func (feed *UprFeed) doEvents(msgch <-chan msgT) (err error) {
+loop:
 	for {
 		select {
 		case msg, ok := <-msgch:
 			if !ok {
-				return false
+				err = fmt.Errorf("doevents: msgch closed")
+			} else if msg.err != nil {
+				err = fmt.Errorf("doevents: %v, %v", msg.uprconn.host, msg.err)
+			} else {
+				err = handleUprMessage(feed, &msg.pkt)
 			}
-			if msg.err != nil {
-				log.Printf(
-					"Received error from %v: %v\n", msg.uprconn.host, msg.err)
-				return false
-			} else if err := handleUprMessage(feed, &msg.pkt); err != nil {
-				log.Println(err)
-				return false
+			if err != nil {
+				break loop
 			}
 		case <-feed.quit:
-			return true
+			break loop
 		}
 	}
+	return
 }
 
 func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
@@ -296,6 +324,8 @@ func handleStreamResponse(res *mcd.MCResponse) (uint64, FailoverLog, error) {
 	return rollback, flog, err
 }
 
+// connect to all nodes where bucket `b` is stored. `name` will be passed to
+// the UPR producer during UPR_OPEN handshake.
 func connectToNodes(b *Bucket, name string) ([]*uprConnection, error) {
 	var conn *mc.Client
 	var err error
@@ -303,38 +333,46 @@ func connectToNodes(b *Bucket, name string) ([]*uprConnection, error) {
 	uprconns := make([]*uprConnection, 0)
 	for _, cp := range b.getConnPools() {
 		if cp == nil {
-			return nil, fmt.Errorf("go-couchbase: no connection pool")
+			err = fmt.Errorf("go-couchbase: no connection pool")
+			break
 		}
 		if conn, err = cp.Get(); err != nil {
-			return nil, err
+			break
 		}
 		// A connection can't be used after UPR; Dont' count it against the
 		// connection pool capacity
 		<-cp.createsem
-		if uprconn, err := connectToNode(b, conn, name, cp.host); err != nil {
-			return nil, err
-		} else {
+		if uprconn, err := connectToNode(b, conn, name, cp.host); err == nil {
 			uprconns = append(uprconns, uprconn)
+		} else {
+			break
 		}
+	}
+	if err != nil {
+		closeConnections(uprconns)
 	}
 	return uprconns, nil
 }
 
-func connectToNode(b *Bucket, conn *mc.Client,
-	name, host string) (uprconn *uprConnection, err error) {
+// connect to individual node.
+func connectToNode(
+	b *Bucket, conn *mc.Client, name, host string) (*uprConnection, error) {
+	var uprconn *uprConnection
+	var err error
+
 	if err = uprOpen(conn, name, uint32(0x1) /*flags*/); err != nil {
-		return
+		return nil, err
 	}
 	uprconn = &uprConnection{
 		host: host,
 		conn: conn,
 	}
 	log.Printf("Connected to host %v (%p)\n", host, conn)
-	return
+	return uprconn, err
 }
 
+// gather a map of vbucket -> uprConnection
 func vbConns(b *Bucket, uprconns []*uprConnection) map[uint16]*uprConnection {
-
 	servers, vbmaps := b.VBSMJson.ServerList, b.VBSMJson.VBucketMap
 	vbconns := make(map[uint16]*uprConnection)
 	for _, uprconn := range uprconns {
@@ -368,8 +406,8 @@ func startStreams(streams map[uint16]*UprStream,
 	return streams, nil
 }
 
-func doReceive(uprconn *uprConnection, host string,
-	msgch chan msgT, killSwitch chan bool) {
+func doReceive(
+	uprconn *uprConnection, host string, msgch chan msgT, killSwitch chan bool) {
 
 	var hdr [mcd.HDR_LEN]byte
 	var msg msgT
@@ -416,9 +454,9 @@ func (feed *UprFeed) hasQuit() bool {
 	}
 }
 
+// close memcached connections and set it to nil
 func closeConnections(uprconns []*uprConnection) {
 	for _, uprconn := range uprconns {
-		log.Printf("Closing connection for %v: %p\n", uprconn.host, uprconn.conn)
 		if uprconn.conn != nil {
 			uprconn.conn.Close()
 		}
