@@ -116,9 +116,8 @@ func StartUprFeed(b *Bucket, name string,
 	return feed, err
 }
 
-// GetFailoverLogs return a list of vuuid and sequence number for all
-// vbuckets.
-func GetFailoverLogs(b *Bucket, name string) ([]FailoverLog, error) {
+// GetFailoverLogs return a list of vuuid and sequence number for all vbuckets.
+func (b *Bucket) GetFailoverLogs(name string) ([]FailoverLog, error) {
 
 	var flog FailoverLog
 	var err error
