@@ -15,12 +15,12 @@ const TESTURL = "http://localhost:9000"
 func main() {
 	// get a bucket and mc.Client connection
 	bucket, err := getTestConnection("default")
-	//b, err := getTestConnection("default")
+	b, err := getTestConnection("default")
 	if err != nil {
 		panic(err)
 	}
 	// start upr feed
-	feed, err := couchbase.StartUprFeed(bucket, "index" /*name*/, nil)
+	feed, err := couchbase.StartUprFeed(b, "index" /*name*/, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -48,7 +48,7 @@ func main() {
 	feed.Close()
 
 	log.Println("Restarting ....")
-	feed, err = couchbase.StartUprFeed(bucket, "index" /*name*/, streams)
+	feed, err = couchbase.StartUprFeed(b, "index" /*name*/, streams)
 	if err != nil {
 		panic(err)
 	}
@@ -60,21 +60,21 @@ func main() {
 
 	<-time.After(2 * time.Second)
 
-	//e := <-feed.C
-	//exptSeq := vbseqNo[e.Vbucket]+1
+	e := <-feed.C
+	exptSeq := vbseqNo[e.Vbucket] + 1
 
-	//if e.Seqno != exptSeq {
-	//    err := fmt.Errorf("Expected seqno %v, received %v", exptSeq+1, e.Seqno)
-	//    panic(err)
-	//}
-	//if string(e.Key) != newkey {
-	//    err := fmt.Errorf("Expected key %v received %v", newkey, string(e.Key))
-	//    panic(err)
-	//}
-	//if string(e.Value) != fmt.Sprintf("%q", newvalue) {
-	//    err := fmt.Errorf("Expected value %v received %v", newvalue, string(e.Value))
-	//    panic(err)
-	//}
+	if e.Seqno != exptSeq {
+		err := fmt.Errorf("Expected seqno %v, received %v", exptSeq+1, e.Seqno)
+		panic(err)
+	}
+	if string(e.Key) != newkey {
+		err := fmt.Errorf("Expected key %v received %v", newkey, string(e.Key))
+		panic(err)
+	}
+	if string(e.Value) != fmt.Sprintf("%q", newvalue) {
+		err := fmt.Errorf("Expected value %v received %v", newvalue, string(e.Value))
+		panic(err)
+	}
 	feed.Close()
 }
 
@@ -115,7 +115,7 @@ loop:
 		count += int(seqNo)
 	}
 	if count != mutationCount {
-		panic(fmt.Errorf("Expected %v mutations", mutationCount))
+		panic(fmt.Errorf("Expected %v mutations, got %v", mutationCount, count))
 	}
 	return vbseqNo
 }
