@@ -311,15 +311,13 @@ func handleStreamResponse(res *mcd.MCResponse) (uint64, FailoverLog, error) {
 		err = fmt.Errorf("invalid rollback %v\n", res.Extras)
 	case res.Status == rollBack:
 		rollback = binary.BigEndian.Uint64(res.Extras)
+		log.Printf("Rollback %v for vb %v\n", rollback, res.Opaque /*vb*/)
+		return rollback, flog, err
 	case res.Status != mcd.SUCCESS:
 		err = fmt.Errorf("Unexpected status %v", res.Status)
 	}
 	if err == nil {
-		if rollback > 0 {
-			return rollback, flog, err
-		} else {
-			flog, err = parseFailoverLog(res.Body[:])
-		}
+		flog, err = parseFailoverLog(res.Body[:])
 	}
 	return rollback, flog, err
 }
@@ -367,7 +365,6 @@ func connectToNode(
 		host: host,
 		conn: conn,
 	}
-	log.Printf("Connected to host %v (%p)\n", host, conn)
 	return uprconn, err
 }
 
