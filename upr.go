@@ -161,7 +161,7 @@ func StartUprFeed(
 		vbmap:   vbmap,
 		streams: streams,
 		quit:    make(chan bool),
-		c:       make(chan UprEvent, 16),
+		c:       make(chan UprEvent, 10000),
 	}
 	feed.C = feed.c
 	go feed.doSession(uprconns)
@@ -215,7 +215,7 @@ func freshStreams(vbmaps map[uint16]*uprConnection) map[uint16]*UprStream {
 
 // connect with all servers holding data for `feed.bucket`.
 func (feed *UprFeed) doSession(uprconns []*uprConnection) {
-	msgch := make(chan msgT)
+	msgch := make(chan msgT, 10000)
 	killSwitch := make(chan bool)
 	for _, uprconn := range uprconns {
 		go doReceive(uprconn, uprconn.host, msgch, killSwitch)
