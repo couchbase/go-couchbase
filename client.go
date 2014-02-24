@@ -521,7 +521,7 @@ func (b *Bucket) GetRaw(k string) ([]byte, error) {
 	return d, err
 }
 
-func (b *Bucket) Touch(k string, exp int) (result memcached.ObserveResult, err error) {
+func (b *Bucket) Touch(k string, exp int) error {
 	if ClientOpCallback != nil {
 		defer func(t time.Time) { ClientOpCallback("Touch", k, t, err) }(time.Now())
 	}
