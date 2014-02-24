@@ -521,6 +521,18 @@ func (b *Bucket) GetRaw(k string) ([]byte, error) {
 	return d, err
 }
 
+func (b *Bucket) Touch(k string, exp int) (result memcached.ObserveResult, err error) {
+	if ClientOpCallback != nil {
+		defer func(t time.Time) { ClientOpCallback("Touch", k, t, err) }(time.Now())
+	}
+
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		result, err = mc.Touch(vb, k, exp)
+		return err
+	})
+	return
+}
+
 // Delete a key from this bucket.
 func (b *Bucket) Delete(k string) error {
 	return b.Write(k, 0, 0, nil, Raw)
