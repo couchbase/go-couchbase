@@ -2,6 +2,7 @@
 *.6
 *.a
 *~
+*.swp
 /examples/basic/basic
 /hello/hello
 /populate/populate
