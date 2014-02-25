@@ -191,6 +191,7 @@ func CalculateVector(lastSeq uint64, flog FailoverLog) (
 		for _, log := range flog {
 			if lastSeq >= log[1] {
 				vuuid, startseq, highseq = log[0], lastSeq, log[1]
+				return vuuid, startseq, highseq
 			}
 		}
 		vuuid, startseq, highseq = flog[0][0], flog[0][1], flog[0][1]
@@ -340,7 +341,7 @@ func handleStreamResponse(res *mcd.MCResponse) (uint64, FailoverLog, error) {
 		log.Printf("Rollback %v for vb %v\n", rollback, res.Opaque /*vb*/)
 		return rollback, flog, fmt.Errorf("ROLLBACK")
 	case res.Status != mcd.SUCCESS:
-		err = fmt.Errorf("Unexpected status %v", res.Status)
+		err = fmt.Errorf("Unexpected status %v, for %v", res.Status, res.Opaque)
 	}
 	if err == nil {
 		flog, err = parseFailoverLog(res.Body[:])
