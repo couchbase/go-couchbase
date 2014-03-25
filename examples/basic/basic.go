@@ -7,7 +7,7 @@ import (
 	"net/url"
 	"os"
 
-	"github.com/prataprc/go-couchbase"
+	"github.com/couchbaselabs/go-couchbase"
 )
 
 func mf(err error, msg string) {

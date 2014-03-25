@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	"github.com/prataprc/go-couchbase"
+	"github.com/couchbaselabs/go-couchbase"
 	"log"
 	"time"
 )

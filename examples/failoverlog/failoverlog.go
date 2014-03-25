@@ -1,7 +1,7 @@
 package main
 
 import (
-	"github.com/prataprc/go-couchbase"
+	"github.com/couchbaselabs/go-couchbase"
 	"log"
 )
 

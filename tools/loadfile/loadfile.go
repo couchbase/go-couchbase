@@ -7,7 +7,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/prataprc/go-couchbase"
+	"github.com/couchbaselabs/go-couchbase"
 )
 
 func maybeFatal(e error, f string, args ...interface{}) {
