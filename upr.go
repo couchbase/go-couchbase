@@ -29,8 +29,8 @@ package couchbase
 import (
 	"encoding/binary"
 	"fmt"
-	mcd "github.com/dustin/gomemcached"
-	mc "github.com/dustin/gomemcached/client"
+	mcd "github.com/couchbase/gomemcached"
+	mc "github.com/couchbase/gomemcached/client"
 	"log"
 	"time"
 )

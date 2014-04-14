@@ -3,7 +3,7 @@ package couchbase
 import (
 	"encoding/binary"
 	"fmt"
-	mcd "github.com/dustin/gomemcached"
+	mcd "github.com/couchbase/gomemcached"
 )
 
 const opaqueOpen = 0xBEAF0001

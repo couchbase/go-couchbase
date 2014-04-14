@@ -35,8 +35,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dustin/gomemcached"
-	"github.com/dustin/gomemcached/client"
+	"github.com/couchbase/gomemcached"
+	"github.com/couchbase/gomemcached/client"
 )
 
 // Maximum number of times to retry a chunk of a bulk get on error.
