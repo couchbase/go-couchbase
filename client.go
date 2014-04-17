@@ -36,7 +36,7 @@ import (
 	"time"
 
 	"github.com/dustin/gomemcached"
-	"github.com/dustin/gomemcached/client"
+	"github.com/dustin/gomemcached/client" // package name is 'memcached'
 )
 
 // Maximum number of times to retry a chunk of a bulk get on error.
@@ -74,18 +74,11 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 		// We encapsulate the attempt within an anonymous function to allow
 		// "defer" statement to work as intended.
 		retry, err := func() (retry bool, err error) {
-			vbm := b.VBServerMap()
-			if len(vbm.VBucketMap) < int(vb) {
-				return false, fmt.Errorf("vbmap smaller than vbucket list: %v vs. %v",
-					vb, vbm.VBucketMap)
-			}
-			masterId := vbm.VBucketMap[vb][0]
-			pool := b.getConnPool(masterId)
-			conn, err := pool.Get()
-			defer pool.Return(conn)
+			conn, pool, err := b.getConnectionToVBucket(vb)
 			if err != nil {
 				return
 			}
+			defer pool.Return(conn)
 
 			err = f(conn, uint16(vb))
 			if i, ok := err.(*gomemcached.MCResponse); ok {

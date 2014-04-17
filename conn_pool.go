@@ -9,8 +9,8 @@ import (
 
 // Error raised when a connection can't be retrieved from a pool.
 var TimeoutError = errors.New("timeout waiting to build connection")
-var closedPool = errors.New("the pool is closed")
-var errNoPool = errors.New("no pool")
+var closedPool = errors.New("the connection pool is closed")
+var errNoPool = errors.New("no connection pool")
 
 // Default timeout for retrieving a connection from the pool.
 var ConnPoolTimeout = time.Hour * 24 * 30
