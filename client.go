@@ -35,8 +35,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dustin/gomemcached"
-	"github.com/dustin/gomemcached/client"
+	"github.com/couchbase/gomemcached"
+	"github.com/couchbase/gomemcached/client"
 )
 
 // Maximum number of times to retry a chunk of a bulk get on error.
@@ -431,6 +431,48 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 	}
 
 	return err
+}
+
+func (b *Bucket) WriteCas(k string, flags, exp int, cas uint64, v interface{},
+	opt WriteOptions) (err error) {
+
+	if ClientOpCallback != nil {
+		defer func(t time.Time) {
+			ClientOpCallback(fmt.Sprintf("Write(%v)", opt), k, t, err)
+		}(time.Now())
+	}
+
+	var data []byte
+	if opt&Raw == 0 {
+		data, err = json.Marshal(v)
+		if err != nil {
+			return err
+		}
+	} else if v != nil {
+		data = v.([]byte)
+	}
+
+	var res *gomemcached.MCResponse
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		res, err = mc.SetCas(vb, k, flags, exp, cas, data)
+		return err
+	})
+
+	if err == nil && (opt&(Persist|Indexable) != 0) {
+		err = b.WaitForPersistence(k, res.Cas, data == nil)
+	}
+
+	return err
+}
+
+// Set a value in this bucket with Cas
+func (b *Bucket) Cas(k string, exp int, cas uint64, v interface{}) error {
+	return b.WriteCas(k, 0, exp, cas, v, 0)
+}
+
+// Set a value in this bucket with Cas without json encoding it
+func (b *Bucket) CasRaw(k string, exp int, cas uint64, v interface{}) error {
+	return b.WriteCas(k, 0, exp, cas, v, Raw)
 }
 
 // Set a value in this bucket.
