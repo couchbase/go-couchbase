@@ -19,7 +19,9 @@ import (
 )
 
 // HTTPClient to use for REST and view operations.
-var HTTPClient = http.DefaultClient
+var MaxIdleConnsPerHost = 256
+var HTTPTransport = &http.Transport{MaxIdleConnsPerHost: MaxIdleConnsPerHost}
+var HTTPClient = &http.Client{Transport: HTTPTransport}
 
 // PoolSize is the size of each connection pool (per host).
 var PoolSize = 4
