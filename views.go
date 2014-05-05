@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -155,10 +156,11 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 			u, res.Status, bod[:l])
 	}
 
-	d := json.NewDecoder(res.Body)
-	if err := d.Decode(vres); err != nil {
-		return err
+	body, err := ioutil.ReadAll(res.Body)
+	if err := json.Unmarshal(body, vres); err != nil {
+		return nil
 	}
+
 	return nil
 }
 
