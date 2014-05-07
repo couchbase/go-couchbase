@@ -257,7 +257,6 @@ func (feed *UprFeed) retryConnections(uprconns []*uprConnection) ([]*uprConnecti
 			retryInterval = maximumRetryInterval
 		}
 	}
-	return uprconns, false
 }
 
 // Upr feed for a bucket will be looping inside this function listening for
@@ -305,7 +304,7 @@ func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
 			}
 			stream.Vuuid, stream.Startseq, stream.Highseq =
 				CalculateVector(rollb, stream.Flog)
-			log.Println("Requesting a rollback for %v to sequence %v", vb, rollb)
+			log.Printf("Requesting a rollback for %v to sequence %v", vb, rollb)
 			err = requestStream(
 				uprconn.conn, flags, req.Opaque, vb, stream.Vuuid,
 				stream.Startseq, stream.Endseq, stream.Highseq)
