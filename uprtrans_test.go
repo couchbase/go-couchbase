@@ -42,7 +42,7 @@ func TestParseFailoverLog(t *testing.T) {
 		t.Fatal(err)
 	} else if flogsOut[0][0] != flogsIn[0][0] || flogsOut[0][1] != flogsIn[0][1] ||
 		flogsOut[1][0] != flogsIn[1][0] || flogsOut[1][1] != flogsIn[1][1] {
-		e := fmt.Errorf("Mismatch in flogs %v, expected %v", flogsOut, flogsIn)
+		e := fmt.Errorf("mismatch in flogs %v, expected %v", flogsOut, flogsIn)
 		t.Fatal(e)
 	}
 }
@@ -94,7 +94,7 @@ func TestRequestFailoverLog(t *testing.T) {
 		t.Fatal(err)
 	} else if flogsOut[0][0] != flogsIn[0][0] || flogsOut[0][1] != flogsIn[0][1] ||
 		flogsOut[1][0] != flogsIn[1][0] || flogsOut[1][1] != flogsIn[1][1] {
-		e := fmt.Errorf("Mismatch in flogs %v, expected %v", flogsOut, flogsIn)
+		e := fmt.Errorf("mismatch in flogs %v, expected %v", flogsOut, flogsIn)
 		t.Fatal(e)
 	}
 }

@@ -9,7 +9,7 @@ import (
 
 var vbcount = 8
 
-const TESTURL = "http://localhost:9000"
+const testURL = "http://localhost:9000"
 
 // Flush the bucket before trying this program
 func main() {
@@ -34,7 +34,7 @@ func main() {
 		stream := feed.GetStream(uint16(vbno))
 		if stream.Startseq != seqno {
 			panic(fmt.Errorf(
-				"For vbucket %v, stream seqno is %v, received is %v",
+				"for vbucket %v, stream seqno is %v, received is %v",
 				vbno, stream.Startseq, seqno))
 		}
 	}
@@ -64,15 +64,15 @@ func main() {
 	exptSeq := vbseqNo[e.Vbucket] + 1
 
 	if e.Seqno != exptSeq {
-		err := fmt.Errorf("Expected seqno %v, received %v", exptSeq+1, e.Seqno)
+		err := fmt.Errorf("expected seqno %v, received %v", exptSeq+1, e.Seqno)
 		panic(err)
 	}
 	if string(e.Key) != newkey {
-		err := fmt.Errorf("Expected key %v received %v", newkey, string(e.Key))
+		err := fmt.Errorf("expected key %v received %v", newkey, string(e.Key))
 		panic(err)
 	}
 	if string(e.Value) != fmt.Sprintf("%q", newvalue) {
-		err := fmt.Errorf("Expected value %v received %v", newvalue, string(e.Value))
+		err := fmt.Errorf("expected value %v received %v", newvalue, string(e.Value))
 		panic(err)
 	}
 	feed.Close()
@@ -108,22 +108,22 @@ loop:
 				"sequence number for vbucket %v, is %v, expected %v",
 				e.Vbucket, e.Seqno, vbseqNo[e.Vbucket]+1)
 		}
-		mutations += 1
+		mutations++
 	}
 	count := 0
 	for _, seqNo := range vbseqNo {
 		count += int(seqNo)
 	}
 	if count != mutationCount {
-		panic(fmt.Errorf("Expected %v mutations, got %v", mutationCount, count))
+		panic(fmt.Errorf("expected %v mutations, got %v", mutationCount, count))
 	}
 	return vbseqNo
 }
 
 func getTestConnection(bucketname string) (*couchbase.Bucket, error) {
-	couch, err := couchbase.Connect(TESTURL)
+	couch, err := couchbase.Connect(testURL)
 	if err != nil {
-		fmt.Println("Make sure that couchbase is at", TESTURL)
+		fmt.Println("Make sure that couchbase is at", testURL)
 		return nil, err
 	}
 	pool, err := couch.GetPool("default")

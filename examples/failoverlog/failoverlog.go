@@ -5,7 +5,7 @@ import (
 	"log"
 )
 
-const TESTURL = "http://localhost:9000"
+const testURL = "http://localhost:9000"
 
 func main() {
 	// get a bucket and mc.Client connection
@@ -25,9 +25,9 @@ func main() {
 }
 
 func getTestConnection(bucketname string) (*couchbase.Bucket, error) {
-	couch, err := couchbase.Connect(TESTURL)
+	couch, err := couchbase.Connect(testURL)
 	if err != nil {
-		log.Println("Make sure that couchbase is at", TESTURL)
+		log.Println("Make sure that couchbase is at", testURL)
 		return nil, err
 	}
 	pool, err := couch.GetPool("default")

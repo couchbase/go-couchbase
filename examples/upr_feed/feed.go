@@ -9,7 +9,7 @@ import (
 
 var vbcount = 8
 
-const TESTURL = "http://localhost:9000"
+const testURL = "http://localhost:9000"
 
 // Flush the bucket before trying this program
 func main() {
@@ -52,7 +52,7 @@ loop:
 				string(e.Value))
 			continue
 		}
-		mutations += 1
+		mutations++
 	}
 	feed.Close()
 
@@ -66,14 +66,14 @@ loop:
 			"Created %v mutations and observed %v mutations",
 			mutationCount, count)
 	} else {
-		panic(fmt.Errorf("Expected %v mutations got %v", mutationCount, count))
+		panic(fmt.Errorf("expected %v mutations got %v", mutationCount, count))
 	}
 }
 
 func getTestConnection(bucketname string) (*couchbase.Bucket, error) {
-	couch, err := couchbase.Connect(TESTURL)
+	couch, err := couchbase.Connect(testURL)
 	if err != nil {
-		log.Println("Make sure that couchbase is at", TESTURL)
+		log.Println("Make sure that couchbase is at", testURL)
 		return nil, err
 	}
 	pool, err := couch.GetPool("default")

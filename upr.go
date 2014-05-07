@@ -175,7 +175,7 @@ func (feed *UprFeed) Close() {
 	feed.streams = nil
 }
 
-// Get stream will return the UprStream structure for vbucket `vbucket`.
+// GetStream will return the UprStream structure for vbucket `vbucket`.
 // Caller can use the UprStream information to restart the stream later.
 func (feed *UprFeed) GetStream(vbno uint16) *UprStream {
 	return feed.streams[vbno]
@@ -317,12 +317,12 @@ func handleUprMessage(feed *UprFeed, req *mcd.MCRequest) (err error) {
 		feed.c <- e
 	case uprStreamEND:
 		res := request2Response(req)
-		err = fmt.Errorf("Stream %v is ending", uint16(res.Opaque))
+		err = fmt.Errorf("stream %v is ending", uint16(res.Opaque))
 	case uprSnapshotM:
 	case uprCloseSTREAM, uprEXPIRATION, uprFLUSH, uprAddSTREAM:
-		err = fmt.Errorf("Opcode %v not implemented", req.Opcode)
+		err = fmt.Errorf("opcode %v not implemented", req.Opcode)
 	default:
-		err = fmt.Errorf("ERROR: un-known opcode received %v", req)
+		err = fmt.Errorf("error: un-known opcode received %v", req)
 	}
 	return
 }
@@ -340,7 +340,7 @@ func handleStreamResponse(res *mcd.MCResponse) (uint64, FailoverLog, error) {
 		log.Printf("Rollback %v for vb %v\n", rollback, res.Opaque /*vb*/)
 		return rollback, flog, fmt.Errorf("ROLLBACK")
 	case res.Status != mcd.SUCCESS:
-		err = fmt.Errorf("Unexpected status %v, for %v", res.Status, res.Opaque)
+		err = fmt.Errorf("unexpected status %v, for %v", res.Status, res.Opaque)
 	}
 	if err == nil {
 		flog, err = parseFailoverLog(res.Body[:])
