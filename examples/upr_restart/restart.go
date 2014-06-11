@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
+	"github.com/couchbase/gomemcached/client"
 	"github.com/couchbaselabs/go-couchbase"
 	"log"
 	"time"
 )
 
-var vbcount = 8
+var vbcount = 64
 
 const testURL = "http://localhost:9000"
 
@@ -15,12 +16,6 @@ const testURL = "http://localhost:9000"
 func main() {
 	// get a bucket and mc.Client connection
 	bucket, err := getTestConnection("default")
-	b, err := getTestConnection("default")
-	if err != nil {
-		panic(err)
-	}
-	// start upr feed
-	feed, err := couchbase.StartUprFeed(b, "index" /*name*/, nil)
 	if err != nil {
 		panic(err)
 	}
@@ -29,51 +24,87 @@ func main() {
 	var mutationCount = 5
 	addKVset(bucket, mutationCount)
 
-	vbseqNo := receiveMutations(feed, mutationCount)
-	for vbno, seqno := range vbseqNo {
-		stream := feed.GetStream(uint16(vbno))
-		if stream.Startseq != seqno {
-			panic(fmt.Errorf(
-				"for vbucket %v, stream seqno is %v, received is %v",
-				vbno, stream.Startseq, seqno))
-		}
-	}
-
-	streams := make(map[uint16]*couchbase.UprStream, 0)
-	for vb := range vbseqNo {
-		stream := feed.GetStream(uint16(vb))
-		streams[uint16(vb)] = stream
-		stream.Vuuid = stream.Flog[0][0]
-	}
-	feed.Close()
-
-	log.Println("Restarting ....")
-	feed, err = couchbase.StartUprFeed(b, "index" /*name*/, streams)
+	// start upr feed
+	feed, err := bucket.StartUprFeed("index" /*name*/, 0)
 	if err != nil {
 		panic(err)
 	}
 
-	newkey, newvalue := "newkey", "new mutation"
-	if err = bucket.Set(newkey, 0, newvalue); err != nil {
+	for i := 0; i < vbcount; i++ {
+		if err := feed.UprRequestStream(uint16(i), 0, 0, 0, 0xFFFFFFFFFFFFFFFF, 0, 0); err != nil {
+			fmt.Printf("%s", err.Error())
+		}
+	}
+
+	vbseqNo := receiveMutations(feed, mutationCount)
+	feed.Close()
+
+	vbList := make([]uint16, 0)
+	for i := 0; i < vbcount; i++ {
+		vbList = append(vbList, uint16(i))
+	}
+	failoverlogMap, err := bucket.GetFailoverLogs(vbList)
+	if err != nil {
+		log.Printf(" error in failover log request %s", err.Error())
+
+	}
+
+	log.Println("Restarting ....")
+	feed, err = bucket.StartUprFeed("index" /*name*/, 0)
+	if err != nil {
 		panic(err)
 	}
 
-	<-time.After(2 * time.Second)
-
-	e := <-feed.C
-	exptSeq := vbseqNo[e.Vbucket] + 1
-
-	if e.Seqno != exptSeq {
-		err := fmt.Errorf("expected seqno %v, received %v", exptSeq+1, e.Seqno)
+	// get a bucket and mc.Client connection
+	bucket1, err := getTestConnection("default")
+	if err != nil {
 		panic(err)
+	}
+
+	newkey, newvalue := "newkey", "new mutation"+time.Now().String()
+	if err = bucket1.Set(newkey, 0, newvalue); err != nil {
+		panic(err)
+	}
+
+	for i := 0; i < vbcount; i++ {
+		log.Printf("Vbucket %d High sequence number %d, Snapshot end sequence %d", i, vbseqNo[i][0], vbseqNo[i][1])
+		if err := feed.UprRequestStream(uint16(i), 0, failoverlogMap[uint16(i)][0], vbseqNo[i][0], 0xFFFFFFFFFFFFFFFF, 0, vbseqNo[i][1]); err != nil {
+			fmt.Printf("%s", err.Error())
+		}
+	}
+
+	var e, f memcached.UprEvent
+	var mutations int
+loop:
+	for {
+		select {
+		case f = <-feed.C:
+		case <-time.After(time.Second):
+			break loop
+		}
+
+		if f.Opcode == memcached.UprMutation {
+			vbseqNo[f.VBucket][0] = f.SeqNo
+			e = f
+			mutations += 1
+		}
+	}
+
+	log.Printf(" got %d mutations", mutations)
+
+	exptSeq := vbseqNo[e.VBucket][0] + 1
+
+	if e.SeqNo != exptSeq {
+		fmt.Printf("Expected seqno %v, received %v", exptSeq+1, e.SeqNo)
+		//panic(err)
 	}
 	if string(e.Key) != newkey {
-		err := fmt.Errorf("expected key %v received %v", newkey, string(e.Key))
-		panic(err)
+		fmt.Errorf("Expected key %v received %v", newkey, string(e.Key))
+		//panic(err)
 	}
 	if string(e.Value) != fmt.Sprintf("%q", newvalue) {
-		err := fmt.Errorf("expected value %v received %v", newvalue, string(e.Value))
-		panic(err)
+		fmt.Errorf("Expected value %v received %v", newvalue, string(e.Value))
+		//panic(err)
 	}
 	feed.Close()
 }
@@ -88,35 +119,32 @@ func addKVset(b *couchbase.Bucket, count int) {
 	}
 }
 
-func receiveMutations(feed *couchbase.UprFeed, mutationCount int) []uint64 {
-	var vbseqNo = make([]uint64, vbcount)
+func receiveMutations(feed *couchbase.UprFeed, mutationCount int) [][2]uint64 {
+	var vbseqNo = make([][2]uint64, vbcount)
 	var mutations = 0
-	var e couchbase.UprEvent
+	var ssMarkers = 0
+	var e memcached.UprEvent
 loop:
 	for {
 		select {
 		case e = <-feed.C:
-		case <-time.After(time.Second):
+		case <-time.After(2 * time.Second):
 			break loop
 		}
-		if vbseqNo[e.Vbucket] == 0 {
-			vbseqNo[e.Vbucket] = e.Seqno
-		} else if vbseqNo[e.Vbucket]+1 == e.Seqno {
-			vbseqNo[e.Vbucket] = e.Seqno
-		} else {
-			log.Printf(
-				"sequence number for vbucket %v, is %v, expected %v",
-				e.Vbucket, e.Seqno, vbseqNo[e.Vbucket]+1)
+
+		if e.Opcode == memcached.UprMutation {
+			vbseqNo[e.VBucket][0] = e.SeqNo
+			mutations += 1
 		}
-		mutations++
+
+		if e.Opcode == memcached.UprSnapshot {
+			vbseqNo[e.VBucket][1] = e.SnapendSeq
+			ssMarkers += 1
+		}
 	}
-	count := 0
-	for _, seqNo := range vbseqNo {
-		count += int(seqNo)
-	}
-	if count != mutationCount {
-		panic(fmt.Errorf("expected %v mutations, got %v", mutationCount, count))
-	}
+
+	log.Printf(" Mutation count %d, Snapshot markers %d", mutations, ssMarkers)
+
 	return vbseqNo
 }
 
