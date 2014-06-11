@@ -180,3 +180,34 @@ func (cp *connectionPool) StartTapFeed(args *memcached.TapArguments) (*memcached
 
 	return mc.StartTapFeed(*args)
 }
+
+const DEFAULT_WINDOW_SIZE = 65536 * 2 // 64k
+
+func (cp *connectionPool) StartUprFeed(name string, sequence uint32) (*memcached.UprFeed, error) {
+	if cp == nil {
+		return nil, errNoPool
+	}
+	mc, err := cp.Get()
+	if err != nil {
+		return nil, err
+	}
+
+	// A connection can't be used after it has been allocated to UPR;
+	// Dont' count it against the connection pool capacity
+	<-cp.createsem
+
+	uf, err := mc.NewUprFeed()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := uf.UprOpen(name, sequence, DEFAULT_WINDOW_SIZE); err != nil {
+		return nil, err
+	}
+
+	if err := uf.StartFeed(); err != nil {
+		return nil, err
+	}
+
+	return uf, nil
+}

@@ -21,7 +21,7 @@ func main() {
 
 	// start upr feed
 	name := fmt.Sprintf("%v", time.Now().UnixNano())
-	feed, err := couchbase.StartUprFeed(bucket, name, nil)
+	feed, err := bucket.StartUprFeed(name, 0)
 	if err != nil {
 		panic(err)
 	}
@@ -29,6 +29,13 @@ func main() {
 	// add mutations to the bucket.
 	var mutationCount = int64(100000)
 	go addKVset(bucket, int(mutationCount))
+
+	// request stream for a few vbuckets
+	for i := 0; i < 64; i++ {
+		if err := feed.UprRequestStream(uint16(i), 0, 0, 0, 0xFFFFFFFFFFFFFFFF, 0, 0); err != nil {
+			fmt.Printf("%s", err.Error())
+		}
+	}
 
 	// observe the mutations from the channel.
 	mutations := int64(0)
@@ -42,10 +49,13 @@ func main() {
 		}
 		if mutations%(mutationCount/5) == 0 {
 			end = time.Now().UnixNano()
-			log.Printf("Recieved %v mutations %v time lapse per mutation\n",
+			log.Printf("Recieved %v mutations %v time lapse per mutation in nano seconds\n",
 				mutations, (end-start)/mutations)
 		}
 	}
+
+	log.Printf(" Total time for %d mutations %d ms", mutations, (end-start)/1000000)
+
 	feed.Close()
 }
 

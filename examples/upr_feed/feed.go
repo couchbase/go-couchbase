@@ -1,39 +1,92 @@
 package main
 
 import (
+	"flag"
 	"fmt"
+	"github.com/couchbase/gomemcached/client"
 	"github.com/couchbaselabs/go-couchbase"
 	"log"
+	"net/url"
+	"os"
 	"time"
 )
 
-var vbcount = 8
+var vbcount = 64
 
-const testURL = "http://localhost:9000"
+func mf(err error, msg string) {
+	if err != nil {
+		log.Fatalf("%v: %v", msg, err)
+	}
+}
 
 // Flush the bucket before trying this program
 func main() {
-	// get a bucket and mc.Client connection
-	bucket, err := getTestConnection("default")
+
+	bname := flag.String("bucket", "",
+		"bucket to connect to (defaults to username)")
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr,
+			"%v [flags] http://user:pass@host:8091/\n\nFlags:\n",
+			os.Args[0])
+		flag.PrintDefaults()
+		os.Exit(64)
+	}
+
+	flag.Parse()
+
+	if flag.NArg() < 1 {
+		flag.Usage()
+	}
+
+	u, err := url.Parse(flag.Arg(0))
+	mf(err, "parse")
+
+	if *bname == "" && u.User != nil {
+		*bname = u.User.Username()
+	}
+
+	c, err := couchbase.Connect(u.String())
+	mf(err, "connect - "+u.String())
+
+	p, err := c.GetPool("default")
+	mf(err, "pool")
+
+	bucket, err := p.GetBucket(*bname)
+	mf(err, "bucket")
+
+	// get failover logs for a few vbuckets
+	vbList := []uint16{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	failoverlogMap, err := bucket.GetFailoverLogs(vbList)
 	if err != nil {
-		panic(err)
+		mf(err, "failoverlog")
+	}
+
+	for vb, flog := range failoverlogMap {
+		log.Printf("Failover log for vbucket %d is %v", vb, flog)
 	}
 
 	// start upr feed
 	name := fmt.Sprintf("%v", time.Now().UnixNano())
-	feed, err := couchbase.StartUprFeed(bucket, name, nil)
+	feed, err := bucket.StartUprFeed(name, 0)
 	if err != nil {
 		panic(err)
 	}
 
-	// add mutations to the bucket.
-	var vbseqNo = make([]uint64, vbcount)
-	var mutationCount = 1000
-	var mutations = 0
-	addKVset(bucket, mutationCount)
+	// get the vbucket map for this bucket
+	vbm := bucket.VBServerMap()
+	fmt.Printf("Vbucket map for bucket %v", vbm)
+
+	// request stream for a few vbuckets
+	for i := 0; i < 64; i++ {
+		if err := feed.UprRequestStream(uint16(i), 0, 0, 0, 0xFFFFFFFFFFFFFFFF, 0, 0); err != nil {
+			fmt.Printf("%s", err.Error())
+		}
+	}
 
 	// observe the mutations from the channel.
-	var e couchbase.UprEvent
+	var e memcached.UprEvent
+	var mutations = 0
 loop:
 	for {
 		select {
@@ -41,47 +94,15 @@ loop:
 		case <-time.After(time.Second):
 			break loop
 		}
-		if vbseqNo[e.Vbucket] == 0 {
-			vbseqNo[e.Vbucket] = e.Seqno
-		} else if vbseqNo[e.Vbucket]+1 == e.Seqno {
-			vbseqNo[e.Vbucket] = e.Seqno
-		} else {
-			log.Printf(
-				"sequence number for vbucket %v, is %v, expected %v (%v:%v)\n",
-				e.Vbucket, e.Seqno, vbseqNo[e.Vbucket]+1, string(e.Key),
-				string(e.Value))
-			continue
+		if e.Opcode == memcached.UprMutation {
+			//log.Printf(" got mutation %s", e.Value)
+			mutations += 1
 		}
 		mutations++
 	}
 	feed.Close()
+	log.Printf("Mutation count %d", mutations)
 
-	count := 0
-	for _, seqNo := range vbseqNo {
-		count += int(seqNo)
-	}
-	log.Println("vb sequence:", vbseqNo)
-	if count == mutationCount {
-		log.Printf(
-			"Created %v mutations and observed %v mutations",
-			mutationCount, count)
-	} else {
-		panic(fmt.Errorf("expected %v mutations got %v", mutationCount, count))
-	}
-}
-
-func getTestConnection(bucketname string) (*couchbase.Bucket, error) {
-	couch, err := couchbase.Connect(testURL)
-	if err != nil {
-		log.Println("Make sure that couchbase is at", testURL)
-		return nil, err
-	}
-	pool, err := couch.GetPool("default")
-	if err != nil {
-		return nil, err
-	}
-	bucket, err := pool.GetBucket(bucketname)
-	return bucket, err
 }
 
 func addKVset(b *couchbase.Bucket, count int) {

@@ -160,6 +160,14 @@ func (b Bucket) getConnPool(i int) *connectionPool {
 	return nil
 }
 
+func (b Bucket) getMasterNode(i int) string {
+	p := b.getConnPools()
+	if len(p) > i {
+		return p[i].host
+	}
+	return ""
+}
+
 func (b Bucket) authHandler() (ah AuthHandler) {
 	if b.pool != nil {
 		ah = b.pool.client.ah
