@@ -8,9 +8,9 @@ import (
 	"time"
 )
 
-var vbcount = 64
+var vbcount = 2
 
-const testURL = "http://localhost:9000"
+const TESTURL = "http://localhost:9000"
 
 // Flush the bucket before trying this program
 func main() {
@@ -19,10 +19,6 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-
-	// add mutations to the bucket
-	var mutationCount = 5
-	addKVset(bucket, mutationCount)
 
 	// start upr feed
 	feed, err := bucket.StartUprFeed("index" /*name*/, 0)
@@ -36,8 +32,7 @@ func main() {
 		}
 	}
 
-	vbseqNo := receiveMutations(feed, mutationCount)
-	feed.Close()
+	vbseqNo := receiveMutations(feed, 20000)
 
 	vbList := make([]uint16, 0)
 	for i := 0; i < vbcount; i++ {
@@ -49,26 +44,26 @@ func main() {
 
 	}
 
-	log.Println("Restarting ....")
-	feed, err = bucket.StartUprFeed("index" /*name*/, 0)
-	if err != nil {
-		panic(err)
-	}
-
 	// get a bucket and mc.Client connection
 	bucket1, err := getTestConnection("default")
 	if err != nil {
 		panic(err)
 	}
 
-	newkey, newvalue := "newkey", "new mutation"+time.Now().String()
-	if err = bucket1.Set(newkey, 0, newvalue); err != nil {
+	// add mutations to the bucket
+	var mutationCount = 5000
+	addKVset(bucket1, mutationCount)
+
+	log.Println("Restarting ....")
+	feed, err = bucket.StartUprFeed("index" /*name*/, 0)
+	if err != nil {
 		panic(err)
 	}
 
 	for i := 0; i < vbcount; i++ {
 		log.Printf("Vbucket %d High sequence number %d, Snapshot end sequence %d", i, vbseqNo[i][0], vbseqNo[i][1])
-		if err := feed.UprRequestStream(uint16(i), 0, failoverlogMap[uint16(i)][0], vbseqNo[i][0], 0xFFFFFFFFFFFFFFFF, 0, vbseqNo[i][1]); err != nil {
+		failoverLog := failoverlogMap[uint16(i)]
+		if err := feed.UprRequestStream(uint16(i), 0, failoverLog[0][0], vbseqNo[i][0], 0xFFFFFFFFFFFFFFFF, 0, vbseqNo[i][1]); err != nil {
 			fmt.Printf("%s", err.Error())
 		}
 	}
@@ -98,14 +93,6 @@ loop:
 		fmt.Printf("Expected seqno %v, received %v", exptSeq+1, e.SeqNo)
 		//panic(err)
 	}
-	if string(e.Key) != newkey {
-		fmt.Errorf("Expected key %v received %v", newkey, string(e.Key))
-		//panic(err)
-	}
-	if string(e.Value) != fmt.Sprintf("%q", newvalue) {
-		fmt.Errorf("Expected value %v received %v", newvalue, string(e.Value))
-		//panic(err)
-	}
 	feed.Close()
 }
 
@@ -119,7 +106,7 @@ func addKVset(b *couchbase.Bucket, count int) {
 	}
 }
 
-func receiveMutations(feed *couchbase.UprFeed, mutationCount int) [][2]uint64 {
+func receiveMutations(feed *couchbase.UprFeed, breakAfter int) [][2]uint64 {
 	var vbseqNo = make([][2]uint64, vbcount)
 	var mutations = 0
 	var ssMarkers = 0
@@ -128,7 +115,7 @@ loop:
 	for {
 		select {
 		case e = <-feed.C:
-		case <-time.After(2 * time.Second):
+		case <-time.After(time.Second):
 			break loop
 		}
 
@@ -141,6 +128,9 @@ loop:
 			vbseqNo[e.VBucket][1] = e.SnapendSeq
 			ssMarkers += 1
 		}
+		if mutations == breakAfter {
+			break loop
+		}
 	}
 
 	log.Printf(" Mutation count %d, Snapshot markers %d", mutations, ssMarkers)
@@ -149,9 +139,9 @@ loop:
 }
 
 func getTestConnection(bucketname string) (*couchbase.Bucket, error) {
-	couch, err := couchbase.Connect(testURL)
+	couch, err := couchbase.Connect(TESTURL)
 	if err != nil {
-		fmt.Println("Make sure that couchbase is at", testURL)
+		fmt.Println("Make sure that couchbase is at", TESTURL)
 		return nil, err
 	}
 	pool, err := couch.GetPool("default")

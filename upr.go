@@ -33,7 +33,7 @@ type FeedInfo struct {
 	connected bool               // connected
 }
 
-type FailoverLog map[uint16]*memcached.FailoverLog
+type FailoverLog map[uint16]memcached.FailoverLog
 
 // GetFailoverLogs, get the failover logs for a set of vbucket ids
 func (b *Bucket) GetFailoverLogs(vBuckets []uint16) (FailoverLog, error) {
@@ -85,7 +85,7 @@ func (b *Bucket) GetFailoverLogs(vBuckets []uint16) (FailoverLog, error) {
 		}
 
 		for vb, log := range failoverlogs {
-			failoverLogMap[vb] = log
+			failoverLogMap[vb] = *log
 		}
 	}
 
