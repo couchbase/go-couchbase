@@ -14,11 +14,11 @@ import (
 // to call Close() on it when you're done, unless its channel has
 // closed itself already.
 type UprFeed struct {
-	C <-chan memcached.UprEvent
+	C <-chan *memcached.UprEvent
 
 	bucket     *Bucket
-	nodeFeeds  map[string]*FeedInfo    // The UPR feeds of the individual nodes
-	output     chan memcached.UprEvent // Same as C but writeably-typed
+	nodeFeeds  map[string]*FeedInfo     // The UPR feeds of the individual nodes
+	output     chan *memcached.UprEvent // Same as C but writeably-typed
 	quit       chan bool
 	name       string // name of this UPR feed
 	sequence   uint32 // sequence number for this feed
@@ -98,7 +98,7 @@ func (b *Bucket) StartUprFeed(name string, sequence uint32) (*UprFeed, error) {
 
 	feed := &UprFeed{
 		bucket:     b,
-		output:     make(chan memcached.UprEvent, 10),
+		output:     make(chan *memcached.UprEvent, 10),
 		quit:       make(chan bool),
 		nodeFeeds:  make(map[string]*FeedInfo, 0),
 		name:       name,

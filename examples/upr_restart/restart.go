@@ -68,7 +68,7 @@ func main() {
 		}
 	}
 
-	var e, f memcached.UprEvent
+	var e, f *memcached.UprEvent
 	var mutations int
 loop:
 	for {
@@ -79,7 +79,7 @@ loop:
 		}
 
 		if f.Opcode == memcached.UprMutation {
-			vbseqNo[f.VBucket][0] = f.SeqNo
+			vbseqNo[f.VBucket][0] = f.Seqno
 			e = f
 			mutations += 1
 		}
@@ -89,8 +89,8 @@ loop:
 
 	exptSeq := vbseqNo[e.VBucket][0] + 1
 
-	if e.SeqNo != exptSeq {
-		fmt.Printf("Expected seqno %v, received %v", exptSeq+1, e.SeqNo)
+	if e.Seqno != exptSeq {
+		fmt.Printf("Expected seqno %v, received %v", exptSeq+1, e.Seqno)
 		//panic(err)
 	}
 	feed.Close()
@@ -110,7 +110,7 @@ func receiveMutations(feed *couchbase.UprFeed, breakAfter int) [][2]uint64 {
 	var vbseqNo = make([][2]uint64, vbcount)
 	var mutations = 0
 	var ssMarkers = 0
-	var e memcached.UprEvent
+	var e *memcached.UprEvent
 loop:
 	for {
 		select {
@@ -120,7 +120,7 @@ loop:
 		}
 
 		if e.Opcode == memcached.UprMutation {
-			vbseqNo[e.VBucket][0] = e.SeqNo
+			vbseqNo[e.VBucket][0] = e.Seqno
 			mutations += 1
 		}
 

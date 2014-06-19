@@ -56,7 +56,7 @@ func main() {
 	mf(err, "bucket")
 
 	// get failover logs for a few vbuckets
-	vbList := []uint16{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
+	vbList := []uint16{0, 1, 2, 3, 4, 5, 6, 7}
 	failoverlogMap, err := bucket.GetFailoverLogs(vbList)
 	if err != nil {
 		mf(err, "failoverlog")
@@ -84,9 +84,11 @@ func main() {
 		}
 	}
 
+	go addKVset(bucket, 10000)
 	// observe the mutations from the channel.
-	var e memcached.UprEvent
+	var e *memcached.UprEvent
 	var mutations = 0
+	keys := make(map[string]string)
 loop:
 	for {
 		select {
@@ -95,11 +97,13 @@ loop:
 			break loop
 		}
 		if e.Opcode == memcached.UprMutation {
-			//log.Printf(" got mutation %s", e.Value)
+			log.Printf(" got mutation %s", e.Key)
+			keys[string(e.Key)] = string(e.Value)
 			mutations += 1
 		}
-		mutations++
+		//mutations++
 	}
+	fmt.Println(len(keys))
 	feed.Close()
 	log.Printf("Mutation count %d", mutations)
 

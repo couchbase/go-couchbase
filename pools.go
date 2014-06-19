@@ -123,8 +123,28 @@ type Bucket struct {
 }
 
 // VBServerMap returns the current VBucketServerMap.
-func (b Bucket) VBServerMap() *VBucketServerMap {
-	return (*VBucketServerMap)(atomic.LoadPointer(&b.vBucketServerMap))
+func (b *Bucket) VBServerMap() *VBucketServerMap {
+	return (*VBucketServerMap)(atomic.LoadPointer(&(b.vBucketServerMap)))
+}
+
+func (b *Bucket) GetVBmap(addrs []string) (map[string][]uint16, error) {
+	vbmap := b.VBServerMap()
+	servers := vbmap.ServerList
+	if addrs == nil {
+		addrs = vbmap.ServerList
+	}
+
+	m := make(map[string][]uint16)
+	for _, addr := range addrs {
+		m[addr] = make([]uint16, 0)
+	}
+	for vbno, idxs := range vbmap.VBucketMap {
+		addr := servers[idxs[0]]
+		if _, ok := m[addr]; ok {
+			m[addr] = append(m[addr], uint16(vbno))
+		}
+	}
+	return m, nil
 }
 
 // Nodes returns teh current list of nodes servicing this bucket.

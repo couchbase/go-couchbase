@@ -15,7 +15,7 @@ func main() {
 	}
 
 	// Get failover log for a vbucket
-	flogs, err := bucket.GetFailoverLogs("failoverlog")
+	flogs, err := bucket.GetFailoverLogs([]uint16{0, 1, 2, 3, 4, 5, 6, 7})
 	if err != nil {
 		panic(err)
 	}
