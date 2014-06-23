@@ -323,6 +323,34 @@ func Connect(baseU string) (Client, error) {
 	return ConnectWithAuth(baseU, basicAuthFromURL(baseU))
 }
 
+//Get SASL buckets
+type BucketInfo struct {
+	Name     string // name of bucket
+	Password string // SASL password of bucket
+}
+
+func GetBucketList(baseU string) (bInfo []BucketInfo, err error) {
+
+	c := &Client{}
+	c.BaseURL, err = ParseURL(baseU)
+	if err != nil {
+		return
+	}
+	c.ah = basicAuthFromURL(baseU)
+
+	var buckets []Bucket
+	err = c.parseURLResponse("/pools/default/buckets", &buckets)
+	if err != nil {
+		return
+	}
+	bInfo = make([]BucketInfo, 0)
+	for _, bucket := range buckets {
+		bucketInfo := BucketInfo{Name: bucket.Name, Password: bucket.Password}
+		bInfo = append(bInfo, bucketInfo)
+	}
+	return bInfo, err
+}
+
 func (b *Bucket) refresh() error {
 	pool := b.pool
 	tmpb := &Bucket{}
