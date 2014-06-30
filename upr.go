@@ -165,7 +165,7 @@ func (feed *UprFeed) run() {
 		log.Printf("go-couchbase: UPR connection lost; reconnecting to bucket %q in %v",
 			feed.bucket.Name, retryInterval)
 
-		if err := feed.bucket.refresh(); err != nil {
+		if err := feed.bucket.Refresh(); err != nil {
 			log.Printf("Unable to refresh bucket %s ", err.Error())
 			feed.closeNodeFeeds()
 		}

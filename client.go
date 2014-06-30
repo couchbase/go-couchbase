@@ -96,7 +96,7 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 		}()
 
 		if retry {
-			b.refresh()
+			b.Refresh()
 		} else {
 			return err
 		}
@@ -200,7 +200,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 			case *gomemcached.MCResponse:
 				st := err.(*gomemcached.MCResponse).Status
 				if st == gomemcached.NOT_MY_VBUCKET {
-					b.refresh()
+					b.Refresh()
 					// retry
 					err = nil
 				}
@@ -211,6 +211,8 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 					ch <- rv
 					return err
 				}
+				log.Printf("Connection Error: %s. Refreshing bucket", err.Error())
+				b.Refresh()
 				// retry
 				return nil
 			}
