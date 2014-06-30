@@ -351,7 +351,7 @@ func GetBucketList(baseU string) (bInfo []BucketInfo, err error) {
 	return bInfo, err
 }
 
-func (b *Bucket) refresh() error {
+func (b *Bucket) Refresh() error {
 	pool := b.pool
 	tmpb := &Bucket{}
 	err := pool.client.parseURLResponse(b.URI, tmpb)
@@ -435,7 +435,7 @@ func (p *Pool) GetBucket(name string) (*Bucket, error) {
 		return nil, errors.New("No bucket named " + name)
 	}
 	runtime.SetFinalizer(&rv, bucketFinalizer)
-	err := rv.refresh()
+	err := rv.Refresh()
 	if err != nil {
 		return nil, err
 	}
