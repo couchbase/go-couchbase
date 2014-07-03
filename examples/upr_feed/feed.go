@@ -3,7 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
-	mc "github.com/couchbase/gomemcached/client"
+	"github.com/couchbase/gomemcached/client"
 	"github.com/couchbaselabs/go-couchbase"
 	"log"
 	"net/url"
@@ -56,7 +56,7 @@ func main() {
 	mf(err, "bucket")
 
 	// get failover logs for a few vbuckets
-	vbList := []uint16{0, 1, 2, 3, 4, 5, 6, 7}
+	vbList := []uint16{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	failoverlogMap, err := bucket.GetFailoverLogs(vbList)
 	if err != nil {
 		mf(err, "failoverlog")
@@ -77,18 +77,16 @@ func main() {
 	vbm := bucket.VBServerMap()
 	log.Println(vbm)
 
-	// request stream for a few vbuckets
-	for i := 0; i < len(vbList); i++ {
+	// request stream for all vbuckets
+	for i := 0; i < vbcount; i++ {
 		if err := feed.UprRequestStream(uint16(i), 0, 0, 0, 0xFFFFFFFFFFFFFFFF, 0, 0); err != nil {
 			fmt.Printf("%s", err.Error())
 		}
 	}
 
-	go addKVset(bucket, 10000)
-	var e *mc.UprEvent
-	keys := make(map[string]string)
-	counts := make(map[mc.UprOpcode]int)
-
+	// observe the mutations from the channel.
+	var e *memcached.UprEvent
+	var mutations = 0
 loop:
 	for {
 		select {
@@ -96,17 +94,14 @@ loop:
 		case <-time.After(time.Second):
 			break loop
 		}
-		if e.Opcode == mc.UprMutation {
-			keys[string(e.Key)] = string(e.Value)
+		if e.Opcode == memcached.UprMutation {
+			//log.Printf(" got mutation %s", e.Value)
+			mutations += 1
 		}
-		if _, ok := counts[e.Opcode]; !ok {
-			counts[e.Opcode] = 0
-		}
-		counts[e.Opcode]++
+		//mutations++
 	}
-	fmt.Println(len(keys))
 	feed.Close()
-	log.Printf("counts %v", counts)
+	log.Printf("Mutation count %d", mutations)
 
 }
 

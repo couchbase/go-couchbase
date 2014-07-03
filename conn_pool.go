@@ -181,7 +181,7 @@ func (cp *connectionPool) StartTapFeed(args *memcached.TapArguments) (*memcached
 	return mc.StartTapFeed(*args)
 }
 
-const DEFAULT_WINDOW_SIZE = 65536 * 2 // 64k
+const DEFAULT_WINDOW_SIZE = 20 * 1024 * 1024 // 20 Mb
 
 func (cp *connectionPool) StartUprFeed(name string, sequence uint32) (*memcached.UprFeed, error) {
 	if cp == nil {

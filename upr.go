@@ -126,6 +126,11 @@ func (feed *UprFeed) UprRequestStream(vb uint16, flags uint32,
 		return fmt.Errorf("vbmap smaller than vbucket list: %v vs. %v",
 			vb, vbm.VBucketMap)
 	}
+
+	if int(vb) >= len(vbm.VBucketMap) {
+		return fmt.Errorf("Invalid vbucket id %d", vb)
+	}
+
 	masterID := vbm.VBucketMap[vb][0]
 	master := feed.bucket.getMasterNode(masterID)
 	if master == "" {
