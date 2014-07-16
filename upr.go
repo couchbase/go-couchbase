@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"fmt"
+	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
 )
 
@@ -237,6 +238,21 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 				return
 			}
 			feed.output <- event
+			if event.Status == gomemcached.NOT_MY_VBUCKET {
+				log.Printf(" Got a not my vbucket error !! ")
+				if err := feed.bucket.Refresh(); err != nil {
+					log.Printf("Unable to refresh bucket %s ", err.Error())
+					feed.closeNodeFeeds()
+					return
+				}
+				// this will only connect to nodes that are not connected or changed
+				// user will have to reconnect the stream
+				if err := feed.connectToNodes(); err != nil {
+					log.Printf("Unable to connect to nodes %s", err.Error())
+					return
+				}
+
+			}
 		case <-feed.quit:
 			nodeFeed.connected = false
 			return
