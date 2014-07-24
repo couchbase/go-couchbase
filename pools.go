@@ -462,6 +462,44 @@ func (p *Pool) GetBucket(name string) (*Bucket, error) {
 	return &rv, nil
 }
 
+func (p *Pool) CreateBucket(params map[string]interface{}) (*Bucket, error) {
+	body := url.Values{}
+	for key, val := range params {
+		var valStr string
+		switch t := val.(type) {
+		case string:
+			valStr = t
+		case int:
+			valStr = fmt.Sprintf("%d", t)
+		default:
+			return nil, fmt.Errorf("Bad param: %s: %#v", key, val)
+		}
+		body.Set(key, valStr)
+	}
+	u := *p.client.BaseURL
+	u.User = nil
+	u.Path = "/pools/default/buckets"
+	req, err := http.NewRequest("POST", u.String(), strings.NewReader(body.Encode()))
+	if err != nil {
+		return nil, err
+	}
+	maybeAddAuth(req, p.client.ah)
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	res, err := HTTPClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 202 {
+		bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
+		return nil, fmt.Errorf("HTTP error %v posting %q: %s", res.Status, u.String(), bod)
+	}
+	if err := p.refresh(); err != nil {
+		return nil, err
+	}
+	return p.GetBucket(body.Get("name"))
+}
+
 // GetPool gets the pool to which this bucket belongs.
 func (b *Bucket) GetPool() *Pool {
 	return b.pool
