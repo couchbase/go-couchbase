@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
+	"sync"
 )
 
 // A UprFeed streams mutation events from a bucket.
@@ -25,6 +26,7 @@ type UprFeed struct {
 	sequence   uint32 // sequence number for this feed
 	connected  bool
 	killSwitch chan bool
+	lock       sync.Mutex // synchronize access to feed.output CBIDXT-237
 }
 
 // UprFeed from a single connection
@@ -77,7 +79,9 @@ func (b *Bucket) GetFailoverLogs(vBuckets []uint16) (FailoverLog, error) {
 				serverConn.host)
 
 		}
-		defer serverConn.Return(mc)
+		// close the connection so that it doesn't get reused for upr data
+		// connection
+		defer mc.Close()
 		failoverlogs, err := mc.UprGetFailoverLog(vbList)
 		if err != nil {
 			return nil, fmt.Errorf("Error getting failover log %s host %s",
@@ -227,6 +231,7 @@ func (feed *UprFeed) connectToNodes() (err error) {
 // Goroutine that forwards Upr events from a single node's feed to the aggregate feed.
 func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, host string) {
 	singleFeed := nodeFeed.uprFeed
+
 	for {
 		select {
 		case event, ok := <-singleFeed.C:
@@ -237,7 +242,9 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 				killSwitch <- true
 				return
 			}
+			feed.lock.Lock()
 			feed.output <- event
+			feed.lock.Unlock()
 			if event.Status == gomemcached.NOT_MY_VBUCKET {
 				log.Printf(" Got a not my vbucket error !! ")
 				if err := feed.bucket.Refresh(); err != nil {
@@ -277,6 +284,10 @@ func (feed *UprFeed) Close() error {
 
 	feed.closeNodeFeeds()
 	close(feed.quit)
+
+	feed.lock.Lock()
+	defer feed.lock.Unlock()
 	close(feed.output)
+
 	return nil
 }

@@ -6,12 +6,18 @@ import (
 	"github.com/couchbase/gomemcached/client"
 	"github.com/couchbaselabs/go-couchbase"
 	"log"
+	"math/rand"
+	"net/http"
+	_ "net/http/pprof"
 	"net/url"
 	"os"
+	"runtime/pprof"
 	"time"
 )
 
 var vbcount = 64
+var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to file")
+var memprofile = flag.String("memprofile", "", "write memory profile to this file")
 
 func mf(err error, msg string) {
 	if err != nil {
@@ -21,6 +27,10 @@ func mf(err error, msg string) {
 
 // Flush the bucket before trying this program
 func main() {
+
+	go func() {
+		log.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
 
 	bname := flag.String("bucket", "",
 		"bucket to connect to (defaults to username)")
@@ -39,6 +49,24 @@ func main() {
 		flag.Usage()
 	}
 
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		pprof.StartCPUProfile(f)
+		defer pprof.StopCPUProfile()
+	}
+
+	if *memprofile != "" {
+		f, err := os.Create(*memprofile)
+		if err != nil {
+			log.Fatal(err)
+		}
+		defer pprof.WriteHeapProfile(f)
+		defer f.Close()
+	}
+
 	u, err := url.Parse(flag.Arg(0))
 	mf(err, "parse")
 
@@ -55,6 +83,9 @@ func main() {
 	bucket, err := p.GetBucket(*bname)
 	mf(err, "bucket")
 
+	addKVset(bucket, 1000)
+	//return
+
 	// get failover logs for a few vbuckets
 	vbList := []uint16{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	failoverlogMap, err := bucket.GetFailoverLogs(vbList)
@@ -70,7 +101,8 @@ func main() {
 	name := fmt.Sprintf("%v", time.Now().UnixNano())
 	feed, err := bucket.StartUprFeed(name, 0)
 	if err != nil {
-		panic(err)
+		log.Print(" Failed to start stream ", err)
+		return
 	}
 
 	// get the vbucket map for this bucket
@@ -98,8 +130,13 @@ loop:
 			//log.Printf(" got mutation %s", e.Value)
 			mutations += 1
 		}
-		//mutations++
+
+		if mutations%10000 == 0 {
+			log.Printf(" received %d mutations ", mutations)
+		}
+		e.Release()
 	}
+
 	feed.Close()
 	log.Printf("Mutation count %d", mutations)
 
@@ -107,11 +144,16 @@ loop:
 
 func addKVset(b *couchbase.Bucket, count int) {
 	for i := 0; i < count; i++ {
-		key := fmt.Sprintf("key%v", i)
-		value := fmt.Sprintf("Hello world%v", i)
+		key := fmt.Sprintf("key%v", i+1000000)
+		val_len := rand.Intn(10*1024) + rand.Intn(10*1024)
+		value := fmt.Sprintf("This is a test key %d", val_len)
 		err := b.Set(key, 0, value)
 		if err != nil {
 			panic(err)
+		}
+
+		if i%100000 == 0 {
+			fmt.Printf("\n Added %d keys", i)
 		}
 	}
 }
