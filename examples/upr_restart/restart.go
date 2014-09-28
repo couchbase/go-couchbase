@@ -27,7 +27,10 @@ func main() {
 	}
 
 	for i := 0; i < vbcount; i++ {
-		if err := feed.UprRequestStream(uint16(i), 0, 0, 0, 0xFFFFFFFFFFFFFFFF, 0, 0); err != nil {
+		err := feed.UprRequestStream(
+			uint16(i) /*vbno*/, uint32(i) /*opaque*/, 0 /*flag*/, 0, /*vbuuid*/
+			0 /*seqStart*/, 0xFFFFFFFFFFFFFFFF /*seqEnd*/, 0 /*snaps*/, 0)
+		if err != nil {
 			fmt.Printf("%s", err.Error())
 		}
 	}
@@ -63,7 +66,12 @@ func main() {
 	for i := 0; i < vbcount; i++ {
 		log.Printf("Vbucket %d High sequence number %d, Snapshot end sequence %d", i, vbseqNo[i][0], vbseqNo[i][1])
 		failoverLog := failoverlogMap[uint16(i)]
-		if err := feed.UprRequestStream(uint16(i), 0, failoverLog[0][0], vbseqNo[i][0], 0xFFFFFFFFFFFFFFFF, 0, vbseqNo[i][1]); err != nil {
+		err := feed.UprRequestStream(
+			uint16(i) /*vbno*/, uint32(i) /*opaque*/, 0, /*flag*/
+			failoverLog[0][0],                              /*vbuuid*/
+			vbseqNo[i][0] /*seqStart*/, 0xFFFFFFFFFFFFFFFF, /*seqEnd*/
+			0 /*snaps*/, vbseqNo[i][1])
+		if err != nil {
 			fmt.Printf("%s", err.Error())
 		}
 	}

@@ -111,7 +111,10 @@ func main() {
 
 	// request stream for all vbuckets
 	for i := 0; i < vbcount; i++ {
-		if err := feed.UprRequestStream(uint16(i), 0, 0, 0, 0xFFFFFFFFFFFFFFFF, 0, 0); err != nil {
+		err := feed.UprRequestStream(
+			uint16(i) /*vbno*/, uint32(i) /*opaque*/, 0 /*flag*/, 0, /*vbuuid*/
+			0 /*seqStart*/, 0xFFFFFFFFFFFFFFFF /*seqEnd*/, 0 /*snaps*/, 0)
+		if err != nil {
 			fmt.Printf("%s", err.Error())
 		}
 	}

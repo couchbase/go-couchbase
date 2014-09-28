@@ -123,7 +123,7 @@ func (b *Bucket) StartUprFeed(name string, sequence uint32) (*UprFeed, error) {
 }
 
 // AddUprStream starts a stream for a vb on a feed
-func (feed *UprFeed) UprRequestStream(vb uint16, flags uint32,
+func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint32, flags uint32,
 	vuuid, startSequence, endSequence, snapStart, snapEnd uint64) error {
 
 	vbm := feed.bucket.VBServerMap()
@@ -146,7 +146,7 @@ func (feed *UprFeed) UprRequestStream(vb uint16, flags uint32,
 		return fmt.Errorf("UprFeed for this host not found")
 	}
 
-	if err := singleFeed.uprFeed.UprRequestStream(vb, flags,
+	if err := singleFeed.uprFeed.UprRequestStream(vb, opaque, flags,
 		vuuid, startSequence, endSequence, snapStart, snapEnd); err != nil {
 		return err
 	}
