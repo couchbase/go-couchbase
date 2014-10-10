@@ -154,6 +154,32 @@ func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint32, flags uint32,
 	return nil
 }
 
+// close stream for a vbucket
+func (feed *UprFeed) UprCloseStream(vb uint16) error {
+
+	vbm := feed.bucket.VBServerMap()
+	if len(vbm.VBucketMap) < int(vb) {
+		return fmt.Errorf("vbmap smaller than vbucket list: %v vs. %v",
+			vb, vbm.VBucketMap)
+	}
+
+	if int(vb) >= len(vbm.VBucketMap) {
+		return fmt.Errorf("Invalid vbucket id %d", vb)
+	}
+
+	masterID := vbm.VBucketMap[vb][0]
+	master := feed.bucket.getMasterNode(masterID)
+	if master == "" {
+		return fmt.Errorf("Master node not found for vbucket %d", vb)
+	}
+	singleFeed := feed.nodeFeeds[master]
+	if singleFeed == nil {
+		return fmt.Errorf("UprFeed for this host not found")
+	}
+
+	return singleFeed.uprFeed.CloseStream(vb)
+}
+
 // Goroutine that runs the feed
 func (feed *UprFeed) run() {
 	retryInterval := initialRetryInterval

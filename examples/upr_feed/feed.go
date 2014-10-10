@@ -84,7 +84,7 @@ func main() {
 	bucket, err := p.GetBucket(*bname)
 	mf(err, "bucket")
 
-	addKVset(bucket, 1000)
+	//addKVset(bucket, 1000)
 	//return
 
 	// get failover logs for a few vbuckets
@@ -123,6 +123,7 @@ func main() {
 	// observe the mutations from the channel.
 	var e *memcached.UprEvent
 	var mutations = 0
+	var callOnce bool
 loop:
 	for {
 		select {
@@ -135,10 +136,25 @@ loop:
 			mutations += 1
 		}
 
+		if e.Opcode == gomemcached.UPR_STREAMEND {
+			log.Printf(" Received Stream end for vbucket %d", e.VBucket)
+		}
+
+		// after receving 1000 mutations close some streams
+		if callOnce == false {
+			for i := 0; i < vbcount; i = i + 4 {
+				log.Printf(" closing stream for vbucket %d", i)
+				if err := feed.UprCloseStream(uint16(i)); err != nil {
+					log.Printf(" Received error while closing stream %d", i)
+				}
+			}
+			callOnce = true
+		}
+
 		if mutations%10000 == 0 {
 			log.Printf(" received %d mutations ", mutations)
 		}
-		e.Release()
+		//e.Release()
 	}
 
 	feed.Close()
