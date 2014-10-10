@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
 	"github.com/couchbaselabs/go-couchbase"
 	"log"
@@ -129,7 +130,7 @@ loop:
 		case <-time.After(time.Second):
 			break loop
 		}
-		if e.Opcode == memcached.UprMutation {
+		if e.Opcode == gomemcached.UPR_MUTATION {
 			//log.Printf(" got mutation %s", e.Value)
 			mutations += 1
 		}

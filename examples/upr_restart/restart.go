@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
 	"github.com/couchbaselabs/go-couchbase"
 	"log"
@@ -86,7 +87,7 @@ loop:
 			break loop
 		}
 
-		if f.Opcode == memcached.UprMutation {
+		if f.Opcode == gomemcached.UPR_MUTATION {
 			vbseqNo[f.VBucket][0] = f.Seqno
 			e = f
 			mutations += 1
@@ -127,12 +128,12 @@ loop:
 			break loop
 		}
 
-		if e.Opcode == memcached.UprMutation {
+		if e.Opcode == gomemcached.UPR_MUTATION {
 			vbseqNo[e.VBucket][0] = e.Seqno
 			mutations += 1
 		}
 
-		if e.Opcode == memcached.UprSnapshot {
+		if e.Opcode == gomemcached.UPR_MUTATION {
 			vbseqNo[e.VBucket][1] = e.SnapendSeq
 			ssMarkers += 1
 		}
