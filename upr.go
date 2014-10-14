@@ -122,8 +122,8 @@ func (b *Bucket) StartUprFeed(name string, sequence uint32) (*UprFeed, error) {
 	return feed, nil
 }
 
-// AddUprStream starts a stream for a vb on a feed
-func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint32, flags uint32,
+// UprRequestStream starts a stream for a vb on a feed
+func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint16, flags uint32,
 	vuuid, startSequence, endSequence, snapStart, snapEnd uint64) error {
 
 	vbm := feed.bucket.VBServerMap()
@@ -154,9 +154,8 @@ func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint32, flags uint32,
 	return nil
 }
 
-// close stream for a vbucket
-func (feed *UprFeed) UprCloseStream(vb uint16) error {
-
+// UprCloseStream ends a vbucket stream.
+func (feed *UprFeed) UprCloseStream(vb, opaqueMSB uint16) error {
 	vbm := feed.bucket.VBServerMap()
 	if len(vbm.VBucketMap) < int(vb) {
 		return fmt.Errorf("vbmap smaller than vbucket list: %v vs. %v",
@@ -177,7 +176,10 @@ func (feed *UprFeed) UprCloseStream(vb uint16) error {
 		return fmt.Errorf("UprFeed for this host not found")
 	}
 
-	return singleFeed.uprFeed.CloseStream(vb)
+	if err := singleFeed.uprFeed.CloseStream(vb, opaqueMSB); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Goroutine that runs the feed
@@ -247,7 +249,11 @@ func (feed *UprFeed) connectToNodes() (err error) {
 			return
 		}
 		// add the node to the connection map
-		feedInfo := &FeedInfo{uprFeed: singleFeed, connected: true, host: serverConn.host}
+		feedInfo := &FeedInfo{
+			uprFeed:   singleFeed,
+			connected: true,
+			host:      serverConn.host,
+		}
 		feed.nodeFeeds[serverConn.host] = feedInfo
 		go feed.forwardUprEvents(feedInfo, feed.killSwitch, serverConn.host)
 	}

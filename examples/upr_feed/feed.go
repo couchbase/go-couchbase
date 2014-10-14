@@ -113,7 +113,7 @@ func main() {
 	// request stream for all vbuckets
 	for i := 0; i < vbcount; i++ {
 		err := feed.UprRequestStream(
-			uint16(i) /*vbno*/, uint32(i) /*opaque*/, 0 /*flag*/, 0, /*vbuuid*/
+			uint16(i) /*vbno*/, uint16(0) /*opaque*/, 0 /*flag*/, 0, /*vbuuid*/
 			0 /*seqStart*/, 0xFFFFFFFFFFFFFFFF /*seqEnd*/, 0 /*snaps*/, 0)
 		if err != nil {
 			fmt.Printf("%s", err.Error())
@@ -144,7 +144,7 @@ loop:
 		if callOnce == false {
 			for i := 0; i < vbcount; i = i + 4 {
 				log.Printf(" closing stream for vbucket %d", i)
-				if err := feed.UprCloseStream(uint16(i)); err != nil {
+				if err := feed.UprCloseStream(uint16(i), uint16(0)); err != nil {
 					log.Printf(" Received error while closing stream %d", i)
 				}
 			}
