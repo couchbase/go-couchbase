@@ -122,6 +122,19 @@ type Bucket struct {
 	commonSufix      string
 }
 
+// PoolServices is all the bucket-independent services in a pool
+type PoolServices struct {
+	Rev      int            `json:"rev"`
+	NodesExt []NodeServices `json:"nodesExt"`
+}
+
+// NodeServices is all the bucket-independent services running on
+// a node (given by Hostname)
+type NodeServices struct {
+	Services map[string]int `json:"services,omitempty"`
+	Hostname string         `json:"hostname"`
+}
+
 // VBServerMap returns the current VBucketServerMap.
 func (b *Bucket) VBServerMap() *VBucketServerMap {
 	return (*VBucketServerMap)(atomic.LoadPointer(&(b.vBucketServerMap)))
@@ -426,6 +439,25 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 	p.client = *c
 
 	err = p.refresh()
+	return
+}
+
+// GetPoolServices returns all the bucket-independent services in a pool.
+// (See "Exposing services outside of bucket context" in http://goo.gl/uuXRkV)
+func (c *Client) GetPoolServices(name string) (ps PoolServices, err error) {
+	var poolName string
+	for _, p := range c.Info.Pools {
+		if p.Name == name {
+			poolName = p.Name
+		}
+	}
+	if poolName == "" {
+		return ps, errors.New("No pool named " + name)
+	}
+
+	poolURI := "/pools/" + poolName + "/nodeServices"
+	err = c.parseURLResponse(poolURI, &ps)
+
 	return
 }
 
