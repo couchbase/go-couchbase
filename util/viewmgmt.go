@@ -1,4 +1,5 @@
-// Utilities for working with Couchbase
+// Package couchbaseutil offers some convenience functions for apps
+// that use couchbase.
 package couchbaseutil
 
 import (
@@ -9,14 +10,15 @@ import (
 	"github.com/couchbaselabs/go-couchbase"
 )
 
-// A marker stored in your DB to mark a particular view version.
+// A ViewMarker is stored in your DB to mark a particular view
+// version.
 type ViewMarker struct {
 	Version   int       `json:"version"`
 	Timestamp time.Time `json:"timestamp"`
 	Type      string    `json:"type"`
 }
 
-// Install or update a view.
+// UpdateView installs or updates a view.
 //
 // This creates a document that tracks the version of design document
 // in couchbase and updates it if it's behind the version specified.

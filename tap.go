@@ -4,14 +4,17 @@ import (
 	"log"
 	"time"
 
-	"github.com/dustin/gomemcached/client"
+	"github.com/couchbase/gomemcached/client"
 )
 
-const kInitialRetryInterval = 1 * time.Second
-const kMaximumRetryInterval = 30 * time.Second
+const initialRetryInterval = 1 * time.Second
+const maximumRetryInterval = 30 * time.Second
 
-// A Tap feed. Events from the bucket can be read from the channel 'C'.
-// Remember to call Close() on it when you're done, unless its channel has closed itself already.
+// A TapFeed streams mutation events from a bucket.
+//
+// Events from the bucket can be read from the channel 'C'.  Remember
+// to call Close() on it when you're done, unless its channel has
+// closed itself already.
 type TapFeed struct {
 	C <-chan memcached.TapEvent
 
@@ -22,7 +25,7 @@ type TapFeed struct {
 	quit      chan bool
 }
 
-// Creates and starts a new Tap feed
+// StartTapFeed creates and starts a new Tap feed
 func (b *Bucket) StartTapFeed(args *memcached.TapArguments) (*TapFeed, error) {
 	if args == nil {
 		defaultArgs := memcached.DefaultTapArguments()
@@ -44,7 +47,7 @@ func (b *Bucket) StartTapFeed(args *memcached.TapArguments) (*TapFeed, error) {
 
 // Goroutine that runs the feed
 func (feed *TapFeed) run() {
-	retryInterval := kInitialRetryInterval
+	retryInterval := initialRetryInterval
 	bucketOK := true
 	for {
 		// Connect to the TAP feed of each server node:
@@ -58,14 +61,14 @@ func (feed *TapFeed) run() {
 					return
 				}
 				feed.closeNodeFeeds()
-				retryInterval = kInitialRetryInterval
+				retryInterval = initialRetryInterval
 			}
 		}
 
 		// On error, try to refresh the bucket in case the list of nodes changed:
 		log.Printf("go-couchbase: TAP connection lost; reconnecting to bucket %q in %v",
 			feed.bucket.Name, retryInterval)
-		err := feed.bucket.refresh()
+		err := feed.bucket.Refresh()
 		bucketOK = err == nil
 
 		select {
@@ -73,8 +76,8 @@ func (feed *TapFeed) run() {
 		case <-feed.quit:
 			return
 		}
-		if retryInterval *= 2; retryInterval > kMaximumRetryInterval {
-			retryInterval = kMaximumRetryInterval
+		if retryInterval *= 2; retryInterval > maximumRetryInterval {
+			retryInterval = maximumRetryInterval
 		}
 	}
 }
@@ -121,7 +124,7 @@ func (feed *TapFeed) closeNodeFeeds() {
 	feed.nodeFeeds = nil
 }
 
-// Closes a Tap feed.
+// Close a Tap feed.
 func (feed *TapFeed) Close() error {
 	select {
 	case <-feed.quit:

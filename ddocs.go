@@ -8,30 +8,30 @@ import (
 	"net/http"
 )
 
+// ViewDefinition represents a single view within a design document.
 type ViewDefinition struct {
 	Map    string `json:"map"`
 	Reduce string `json:"reduce,omitempty"`
 }
 
-type DDocJSON struct {
+// DDoc is the document body of a design document specifying a view.
+type DDoc struct {
 	Language string                    `json:"language,omitempty"`
 	Views    map[string]ViewDefinition `json:"views"`
 }
 
-type DDoc struct {
-	Meta map[string]interface{} `json:"meta"`
-	Json DDocJSON               `json:"json"`
-}
-
-type DDocRow struct {
-	DDoc DDoc `json:"doc"`
-}
-
+// DDocsResult represents the result from listing the design
+// documents.
 type DDocsResult struct {
-	Rows []DDocRow `json:"rows"`
+	Rows []struct {
+		DDoc struct {
+			Meta map[string]interface{}
+			JSON DDoc
+		} `json:"doc"`
+	} `json:"rows"`
 }
 
-// Get the design documents
+// GetDDocs lists all design documents
 func (b *Bucket) GetDDocs() (DDocsResult, error) {
 	var ddocsResult DDocsResult
 	err := b.pool.client.parseURLResponse(b.DDocs.URI, &ddocsResult)
@@ -50,7 +50,7 @@ func (b *Bucket) ddocURL(docname string) (string, error) {
 	return u.String(), nil
 }
 
-// Install a design document.
+// PutDDoc installs a design document.
 func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 	ddocU, err := b.ddocURL(docname)
 	if err != nil {
@@ -69,21 +69,21 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 	req.Header.Set("Content-Type", "application/json")
 	maybeAddAuth(req, b.authHandler())
 
-	res, err := HttpClient.Do(req)
+	res, err := HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 201 {
 		body, _ := ioutil.ReadAll(res.Body)
-		return fmt.Errorf("Error installing view: %v / %s",
+		return fmt.Errorf("error installing view: %v / %s",
 			res.Status, body)
 	}
 
 	return nil
 }
 
-// Get a design doc.
+// GetDDoc retrieves a specific a design doc.
 func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 	ddocU, err := b.ddocURL(docname)
 	if err != nil {
@@ -97,14 +97,14 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 	req.Header.Set("Content-Type", "application/json")
 	maybeAddAuth(req, b.authHandler())
 
-	res, err := HttpClient.Do(req)
+	res, err := HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		body, _ := ioutil.ReadAll(res.Body)
-		return fmt.Errorf("Error reading view: %v / %s",
+		return fmt.Errorf("error reading view: %v / %s",
 			res.Status, body)
 	}
 
@@ -112,7 +112,7 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 	return d.Decode(into)
 }
 
-// Delete a design document.
+// DeleteDDoc removes a design document.
 func (b *Bucket) DeleteDDoc(docname string) error {
 	ddocU, err := b.ddocURL(docname)
 	if err != nil {
@@ -126,14 +126,14 @@ func (b *Bucket) DeleteDDoc(docname string) error {
 	req.Header.Set("Content-Type", "application/json")
 	maybeAddAuth(req, b.authHandler())
 
-	res, err := HttpClient.Do(req)
+	res, err := HTTPClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		body, _ := ioutil.ReadAll(res.Body)
-		return fmt.Errorf("Error deleting view: %v / %s",
+		return fmt.Errorf("error deleting view: %v / %s",
 			res.Status, body)
 	}
 

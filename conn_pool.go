@@ -4,12 +4,12 @@ import (
 	"errors"
 	"time"
 
-	"github.com/dustin/gomemcached/client"
+	"github.com/couchbase/gomemcached/client"
 )
 
 // Error raised when a connection can't be retrieved from a pool.
 var TimeoutError = errors.New("timeout waiting to build connection")
-var closedPool = errors.New("the connection pool is closed")
+var errClosedPool = errors.New("the connection pool is closed")
 var errNoPool = errors.New("no connection pool")
 
 // Default timeout for retrieving a connection from the pool.
@@ -85,7 +85,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 	select {
 	case rv, isopen := <-cp.connections:
 		if !isopen {
-			return nil, closedPool
+			return nil, errClosedPool
 		}
 		return rv, nil
 	default:
@@ -99,7 +99,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 	case rv, isopen := <-cp.connections:
 		path = "avail1"
 		if !isopen {
-			return nil, closedPool
+			return nil, errClosedPool
 		}
 		return rv, nil
 	case <-t.C:
@@ -110,7 +110,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 		case rv, isopen := <-cp.connections:
 			path = "avail2"
 			if !isopen {
-				return nil, closedPool
+				return nil, errClosedPool
 			}
 			return rv, nil
 		case cp.createsem <- true:
@@ -125,7 +125,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 			}
 			return rv, err
 		case <-t.C:
-			return nil, TimeoutError
+			return nil, ErrTimeout
 		}
 	}
 }
@@ -135,8 +135,12 @@ func (cp *connectionPool) Get() (*memcached.Client, error) {
 }
 
 func (cp *connectionPool) Return(c *memcached.Client) {
-	if cp == nil || c == nil {
+	if c == nil {
 		return
+	}
+
+	if cp == nil {
+		c.Close()
 	}
 
 	if c.IsHealthy() {
@@ -177,4 +181,35 @@ func (cp *connectionPool) StartTapFeed(args *memcached.TapArguments) (*memcached
 	<-cp.createsem
 
 	return mc.StartTapFeed(*args)
+}
+
+const DEFAULT_WINDOW_SIZE = 20 * 1024 * 1024 // 20 Mb
+
+func (cp *connectionPool) StartUprFeed(name string, sequence uint32) (*memcached.UprFeed, error) {
+	if cp == nil {
+		return nil, errNoPool
+	}
+	mc, err := cp.Get()
+	if err != nil {
+		return nil, err
+	}
+
+	// A connection can't be used after it has been allocated to UPR;
+	// Dont' count it against the connection pool capacity
+	<-cp.createsem
+
+	uf, err := mc.NewUprFeed()
+	if err != nil {
+		return nil, err
+	}
+
+	if err := uf.UprOpen(name, sequence, DEFAULT_WINDOW_SIZE); err != nil {
+		return nil, err
+	}
+
+	if err := uf.StartFeed(); err != nil {
+		return nil, err
+	}
+
+	return uf, nil
 }

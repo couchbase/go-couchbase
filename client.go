@@ -1,5 +1,5 @@
 /*
-A smart client for go.
+Package couchbase provides a smart client for go.
 
 Usage:
 
@@ -35,8 +35,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/dustin/gomemcached"
-	"github.com/dustin/gomemcached/client" // package name is 'memcached'
+	"github.com/couchbase/gomemcached"
+	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
 )
 
 // Maximum number of times to retry a chunk of a bulk get on error.
@@ -57,7 +57,7 @@ func slowLog(startTime time.Time, format string, args ...interface{}) {
 // ClientOpCallback is called for each invocation of Do.
 var ClientOpCallback func(opname, k string, start time.Time, err error)
 
-// Execute a function on a memcached connection to the node owning key "k"
+// Do executes a function on a memcached connection to the node owning key "k"
 //
 // Note that this automatically handles transient errors by replaying
 // your function on a "not-my-vbucket" error, so don't assume
@@ -89,23 +89,23 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 		}()
 
 		if retry {
-			b.refresh()
+			b.Refresh()
 		} else {
 			return err
 		}
 	}
 
-	return fmt.Errorf("Unable to complete action after %v attemps",
+	return fmt.Errorf("unable to complete action after %v attemps",
 		maxTries)
 }
 
-type gathered_stats struct {
+type gatheredStats struct {
 	sn   string
 	vals map[string]string
 }
 
 func getStatsParallel(b *Bucket, offset int, which string,
-	ch chan<- gathered_stats) {
+	ch chan<- gatheredStats) {
 	sn := b.VBServerMap().ServerList[offset]
 
 	results := map[string]string{}
@@ -113,18 +113,18 @@ func getStatsParallel(b *Bucket, offset int, which string,
 	conn, err := pool.Get()
 	defer pool.Return(conn)
 	if err != nil {
-		ch <- gathered_stats{sn, results}
+		ch <- gatheredStats{sn, results}
 	} else {
 		st, err := conn.StatsMap(which)
 		if err == nil {
-			ch <- gathered_stats{sn, st}
+			ch <- gatheredStats{sn, st}
 		} else {
-			ch <- gathered_stats{sn, results}
+			ch <- gatheredStats{sn, results}
 		}
 	}
 }
 
-// Get a set of stats from all servers.
+// GetStats gets a set of stats from all servers.
 //
 // Returns a map of server ID -> map of stat key to map value.
 func (b *Bucket) GetStats(which string) map[string]map[string]string {
@@ -136,7 +136,7 @@ func (b *Bucket) GetStats(which string) map[string]map[string]string {
 	}
 	// Go grab all the things at once.
 	todo := len(vsm.ServerList)
-	ch := make(chan gathered_stats, todo)
+	ch := make(chan gatheredStats, todo)
 
 	for offset := range vsm.ServerList {
 		go getStatsParallel(b, offset, which, ch)
@@ -174,13 +174,13 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 	attempts := 0
 	done := false
 	for attempts < MaxBulkRetries && !done {
-		masterId := b.VBServerMap().VBucketMap[vb][0]
+		masterID := b.VBServerMap().VBucketMap[vb][0]
 		attempts++
 
 		// This stack frame exists to ensure we can clean up
 		// connection at a reasonable time.
 		err := func() error {
-			pool := b.getConnPool(masterId)
+			pool := b.getConnPool(masterID)
 			conn, err := pool.Get()
 			if err != nil {
 				// retry
@@ -193,7 +193,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 			case *gomemcached.MCResponse:
 				st := err.(*gomemcached.MCResponse).Status
 				if st == gomemcached.NOT_MY_VBUCKET {
-					b.refresh()
+					b.Refresh()
 					// retry
 					err = nil
 				}
@@ -204,6 +204,8 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 					ch <- rv
 					return err
 				}
+				log.Printf("Connection Error: %s. Refreshing bucket", err.Error())
+				b.Refresh()
 				// retry
 				return nil
 			}
@@ -226,7 +228,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 	}
 
 	if attempts == MaxBulkRetries {
-		ech <- fmt.Errorf("BulkGet exceeded MaxBulkRetries for vbucket %d", vb)
+		ech <- fmt.Errorf("bulkget exceeded MaxBulkRetries for vbucket %d", vb)
 	}
 
 	ch <- rv
@@ -285,6 +287,11 @@ func errorCollector(ech <-chan error, eout chan<- error) {
 	}
 }
 
+// GetBulk fetches multiple keys concurrently.
+//
+// Unlike more convenient GETs, the entire response is returned in the
+// map for each key.  Keys that were not found will not be included in
+// the map.
 func (b *Bucket) GetBulk(keys []string) (map[string]*gomemcached.MCResponse, error) {
 	// Organize by vbucket
 	kdm := map[uint16][]string{}
@@ -317,42 +324,53 @@ func (b *Bucket) GetBulk(keys []string) (map[string]*gomemcached.MCResponse, err
 	return rv, <-eout
 }
 
-// A set of option flags for the Write method.
+// WriteOptions is the set of option flags availble for the Write
+// method.  They are ORed together to specify the desired request.
 type WriteOptions int
 
 const (
-	// If set, value is raw []byte or nil; don't JSON-encode it.
+	// Raw specifies that the value is raw []byte or nil; don't
+	// JSON-encode it.
 	Raw = WriteOptions(1 << iota)
-	// If set, Write fails with ErrKeyExists if key already has a value.
+	// AddOnly indicates an item should only be written if it
+	// doesn't exist, otherwise ErrKeyExists is returned.
 	AddOnly
-	// If set, Write will wait until the value is written to disk.
+	// Persist causes the operation to block until the server
+	// confirms the item is persisted.
 	Persist
-	// If set, Write will wait until the value is available to be indexed by views.
-	// (In Couchbase Server 2.x, this has the same effect as the Persist flag.)
+	// Indexable causes the operation to block until it's availble via the index.
 	Indexable
-	// If set, data is appended to existing value instead of replacing it.
+	// Append indicates the given value should be appended to the
+	// existing value for the given key.
 	Append
 )
 
+var optNames = []struct {
+	opt  WriteOptions
+	name string
+}{
+	{Raw, "raw"},
+	{AddOnly, "addonly"}, {Persist, "persist"},
+	{Indexable, "indexable"}, {Append, "append"},
+}
+
 // String representation of WriteOptions
 func (w WriteOptions) String() string {
-	switch w {
-	case Raw:
-		return "raw"
-	case AddOnly:
-		return "addonly"
-	case Persist:
-		return "persist"
-	case Indexable:
-		return "indexable"
-	case Append:
-		return "append"
+	f := []string{}
+	for _, on := range optNames {
+		if w&on.opt != 0 {
+			f = append(f, on.name)
+			w &= ^on.opt
+		}
 	}
-	return fmt.Sprintf("0x%x", int(w))
+	if len(f) == 0 || w != 0 {
+		f = append(f, fmt.Sprintf("0x%x", int(w)))
+	}
+	return strings.Join(f, "|")
 }
 
 // Error returned from Write with AddOnly flag, when key already exists in the bucket.
-var ErrKeyExists = errors.New("Key exists")
+var ErrKeyExists = errors.New("key exists")
 
 // General-purpose value setter.
 //
@@ -410,21 +428,62 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 	return err
 }
 
+func (b *Bucket) WriteCas(k string, flags, exp int, cas uint64, v interface{},
+	opt WriteOptions) (err error) {
+
+	if ClientOpCallback != nil {
+		defer func(t time.Time) {
+			ClientOpCallback(fmt.Sprintf("Write(%v)", opt), k, t, err)
+		}(time.Now())
+	}
+
+	var data []byte
+	if opt&Raw == 0 {
+		data, err = json.Marshal(v)
+		if err != nil {
+			return err
+		}
+	} else if v != nil {
+		data = v.([]byte)
+	}
+
+	var res *gomemcached.MCResponse
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		res, err = mc.SetCas(vb, k, flags, exp, cas, data)
+		return err
+	})
+
+	if err == nil && (opt&(Persist|Indexable) != 0) {
+		err = b.WaitForPersistence(k, res.Cas, data == nil)
+	}
+
+	return err
+}
+
+// Set a value in this bucket with Cas
+func (b *Bucket) Cas(k string, exp int, cas uint64, v interface{}) error {
+	return b.WriteCas(k, 0, exp, cas, v, 0)
+}
+
+// Set a value in this bucket with Cas without json encoding it
+func (b *Bucket) CasRaw(k string, exp int, cas uint64, v interface{}) error {
+	return b.WriteCas(k, 0, exp, cas, v, Raw)
+}
+
 // Set a value in this bucket.
 // The value will be serialized into a JSON document.
 func (b *Bucket) Set(k string, exp int, v interface{}) error {
 	return b.Write(k, 0, exp, v, 0)
 }
 
-// Set a value in this bucket.
-// The value will be stored as raw bytes.
+// SetRaw sets a value in this bucket without JSON encoding it.
 func (b *Bucket) SetRaw(k string, exp int, v []byte) error {
 	return b.Write(k, 0, exp, v, Raw)
 }
 
-// Adds a value to this bucket; like Set except that nothing happens
-// if the key exists.  The value will be serialized into a JSON
-// document.
+// Add adds a value to this bucket; like Set except that nothing
+// happens if the key exists.  The value will be serialized into a
+// JSON document.
 func (b *Bucket) Add(k string, exp int, v interface{}) (added bool, err error) {
 	err = b.Write(k, 0, exp, v, AddOnly)
 	if err == ErrKeyExists {
@@ -433,7 +492,7 @@ func (b *Bucket) Add(k string, exp int, v interface{}) (added bool, err error) {
 	return (err == nil), err
 }
 
-// Adds a value to this bucket; like SetRaw except that nothing
+// AddRaw adds a value to this bucket; like SetRaw except that nothing
 // happens if the key exists.  The value will be stored as raw bytes.
 func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
 	err = b.Write(k, 0, exp, v, AddOnly|Raw)
@@ -443,11 +502,13 @@ func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
 	return (err == nil), err
 }
 
+// Append appends raw data to an existing item.
 func (b *Bucket) Append(k string, data []byte) error {
 	return b.Write(k, 0, 0, data, Append|Raw)
 }
 
-// Get a raw value from this bucket, including its CAS counter and flags.
+// GetsRaw gets a raw value from this bucket including its CAS
+// counter and flags.
 func (b *Bucket) GetsRaw(k string) (data []byte, flags int,
 	cas uint64, err error) {
 
@@ -470,9 +531,9 @@ func (b *Bucket) GetsRaw(k string) (data []byte, flags int,
 	return
 }
 
-// Get a value from this bucket, including its CAS counter.
-// The value is expected to be a JSON stream and will be deserialized
-// into rv.
+// Gets gets a value from this bucket, including its CAS counter.  The
+// value is expected to be a JSON stream and will be deserialized into
+// rv.
 func (b *Bucket) Gets(k string, rv interface{}, caso *uint64) error {
 	data, _, cas, err := b.GetsRaw(k)
 	if err != nil {
@@ -491,7 +552,7 @@ func (b *Bucket) Get(k string, rv interface{}) error {
 	return b.Gets(k, rv, nil)
 }
 
-// Get a raw value from this bucket.
+// GetRaw gets a raw value from this bucket.  No marshaling is performed.
 func (b *Bucket) GetRaw(k string) ([]byte, error) {
 	d, _, _, err := b.GetsRaw(k)
 	return d, err
@@ -502,7 +563,7 @@ func (b *Bucket) Delete(k string) error {
 	return b.Write(k, 0, 0, nil, Raw)
 }
 
-// Increment a key
+// Incr increments the value at a given key.
 func (b *Bucket) Incr(k string, amt, def uint64, exp int) (val uint64, err error) {
 	if ClientOpCallback != nil {
 		defer func(t time.Time) { ClientOpCallback("Incr", k, t, err) }(time.Now())
@@ -536,14 +597,15 @@ func (b *Bucket) casNext(k string, exp int, state *memcached.CASState) bool {
 	return keepGoing && state.Err == nil
 }
 
-// A callback function to update a document
+// An UpdateFunc is a callback function to update a document
 type UpdateFunc func(current []byte) (updated []byte, err error)
 
 // Return this as the error from an UpdateFunc to cancel the Update
 // operation.
 const UpdateCancel = memcached.CASQuit
 
-// Safe update of a document, avoiding conflicts by using CAS.
+// Update performs a Safe update of a document, avoiding conflicts by
+// using CAS.
 //
 // The callback function will be invoked with the current raw document
 // contents (or nil if the document doesn't exist); it should return
@@ -569,13 +631,15 @@ func (b *Bucket) update(k string, exp int, callback UpdateFunc) (newCas uint64, 
 	return state.Cas, state.Err
 }
 
-// A callback function to update a document
+// A WriteUpdateFunc is a callback function to update a document
 type WriteUpdateFunc func(current []byte) (updated []byte, opt WriteOptions, err error)
 
-// Safe update of a document, avoiding conflicts by using CAS.
-// WriteUpdate is like Update, except that the callback can return a set of WriteOptions,
-// of which Persist and Indexable are recognized: these cause the call to wait until the
-// document update has been persisted to disk and/or become available to index.
+// WriteUpdate performs a Safe update of a document, avoiding
+// conflicts by using CAS.  WriteUpdate is like Update, except that
+// the callback can return a set of WriteOptions, of which Persist and
+// Indexable are recognized: these cause the call to wait until the
+// document update has been persisted to disk and/or become available
+// to index.
 func (b *Bucket) WriteUpdate(k string, exp int, callback WriteUpdateFunc) error {
 	var writeOpts WriteOptions
 	var deletion bool
@@ -597,7 +661,7 @@ func (b *Bucket) WriteUpdate(k string, exp int, callback WriteUpdateFunc) error 
 	return err
 }
 
-// Observes the current state of a document.
+// Observe observes the current state of a document.
 func (b *Bucket) Observe(k string) (result memcached.ObserveResult, err error) {
 	if ClientOpCallback != nil {
 		defer func(t time.Time) { ClientOpCallback("Observe", k, t, err) }(time.Now())
@@ -612,11 +676,11 @@ func (b *Bucket) Observe(k string) (result memcached.ObserveResult, err error) {
 
 // Returned from WaitForPersistence (or Write, if the Persistent or Indexable flag is used)
 // if the value has been overwritten by another before being persisted.
-var ErrOverwritten = errors.New("Overwritten")
+var ErrOverwritten = errors.New("overwritten")
 
 // Returned from WaitForPersistence (or Write, if the Persistent or Indexable flag is used)
 // if the value hasn't been persisted by the timeout interval
-var ErrTimeout = errors.New("Timeout")
+var ErrTimeout = errors.New("timeout")
 
 // WaitForPersistence waits for an item to be considered durable.
 //

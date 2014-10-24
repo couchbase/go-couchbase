@@ -1,15 +1,18 @@
 package couchbase
 
 import (
+	"errors"
 	"io"
 	"testing"
 	"time"
 
-	"github.com/dustin/gomemcached"
-	"github.com/dustin/gomemcached/client"
+	"github.com/couchbase/gomemcached"
+	"github.com/couchbase/gomemcached/client"
 )
 
-type testT struct{}
+type testT struct {
+	closed bool
+}
 
 func (t testT) Read([]byte) (int, error) {
 	return 0, io.EOF
@@ -19,12 +22,18 @@ func (t testT) Write([]byte) (int, error) {
 	return 0, io.EOF
 }
 
-func (t testT) Close() error {
+var errAlreadyClosed = errors.New("already closed")
+
+func (t *testT) Close() error {
+	if t.closed {
+		return errAlreadyClosed
+	}
+	t.closed = true
 	return nil
 }
 
 func testMkConn(h string, ah AuthHandler) (*memcached.Client, error) {
-	return memcached.Wrap(testT{})
+	return memcached.Wrap(&testT{})
 }
 
 func TestConnPool(t *testing.T) {
@@ -130,7 +139,7 @@ func TestConnPoolSoonAvailable(t *testing.T) {
 	var aClient *memcached.Client
 	for {
 		sc, err := cp.GetWithTimeout(time.Millisecond)
-		if err == TimeoutError {
+		if err == ErrTimeout {
 			break
 		}
 		if err != nil {
@@ -153,7 +162,7 @@ func TestConnPoolSoonAvailable(t *testing.T) {
 	time.AfterFunc(time.Millisecond, func() { cp.Close() })
 
 	sc, err = cp.Get()
-	if err != closedPool {
+	if err != errClosedPool {
 		t.Errorf("Expected a closed pool, got %v/%v", sc, err)
 	}
 
@@ -170,7 +179,7 @@ func TestConnPoolClosedFull(t *testing.T) {
 
 	for {
 		sc, err := cp.GetWithTimeout(time.Millisecond)
-		if err == TimeoutError {
+		if err == ErrTimeout {
 			break
 		}
 		if err != nil {
@@ -182,7 +191,7 @@ func TestConnPoolClosedFull(t *testing.T) {
 	time.AfterFunc(2*time.Millisecond, func() { cp.Close() })
 
 	sc, err := cp.Get()
-	if err != closedPool {
+	if err != errClosedPool {
 		t.Errorf("Expected closed pool error after closed, got %v/%v", sc, err)
 	}
 }
@@ -198,7 +207,7 @@ func TestConnPoolWaitFull(t *testing.T) {
 	var aClient *memcached.Client
 	for {
 		sc, err := cp.GetWithTimeout(time.Millisecond)
-		if err == TimeoutError {
+		if err == ErrTimeout {
 			break
 		}
 		if err != nil {
@@ -227,7 +236,7 @@ func TestConnPoolWaitFailFull(t *testing.T) {
 	var aClient *memcached.Client
 	for {
 		sc, err := cp.GetWithTimeout(time.Millisecond)
-		if err == TimeoutError {
+		if err == ErrTimeout {
 			break
 		}
 		if err != nil {
@@ -258,7 +267,7 @@ func TestConnPoolWaitDoubleFailFull(t *testing.T) {
 	var aClient *memcached.Client
 	for {
 		sc, err := cp.GetWithTimeout(time.Millisecond)
-		if err == TimeoutError {
+		if err == ErrTimeout {
 			break
 		}
 		if err != nil {
@@ -302,12 +311,55 @@ func TestConnPoolClosed(t *testing.T) {
 	}
 	cp.Close()
 
-	// This just shouldn't error.
+	// This should cause the connection to be closed
 	cp.Return(c)
+	if err = c.Close(); err != errAlreadyClosed {
+		t.Errorf("Expected to close connection, wasn't closed (%v)", err)
+	}
 
 	sc, err := cp.Get()
-	if err != closedPool {
+	if err != errClosedPool {
 		t.Errorf("Expected closed pool error after closed, got %v/%v", sc, err)
+	}
+}
+
+func TestConnPoolCloseWrongPool(t *testing.T) {
+	cp := newConnectionPool("h", &basicAuth{}, 3, 6)
+	cp.mkConn = testMkConn
+	c, err := cp.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp.Close()
+
+	// Return to a different pool.  Should still be OK.
+	cp = newConnectionPool("h", &basicAuth{}, 3, 6)
+	cp.mkConn = testMkConn
+	c, err = cp.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp.Close()
+
+	cp.Return(c)
+	if err = c.Close(); err != errAlreadyClosed {
+		t.Errorf("Expected to close connection, wasn't closed (%v)", err)
+	}
+}
+
+func TestConnPoolCloseNil(t *testing.T) {
+	cp := newConnectionPool("h", &basicAuth{}, 3, 6)
+	cp.mkConn = testMkConn
+	c, err := cp.Get()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cp.Close()
+
+	cp = nil
+	cp.Return(c)
+	if err = c.Close(); err != errAlreadyClosed {
+		t.Errorf("Expected to close connection, wasn't closed (%v)", err)
 	}
 }
 
@@ -329,7 +381,7 @@ func TestConnPoolStartTapFeed(t *testing.T) {
 
 	cp.Close()
 	tf, err = cp.StartTapFeed(&args)
-	if err != closedPool {
+	if err != errClosedPool {
 		t.Errorf("Expected a closed pool, got %v/%v", tf, err)
 	}
 }

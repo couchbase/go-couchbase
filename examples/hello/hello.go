@@ -34,6 +34,38 @@ func doOps(b *couchbase.Bucket) {
 		total*3, time.Now().Sub(start).String())
 }
 
+func doMoreOps(b *couchbase.Bucket) {
+	fmt.Printf("Doing some Cas ops on %s\n", b.Name)
+	start := time.Now()
+	total := 2048
+	for i := 0; i < total; i++ {
+		k := fmt.Sprintf("k2%d", i)
+		maybeFatal(b.Set(k, 0, []string{"a", "b", "c"}))
+		rv := make([]string, 0, 10)
+		var cas uint64
+		maybeFatal(b.Gets(k, &rv, &cas))
+		if fmt.Sprintf("%#v", rv) != `[]string{"a", "b", "c"}` {
+			log.Fatalf("Expected %#v, got %#v",
+				[]string{"a", "b", "c"}, rv)
+		}
+		maybeFatal(b.Cas(k, 0, cas, []string{"a", "b", "d"}))
+		maybeFatal(b.Get(k, &rv))
+		if fmt.Sprintf("%#v", rv) != `[]string{"a", "b", "d"}` {
+			log.Fatalf("Expected %#v, got %#v",
+				[]string{"a", "b", "c"}, rv)
+		}
+		// this should fail since we don't know the latest cas value
+		err := b.Cas(k, 0, cas, []string{"a", "b", "x"})
+		if err == nil {
+			log.Fatalf("Expected \"Data exists for key\"")
+		}
+
+		maybeFatal(b.Delete(k))
+	}
+	fmt.Printf("Did %d ops in %s\n",
+		total*6, time.Now().Sub(start).String())
+}
+
 func exploreBucket(bucket *couchbase.Bucket) {
 	vbm := bucket.VBServerMap()
 	fmt.Printf("     %v uses %s\n", bucket.Name, vbm.HashAlgorithm)
@@ -48,6 +80,7 @@ func exploreBucket(bucket *couchbase.Bucket) {
 	}
 
 	doOps(bucket)
+	doMoreOps(bucket)
 
 }
 

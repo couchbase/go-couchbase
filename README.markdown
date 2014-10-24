@@ -30,4 +30,4 @@ don't bang on all one node to do all the work.
     	log.Fatalf("Error getting bucket:  %v", err)
     }
 
-    bucket.Set("someKey", []string{"an", "example", "list"})
+    bucket.Set("someKey", 0, []string{"an", "example", "list"})
