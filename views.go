@@ -184,5 +184,12 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 //       })
 func (b *Bucket) View(ddoc, name string, params map[string]interface{}) (ViewResult, error) {
 	vres := ViewResult{}
-	return vres, b.ViewCustom(ddoc, name, params, &vres)
+
+	if err := b.ViewCustom(ddoc, name, params, &vres); err != nil {
+		//error in accessing views. Retry once after a bucket refresh
+		b.Refresh()
+		return vres, b.ViewCustom(ddoc, name, params, &vres)
+	} else {
+		return vres, nil
+	}
 }
