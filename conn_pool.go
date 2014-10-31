@@ -187,11 +187,11 @@ func (cp *connectionPool) StartUprFeed(name string, sequence uint32) (*memcached
 	if cp == nil {
 		return nil, errNoPool
 	}
-	mc, err := cp.Get()
+
+	mc, err := cp.Get() // Don't call Return() on this
 	if err != nil {
 		return nil, err
 	}
-
 	// A connection can't be used after it has been allocated to UPR;
 	// Dont' count it against the connection pool capacity
 	<-cp.createsem

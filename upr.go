@@ -1,59 +1,50 @@
 package couchbase
 
 import (
+	"errors"
 	"log"
-	"time"
+	"runtime/debug"
+	"strings"
+	"sync"
 
-	"fmt"
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
-	"sync"
 )
 
-// A UprFeed streams mutation events from a bucket.
-//
-// Events from the bucket can be read from the channel 'C'.  Remember
-// to call Close() on it when you're done, unless its channel has
-// closed itself already.
-type UprFeed struct {
-	C <-chan *memcached.UprEvent
+// ErrorInvalidVbucket
+var ErrorInvalidVbucket = errors.New("go-couchbase.invalidVbucket")
 
-	bucket     *Bucket
-	nodeFeeds  map[string]*FeedInfo     // The UPR feeds of the individual nodes
-	output     chan *memcached.UprEvent // Same as C but writeably-typed
-	quit       chan bool
-	name       string // name of this UPR feed
-	sequence   uint32 // sequence number for this feed
-	connected  bool
-	killSwitch chan bool
-	lock       sync.Mutex // synchronize access to feed.output CBIDXT-237
-}
+// ErrorConnectionOverflow
+var ErrorConnectionOverflow = errors.New("go-couchbase.connectionOverflow")
 
-// UprFeed from a single connection
-type FeedInfo struct {
-	uprFeed   *memcached.UprFeed // UPR feed handle
-	host      string             // hostname
-	connected bool               // connected
-}
+// ErrorFailoverLog
+var ErrorFailoverLog = errors.New("go-couchbase.failoverLog")
 
-type FailoverLog map[uint16]memcached.FailoverLog
+// ErrorInvalidBucket
+var ErrorInvalidBucket = errors.New("go-couchbase.invalidBucket")
+
+// ErrorInvalidFeed
+var ErrorInvalidFeed = errors.New("go-couchbase.invalidFeed")
+
+// ErrorClosed
+var ErrorClosed = errors.New("go-couchbase.closed")
 
 // GetFailoverLogs, get the failover logs for a set of vbucket ids
 func (b *Bucket) GetFailoverLogs(vBuckets []uint16) (FailoverLog, error) {
-
 	// map vbids to their corresponding hosts
 	vbHostList := make(map[string][]uint16)
 	vbm := b.VBServerMap()
-	if len(vbm.VBucketMap) < len(vBuckets) {
-		return nil, fmt.Errorf("vbmap smaller than vbucket list: %v vs. %v",
-			vbm.VBucketMap, vBuckets)
-	}
-
 	for _, vb := range vBuckets {
+		if l := len(vbm.VBucketMap); int(vb) >= l {
+			log.Printf("error invalid vbucket id %d >= %d\n", vb, l)
+			return nil, ErrorInvalidVbucket
+		}
+
 		masterID := vbm.VBucketMap[vb][0]
 		master := b.getMasterNode(masterID)
 		if master == "" {
-			return nil, fmt.Errorf("No master found for vb %d", vb)
+			log.Printf("error master node not found for vbucket %d\n", vb)
+			return nil, ErrorInvalidVbucket
 		}
 
 		vbList := vbHostList[master]
@@ -66,7 +57,6 @@ func (b *Bucket) GetFailoverLogs(vBuckets []uint16) (FailoverLog, error) {
 
 	failoverLogMap := make(FailoverLog)
 	for _, serverConn := range b.getConnPools() {
-
 		vbList := vbHostList[serverConn.host]
 		if vbList == nil {
 			continue
@@ -74,252 +64,350 @@ func (b *Bucket) GetFailoverLogs(vBuckets []uint16) (FailoverLog, error) {
 
 		mc, err := serverConn.Get()
 		if err != nil {
-			log.Printf("No Free connections for vblist %v", vbList)
-			return nil, fmt.Errorf("No Free connections for host %s",
-				serverConn.host)
-
+			log.Printf("error connections overflow for vblist %v\n", vbList)
+			return nil, ErrorConnectionOverflow
 		}
-		// close the connection so that it doesn't get reused for upr data
-		// connection
-		defer mc.Close()
+		mc.Hijack()
+
 		failoverlogs, err := mc.UprGetFailoverLog(vbList)
 		if err != nil {
-			return nil, fmt.Errorf("Error getting failover log %s host %s",
-				err.Error(), serverConn.host)
-
+			format := "error getting failover log for host %s: %v\n"
+			log.Printf(format, serverConn.host, err)
+			return nil, ErrorFailoverLog
 		}
-
 		for vb, log := range failoverlogs {
 			failoverLogMap[vb] = *log
 		}
+		serverConn.Return(mc)
 	}
 
 	return failoverLogMap, nil
 }
 
-// StartUprFeed creates and starts a new Upr feed
-// No data will be sent on the channel unless vbuckets streams are requested
+// UprFeed from a single connection
+type FeedInfo struct {
+	uprFeed *memcached.UprFeed // UPR feed handle
+	host    string             // hostname
+	healthy bool
+	mu      sync.Mutex
+}
+
+type FailoverLog map[uint16]memcached.FailoverLog
+
+// A UprFeed streams mutation events from a bucket.
+//
+// Events from the bucket can be read from the channel 'C'.
+// Remember to call Close() on it when you're done, unless
+// its channel has closed itself already.
+type UprFeed struct {
+	C <-chan *memcached.UprEvent
+
+	bucket    *Bucket
+	nodeFeeds map[string]*FeedInfo     // The UPR feeds of the individual nodes
+	output    chan *memcached.UprEvent // Same as C but writeably-typed
+	name      string                   // name of this UPR feed
+	sequence  uint32                   // sequence number for this feed
+	// gen-server
+	reqch  chan []interface{}
+	finch  chan bool
+	wgroup sync.WaitGroup
+}
+
+// StartUprFeed creates and starts a new Upr feed.
+// No data will be sent on the channel unless vbuckets streams
+// are requested.
 func (b *Bucket) StartUprFeed(name string, sequence uint32) (*UprFeed, error) {
+	return b.StartUprFeedOver(name, sequence, nil)
+}
+
+// StartUprFeed creates and starts a new Upr feed.
+// No data will be sent on the channel unless vbuckets streams
+// are requested. Connections will be made only to specified
+// kvnodes `kvaddrs`, to connect will all kvnodes hosting the bucket,
+// pass `kvaddrs` as nil
+func (b *Bucket) StartUprFeedOver(
+	name string, sequence uint32, kvaddrs []string) (*UprFeed, error) {
 
 	feed := &UprFeed{
-		bucket:     b,
-		output:     make(chan *memcached.UprEvent, 10),
-		quit:       make(chan bool),
-		nodeFeeds:  make(map[string]*FeedInfo, 0),
-		name:       name,
-		sequence:   sequence,
-		killSwitch: make(chan bool),
+		bucket:    b,
+		output:    make(chan *memcached.UprEvent, 10), // TODO: no magic num.
+		nodeFeeds: make(map[string]*FeedInfo),
+		name:      name,
+		sequence:  sequence,
+		reqch:     make(chan []interface{}, 16), // TODO: no magic num.
+		finch:     make(chan bool),
 	}
-
-	err := feed.connectToNodes()
-	if err != nil {
-		return nil, fmt.Errorf("Cannot connect to bucket %s", err.Error())
-	}
-	feed.connected = true
-	go feed.run()
-
 	feed.C = feed.output
+	err := feed.connectToNodes(kvaddrs)
+	if err != nil {
+		log.Printf("error cannot connect to bucket %v\n", err)
+		return nil, ErrorInvalidBucket
+	}
+	go feed.genServer(feed.reqch)
 	return feed, nil
 }
 
+const (
+	ufCmdRequestStream byte = iota + 1
+	ufCmdCloseStream
+	ufCmdClose
+)
+
 // UprRequestStream starts a stream for a vb on a feed
+// and immediately returns, it is upto the channel listener
+// to detect StreamBegin.
+// Synchronous call.
 func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint16, flags uint32,
-	vuuid, startSequence, endSequence, snapStart, snapEnd uint64) error {
+	vbuuid, startSequence, endSequence, snapStart, snapEnd uint64) error {
 
-	vbm := feed.bucket.VBServerMap()
-	if len(vbm.VBucketMap) < int(vb) {
-		return fmt.Errorf("vbmap smaller than vbucket list: %v vs. %v",
-			vb, vbm.VBucketMap)
-	}
-
-	if int(vb) >= len(vbm.VBucketMap) {
-		return fmt.Errorf("Invalid vbucket id %d", vb)
-	}
-
-	masterID := vbm.VBucketMap[vb][0]
-	master := feed.bucket.getMasterNode(masterID)
-	if master == "" {
-		return fmt.Errorf("Master node not found for vbucket %d", vb)
-	}
-	singleFeed := feed.nodeFeeds[master]
-	if singleFeed == nil {
-		return fmt.Errorf("UprFeed for this host not found")
-	}
-
-	if err := singleFeed.uprFeed.UprRequestStream(vb, opaque, flags,
-		vuuid, startSequence, endSequence, snapStart, snapEnd); err != nil {
-		return err
-	}
-
-	return nil
+	respch := make(chan []interface{}, 1)
+	cmd := []interface{}{
+		ufCmdRequestStream, vb, opaque, flags, vbuuid, startSequence,
+		endSequence, snapStart, snapEnd, respch}
+	resp, err := failsafeOp(feed.reqch, respch, cmd, feed.finch)
+	return opError(err, resp, 0)
 }
 
-// UprCloseStream ends a vbucket stream.
+// UprCloseStream closes a stream for a vb on a feed
+// and immediately returns, it is upto the channel listener
+// to detect StreamEnd.
 func (feed *UprFeed) UprCloseStream(vb, opaqueMSB uint16) error {
-	vbm := feed.bucket.VBServerMap()
-	if len(vbm.VBucketMap) < int(vb) {
-		return fmt.Errorf("vbmap smaller than vbucket list: %v vs. %v",
-			vb, vbm.VBucketMap)
+	respch := make(chan []interface{}, 1)
+	cmd := []interface{}{ufCmdCloseStream, vb, opaqueMSB, respch}
+	resp, err := failsafeOp(feed.reqch, respch, cmd, feed.finch)
+	return opError(err, resp, 0)
+}
+
+// Close UprFeed. Synchronous call.
+func (feed *UprFeed) Close() error {
+	respch := make(chan []interface{}, 1)
+	cmd := []interface{}{ufCmdClose, respch}
+	resp, err := failsafeOp(feed.reqch, respch, cmd, feed.finch)
+	return opError(err, resp, 0)
+}
+
+func (feed *UprFeed) genServer(reqch chan []interface{}) {
+	defer func() { // panic safe
+		if r := recover(); r != nil {
+			log.Printf("error UprFeed for %v crashed: %v\n", feed.bucket, r)
+			stackTrace(string(debug.Stack()))
+		}
+	}()
+
+loop:
+	for {
+		select {
+		case msg := <-reqch:
+			cmd := msg[0].(byte)
+			switch cmd {
+			case ufCmdRequestStream:
+				vb, opaque := msg[1].(uint16), msg[2].(uint16)
+				flags, vbuuid := msg[3].(uint32), msg[4].(uint64)
+				startSeq, endSeq := msg[5].(uint64), msg[6].(uint64)
+				snapStart, snapEnd := msg[7].(uint64), msg[8].(uint64)
+				err := feed.uprRequestStream(
+					vb, opaque, flags, vbuuid, startSeq, endSeq,
+					snapStart, snapEnd)
+				respch := msg[9].(chan []interface{})
+				respch <- []interface{}{err}
+
+			case ufCmdCloseStream:
+				vb, opaqueMSB := msg[1].(uint16), msg[2].(uint16)
+				err := feed.uprCloseStream(vb, opaqueMSB)
+				respch := msg[3].(chan []interface{})
+				respch <- []interface{}{err}
+
+			case ufCmdClose:
+				respch := msg[1].(chan []interface{})
+				respch <- []interface{}{nil}
+				break loop
+			}
+		}
 	}
 
-	if int(vb) >= len(vbm.VBucketMap) {
-		return fmt.Errorf("Invalid vbucket id %d", vb)
-	}
+	close(feed.finch)
+	feed.wgroup.Wait()
+	feed.nodeFeeds = nil
+	close(feed.output)
+}
 
-	masterID := vbm.VBucketMap[vb][0]
-	master := feed.bucket.getMasterNode(masterID)
-	if master == "" {
-		return fmt.Errorf("Master node not found for vbucket %d", vb)
-	}
-	singleFeed := feed.nodeFeeds[master]
-	if singleFeed == nil {
-		return fmt.Errorf("UprFeed for this host not found")
-	}
-
-	if err := singleFeed.uprFeed.CloseStream(vb, opaqueMSB); err != nil {
+func (feed *UprFeed) connectToNodes(kvaddrs []string) error {
+	kvcache := make(map[string]bool)
+	m, err := feed.bucket.GetVBmap(kvaddrs)
+	if err != nil {
 		return err
 	}
-	return nil
-}
-
-// Goroutine that runs the feed
-func (feed *UprFeed) run() {
-	retryInterval := initialRetryInterval
-	bucketOK := true
-	for {
-		// Connect to the UPR feed of each server node:
-		if bucketOK {
-			// Run until one of the sub-feeds fails:
-			select {
-			case <-feed.killSwitch:
-			case <-feed.quit:
-				return
-			}
-			//feed.closeNodeFeeds()
-			retryInterval = initialRetryInterval
-		}
-
-		// On error, try to refresh the bucket in case the list of nodes changed:
-		log.Printf("go-couchbase: UPR connection lost; reconnecting to bucket %q in %v",
-			feed.bucket.Name, retryInterval)
-
-		if err := feed.bucket.Refresh(); err != nil {
-			log.Printf("Unable to refresh bucket %s ", err.Error())
-			feed.closeNodeFeeds()
-		}
-		// this will only connect to nodes that are not connected or changed
-		// user will have to reconnect the stream
-		err := feed.connectToNodes()
-		bucketOK = err == nil
-
-		select {
-		case <-time.After(retryInterval):
-		case <-feed.quit:
-			return
-		}
-		if retryInterval *= 2; retryInterval > maximumRetryInterval {
-			retryInterval = maximumRetryInterval
-		}
+	for kvaddr := range m {
+		kvcache[kvaddr] = true
 	}
-}
 
-func (feed *UprFeed) connectToNodes() (err error) {
 	for _, serverConn := range feed.bucket.getConnPools() {
-
-		// this maybe a reconnection, so check if the connection to the node
-		// already exists. Connect only if the node is not found in the list
-		// or connected == false
-		nodeFeed := feed.nodeFeeds[serverConn.host]
-
-		if nodeFeed != nil && nodeFeed.connected == true {
+		if _, ok := kvcache[serverConn.host]; !ok {
+			continue
+		}
+		feedInfo := feed.nodeFeeds[serverConn.host]
+		if feedInfo != nil && feedInfo.isHealthy() == true {
 			continue
 		}
 
-		var singleFeed *memcached.UprFeed
 		var name string
 		if feed.name == "" {
 			name = "DefaultUprClient"
 		} else {
 			name = feed.name
 		}
-		singleFeed, err = serverConn.StartUprFeed(name, feed.sequence)
+		singleFeed, err := serverConn.StartUprFeed(name, feed.sequence)
 		if err != nil {
-			log.Printf("go-couchbase: Error connecting to upr feed of %s: %v", serverConn.host, err)
-			feed.closeNodeFeeds()
-			return
+			format := "go-couchbase: Error connecting to upr feed of %s: %v"
+			log.Printf(format, serverConn.host, err)
+			for _, f := range feed.nodeFeeds {
+				f.uprFeed.Close()
+			}
+			return ErrorInvalidFeed
 		}
 		// add the node to the connection map
-		feedInfo := &FeedInfo{
-			uprFeed:   singleFeed,
-			connected: true,
-			host:      serverConn.host,
+		feedInfo = &FeedInfo{
+			uprFeed: singleFeed,
+			healthy: true,
+			host:    serverConn.host,
 		}
 		feed.nodeFeeds[serverConn.host] = feedInfo
-		go feed.forwardUprEvents(feedInfo, feed.killSwitch, serverConn.host)
+		feed.wgroup.Add(1)
+		go feed.forwardUprEvents(feedInfo, feed.finch)
 	}
-	return
+	return nil
 }
 
-// Goroutine that forwards Upr events from a single node's feed to the aggregate feed.
-func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, host string) {
-	singleFeed := nodeFeed.uprFeed
+func (feed *UprFeed) uprRequestStream(vb uint16, opaque uint16, flags uint32,
+	vbuuid, startSequence, endSequence, snapStart, snapEnd uint64) error {
 
+	vbm := feed.bucket.VBServerMap()
+	if l := len(vbm.VBucketMap); int(vb) >= l {
+		log.Printf("error invalid vbucket id %d >= %d\n", vb, l)
+		return ErrorInvalidVbucket
+	}
+
+	masterID := vbm.VBucketMap[vb][0]
+	master := feed.bucket.getMasterNode(masterID)
+	if master == "" {
+		log.Printf("error master node not found for vbucket %d\n", vb)
+		return ErrorInvalidVbucket
+	}
+	singleFeed, ok := feed.nodeFeeds[master]
+	if !ok {
+		log.Printf("error UprFeed for host %q (vb:%d) not found", master, vb)
+		return ErrorInvalidFeed
+	}
+	if err := singleFeed.uprFeed.UprRequestStream(vb, opaque, flags,
+		vbuuid, startSequence, endSequence, snapStart, snapEnd); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (feed *UprFeed) uprCloseStream(vb, opaqueMSB uint16) error {
+	vbm := feed.bucket.VBServerMap()
+	if l := len(vbm.VBucketMap); int(vb) >= l {
+		log.Printf("error invalid vbucket id %d >= %d\n", vb, l)
+		return ErrorInvalidVbucket
+	}
+
+	masterID := vbm.VBucketMap[vb][0]
+	master := feed.bucket.getMasterNode(masterID)
+	if master == "" {
+		log.Printf("error master node not found for vbucket %d\n", vb)
+		return ErrorInvalidVbucket
+	}
+	singleFeed, ok := feed.nodeFeeds[master]
+	if !ok {
+		log.Printf("error UprFeed for host %q (vb:%d) not found", master, vb)
+		return ErrorInvalidFeed
+	}
+	if err := singleFeed.uprFeed.CloseStream(vb, opaqueMSB); err != nil {
+		return err
+	}
+	return nil
+}
+
+// go routine
+func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, finch chan bool) {
+	singleFeed := nodeFeed.uprFeed
+loop:
 	for {
 		select {
 		case event, ok := <-singleFeed.C:
 			if !ok {
 				if singleFeed.Error != nil {
-					log.Printf("go-couchbase: Upr feed from %s failed: %v", host, singleFeed.Error)
+					format := "go-couchbase: Upr feed from %s failed: %v"
+					log.Printf(format, nodeFeed.host, singleFeed.Error)
 				}
-				killSwitch <- true
-				return
+				break loop
 			}
-			feed.lock.Lock()
 			feed.output <- event
-			feed.lock.Unlock()
 			if event.Status == gomemcached.NOT_MY_VBUCKET {
-				log.Printf(" Got a not my vbucket error !! ")
+				log.Printf("Got a not my vbucket error !! ")
 				if err := feed.bucket.Refresh(); err != nil {
-					log.Printf("Unable to refresh bucket %s ", err.Error())
-					feed.closeNodeFeeds()
-					return
+					log.Printf("error unable to refresh bucket : %v", err)
+					break loop
 				}
-				// this will only connect to nodes that are not connected or changed
-				// user will have to reconnect the stream
-				if err := feed.connectToNodes(); err != nil {
-					log.Printf("Unable to connect to nodes %s", err.Error())
-					return
-				}
-
 			}
-		case <-feed.quit:
-			nodeFeed.connected = false
-			return
+
+		case <-finch:
+			break loop
 		}
 	}
+
+	feed.wgroup.Done()
+	go feed.Close()
+	nodeFeed.uprFeed.Close()
+
+	nodeFeed.mu.Lock()
+	defer nodeFeed.mu.Unlock()
+	nodeFeed.healthy = false
 }
 
-func (feed *UprFeed) closeNodeFeeds() {
-	for _, f := range feed.nodeFeeds {
-		f.uprFeed.Close()
-	}
-	feed.nodeFeeds = nil
+func (nodeFeed *FeedInfo) isHealthy() bool {
+	nodeFeed.mu.Lock()
+	defer nodeFeed.mu.Unlock()
+	return nodeFeed.healthy
 }
 
-// Close a Upr feed.
-func (feed *UprFeed) Close() error {
+// failsafeOp can be used by gen-server implementors to avoid infinitely
+// blocked API calls.
+func failsafeOp(
+	reqch, respch chan []interface{},
+	cmd []interface{},
+	finch chan bool) ([]interface{}, error) {
+
 	select {
-	case <-feed.quit:
-		return nil
-	default:
+	case reqch <- cmd:
+		if respch != nil {
+			select {
+			case resp := <-respch:
+				return resp, nil
+			case <-finch:
+				return nil, ErrorClosed
+			}
+		}
+	case <-finch:
+		return nil, ErrorClosed
 	}
+	return nil, nil
+}
 
-	feed.closeNodeFeeds()
-	close(feed.quit)
+// stackTrace formats the output of debug.Stack()
+func stackTrace(s string) {
+	for _, line := range strings.Split(s, "\n") {
+		log.Printf("%s\n", line)
+	}
+}
 
-	feed.lock.Lock()
-	defer feed.lock.Unlock()
-	close(feed.output)
-
-	return nil
+// opError suppliments FailsafeOp used by gen-servers.
+func opError(err error, vals []interface{}, idx int) error {
+	if err != nil {
+		return err
+	} else if vals[idx] == nil {
+		return nil
+	}
+	return vals[idx].(error)
 }
