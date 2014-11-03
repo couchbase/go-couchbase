@@ -121,23 +121,28 @@ func main() {
 	}
 
 	// observe the mutations from the channel.
-	var e *memcached.UprEvent
+	var event *memcached.UprEvent
 	var mutations = 0
 	var callOnce bool
 loop:
 	for {
 		select {
-		case e = <-feed.C:
+		case e, ok := <-feed.C:
+			if !ok {
+				break loop
+			} else {
+				event = e
+			}
 		case <-time.After(time.Second):
 			break loop
 		}
-		if e.Opcode == gomemcached.UPR_MUTATION {
+		if event.Opcode == gomemcached.UPR_MUTATION {
 			//log.Printf(" got mutation %s", e.Value)
 			mutations += 1
 		}
 
-		if e.Opcode == gomemcached.UPR_STREAMEND {
-			log.Printf(" Received Stream end for vbucket %d", e.VBucket)
+		if event.Opcode == gomemcached.UPR_STREAMEND {
+			log.Printf(" Received Stream end for vbucket %d", event.VBucket)
 		}
 
 		// after receving 1000 mutations close some streams

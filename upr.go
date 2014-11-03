@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
-	"sync"
 )
 
 // A UprFeed streams mutation events from a bucket.
@@ -26,7 +25,6 @@ type UprFeed struct {
 	sequence   uint32 // sequence number for this feed
 	connected  bool
 	killSwitch chan bool
-	lock       sync.Mutex // synchronize access to feed.output CBIDXT-237
 }
 
 // UprFeed from a single connection
@@ -274,9 +272,7 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 				killSwitch <- true
 				return
 			}
-			feed.lock.Lock()
 			feed.output <- event
-			feed.lock.Unlock()
 			if event.Status == gomemcached.NOT_MY_VBUCKET {
 				log.Printf(" Got a not my vbucket error !! ")
 				if err := feed.bucket.Refresh(); err != nil {
@@ -293,6 +289,7 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 
 			}
 		case <-feed.quit:
+			close(feed.output)
 			nodeFeed.connected = false
 			return
 		}
@@ -316,10 +313,6 @@ func (feed *UprFeed) Close() error {
 
 	feed.closeNodeFeeds()
 	close(feed.quit)
-
-	feed.lock.Lock()
-	defer feed.lock.Unlock()
-	close(feed.output)
 
 	return nil
 }
