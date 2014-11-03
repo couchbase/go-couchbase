@@ -12,6 +12,7 @@ import (
 	_ "net/http/pprof"
 	"net/url"
 	"os"
+	"runtime"
 	"runtime/pprof"
 	"time"
 )
@@ -28,6 +29,8 @@ func mf(err error, msg string) {
 
 // Flush the bucket before trying this program
 func main() {
+
+	runtime.GOMAXPROCS(4)
 
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
@@ -145,8 +148,15 @@ loop:
 			log.Printf(" Received Stream end for vbucket %d", event.VBucket)
 		}
 
+		/*
+			if mutations%1000 == 0 && mutations != 0 {
+				feed.Close()
+				return
+			}
+		*/
+
 		// after receving 1000 mutations close some streams
-		if callOnce == false {
+		if mutations%1000 == 0 && mutations != 0 && callOnce == false {
 			for i := 0; i < vbcount; i = i + 4 {
 				log.Printf(" closing stream for vbucket %d", i)
 				if err := feed.UprCloseStream(uint16(i), uint16(0)); err != nil {

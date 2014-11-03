@@ -2,6 +2,7 @@ package couchbase
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	"fmt"
@@ -25,6 +26,8 @@ type UprFeed struct {
 	sequence   uint32 // sequence number for this feed
 	connected  bool
 	killSwitch chan bool
+	closing    bool
+	wg         sync.WaitGroup
 }
 
 // UprFeed from a single connection
@@ -197,6 +200,11 @@ func (feed *UprFeed) run() {
 			retryInterval = initialRetryInterval
 		}
 
+		if feed.closing == true {
+			// we have been asked to shut down
+			return
+		}
+
 		// On error, try to refresh the bucket in case the list of nodes changed:
 		log.Printf("go-couchbase: UPR connection lost; reconnecting to bucket %q in %v",
 			feed.bucket.Name, retryInterval)
@@ -254,6 +262,7 @@ func (feed *UprFeed) connectToNodes() (err error) {
 		}
 		feed.nodeFeeds[serverConn.host] = feedInfo
 		go feed.forwardUprEvents(feedInfo, feed.killSwitch, serverConn.host)
+		feed.wg.Add(1)
 	}
 	return
 }
@@ -262,8 +271,17 @@ func (feed *UprFeed) connectToNodes() (err error) {
 func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, host string) {
 	singleFeed := nodeFeed.uprFeed
 
+	defer func() {
+		log.Printf("been asked to close ...")
+		feed.wg.Done()
+	}()
+
 	for {
 		select {
+		case <-feed.quit:
+			nodeFeed.connected = false
+			return
+
 		case event, ok := <-singleFeed.C:
 			if !ok {
 				if singleFeed.Error != nil {
@@ -288,10 +306,6 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 				}
 
 			}
-		case <-feed.quit:
-			close(feed.output)
-			nodeFeed.connected = false
-			return
 		}
 	}
 }
@@ -311,8 +325,19 @@ func (feed *UprFeed) Close() error {
 	default:
 	}
 
-	feed.closeNodeFeeds()
+	feed.closing = true
 	close(feed.quit)
+	feed.closeNodeFeeds()
+
+	// FIXME wait for all feeds to close before closing the output feed
+	// The following piece of code seems to deadlock at times.
+	// Can't figure out why, something
+	// to with the fact that close(feed.quit) doesn't seem to be delivered
+	// to all go-routines. This only seem to be happening when the feed is
+	// closed prematurely by the application
+
+	//feed.wg.Wait()
+	//close(feed.output)
 
 	return nil
 }
