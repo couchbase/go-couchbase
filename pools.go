@@ -16,6 +16,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
 )
 
 // HTTPClient to use for REST and view operations.
@@ -191,6 +193,25 @@ func (b Bucket) getConnPool(i int) *connectionPool {
 		return p[i]
 	}
 	return nil
+}
+
+// Given a vbucket number, returns a memcached connection to it.
+// The connection must be returned to its pool after use.
+func (b Bucket) getConnectionToVBucket(vb uint32) (*memcached.Client, *connectionPool, error) {
+	for {
+		vbm := b.VBServerMap()
+		if len(vbm.VBucketMap) < int(vb) {
+			return nil, nil, fmt.Errorf("go-couchbase: vbmap smaller than vbucket list: %v vs. %v",
+				vb, vbm.VBucketMap)
+		}
+		masterId := vbm.VBucketMap[vb][0]
+		pool := b.getConnPool(masterId)
+		conn, err := pool.Get()
+		if err != errClosedPool {
+			return conn, pool, err
+		}
+		// If conn pool was closed, because another goroutine refreshed the vbucket map, retry...
+	}
 }
 
 func (b Bucket) getMasterNode(i int) string {
