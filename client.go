@@ -160,6 +160,14 @@ func (b *Bucket) GetStats(which string) map[string]map[string]string {
 	return rv
 }
 
+func isAuthError(err error) bool {
+	if err == io.EOF {
+		return true
+	}
+	estr := err.Error()
+	return strings.Contains(estr, "Auth failure")
+}
+
 // Errors that are not considered fatal for our fetch loop
 func isConnError(err error) bool {
 	if err == io.EOF {
@@ -190,6 +198,10 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 			pool := b.getConnPool(masterID)
 			conn, err := pool.Get()
 			if err != nil {
+				if isAuthError(err) {
+					log.Printf(" Fatal Auth Error %v", err)
+					return err
+				}
 				// retry
 				return nil
 			}
@@ -230,6 +242,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 		}()
 
 		if err != nil {
+			ech <- err
 			return
 		}
 	}
