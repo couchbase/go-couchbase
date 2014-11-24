@@ -28,7 +28,6 @@ var options struct {
 }
 
 var done = make(chan bool, 16)
-var rch = make(chan []interface{}, 10000)
 
 func argParse() string {
 	var buckets string
@@ -76,14 +75,14 @@ func usage() {
 
 func main() {
 	cluster := argParse()
-	ch := make(chan *couchbase.UprFeed, 10)
+	rch := make(chan []interface{}, 10000)
 	for _, bucket := range options.buckets {
-		go startBucket(cluster, bucket, ch)
+		go startBucket(cluster, bucket, rch)
 	}
-	receive(ch)
+	receive(rch)
 }
 
-func startBucket(cluster, bucketn string, ch chan *couchbase.UprFeed) int {
+func startBucket(cluster, bucketn string, rch chan []interface{}) int {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("%s:\n%s\n", r, debug.Stack())
@@ -99,16 +98,11 @@ func startBucket(cluster, bucketn string, ch chan *couchbase.UprFeed) int {
 	mf(err, "- upr")
 
 	vbnos := listOfVbnos(options.maxVbno)
-
 	flogs, err := b.GetFailoverLogs(vbnos)
 	mf(err, "- upr failoverlogs")
-
 	if options.printflogs {
 		printFlogs(vbnos, flogs)
 	}
-
-	ch <- uprFeed
-
 	go startUpr(uprFeed, flogs)
 
 	for {
@@ -132,23 +126,7 @@ func startUpr(uprFeed *couchbase.UprFeed, flogs couchbase.FailoverLog) {
 	}
 }
 
-func endUpr(uprFeed *couchbase.UprFeed, vbnos []uint16) error {
-	for _, vbno := range vbnos {
-		if err := uprFeed.UprCloseStream(vbno, uint16(0)); err != nil {
-			mf(err, "- UprCloseStream()")
-			return err
-		}
-	}
-	return nil
-}
-
-func mf(err error, msg string) {
-	if err != nil {
-		log.Fatalf("%v: %v", msg, err)
-	}
-}
-
-func receive(ch chan *couchbase.UprFeed) {
+func receive(rch chan []interface{}) {
 	// bucket -> Opcode -> #count
 	counts := make(map[string]map[mcd.CommandCode]int)
 
@@ -158,13 +136,9 @@ func receive(ch chan *couchbase.UprFeed) {
 	}
 
 	finTimeout := time.After(time.Millisecond * time.Duration(options.duration))
-	uprFeeds := make([]*couchbase.UprFeed, 0)
 loop:
 	for {
 		select {
-		case uprFeed := <-ch:
-			uprFeeds = append(uprFeeds, uprFeed)
-
 		case msg, ok := <-rch:
 			if ok == false {
 				break loop
@@ -189,14 +163,9 @@ loop:
 			common.Infof("\n")
 
 		case <-finTimeout:
-			for _, uprFeed := range uprFeeds {
-				endUpr(uprFeed, listOfVbnos(options.maxVbno))
-			}
 			break loop
 		}
 	}
-	fmt.Println("sleep wait ....")
-	time.Sleep(10000 * time.Millisecond)
 }
 
 func sprintCounts(counts map[mcd.CommandCode]int) string {
@@ -225,4 +194,10 @@ func printFlogs(vbnos []uint16, flogs couchbase.FailoverLog) {
 		common.Infof("   %#v\n", flogs[uint16(i)])
 	}
 	common.Infof("\n")
+}
+
+func mf(err error, msg string) {
+	if err != nil {
+		log.Fatalf("%v: %v", msg, err)
+	}
 }

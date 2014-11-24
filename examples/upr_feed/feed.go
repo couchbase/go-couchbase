@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"os"
 	"runtime/pprof"
+	"strconv"
+	"strings"
 	"time"
 
 	mcd "github.com/couchbase/gomemcached"
@@ -25,17 +27,22 @@ var options struct {
 	maxVb       int
 	tick        int
 	debug       bool
+	closeVbs    []string
 	cpuprofile  string
 	memprofile  string
 }
 
 func argParse() {
+	var closeVbs string
+
 	flag.StringVar(&options.bucket, "bucket", "default",
-		"bucket to connect to (defaults to username)")
+		"bucket to connect to")
 	flag.IntVar(&options.maxVb, "maxvb", 1024,
 		"number configured vbuckets")
 	flag.IntVar(&options.tick, "tick", 1000,
 		"timer tick in mS to log information")
+	flag.StringVar(&closeVbs, "close", "",
+		"comma separated list of vbucket numbers")
 	flag.BoolVar(&options.debug, "debug", false,
 		"number configured vbuckets")
 	flag.StringVar(&options.cpuprofile, "cpuprofile", "",
@@ -51,6 +58,7 @@ func argParse() {
 	} else {
 		options.clusterAddr = args[0]
 	}
+	options.closeVbs = strings.Split(closeVbs, ",")
 }
 
 func usage() {
@@ -100,10 +108,11 @@ func main() {
 		return
 	}
 
+	opaque := uint16(10)
 	// request stream for all vbuckets
 	for i := 0; i < options.maxVb; i++ {
 		err := feed.UprRequestStream(
-			uint16(i) /*vbno*/, uint16(0) /*opaque*/, 0 /*flag*/, 0, /*vbuuid*/
+			uint16(i) /*vbno*/, opaque, 0 /*flag*/, 0, /*vbuuid*/
 			0 /*seqStart*/, 0xFFFFFFFFFFFFFFFF /*seqEnd*/, 0 /*snaps*/, 0)
 		if err != nil {
 			fmt.Printf("%s", err.Error())
@@ -111,30 +120,67 @@ func main() {
 	}
 
 	// observe the mutations from the channel.
-	tick := time.Tick(time.Duration(options.tick) * time.Millisecond)
-	var mutations = 0
+	events(feed, 2000)
 
+	opaque += 1
+	if len(options.closeVbs) > 0 {
+		for _, vb := range options.closeVbs {
+			if len(vb) > 0 {
+				vbno, err := strconv.Atoi(vb)
+				if err != nil {
+					log.Fatal(err)
+				}
+				if err := feed.UprCloseStream(uint16(vbno), opaque); err != nil {
+					log.Printf("error while closing stream %d: %v", vbno, err)
+				}
+			}
+		}
+	}
+
+	events(feed, 100000)
+
+	feed.Close()
+}
+
+func events(feed *couchbase.UprFeed, timeoutMs int) {
+	var timeout <-chan time.Time
+
+	mutations := 0
+	done := true
+	tick := time.Tick(time.Duration(options.tick) * time.Millisecond)
+	if timeoutMs > 0 {
+		timeout = time.Tick(time.Duration(timeoutMs) * time.Millisecond)
+	}
+
+loop:
 	for {
 		select {
 		case e := <-feed.C:
 			if e.Opcode == mcd.UPR_MUTATION {
 				mutations += 1
+			} else {
+				log.Printf("Received {%s, %d(vb), %d(opq), %s}\n",
+					e.Opcode, e.VBucket, e.Opaque, e.Status)
 			}
 			handleEvent(e)
+			done = false
 
 		case <-tick:
 			log.Printf("Mutation count %d", mutations)
+			if timeout == nil && done {
+				break loop
+			}
+			done = true
+
+		case <-timeout:
+			break loop
 		}
 	}
-	feed.Close()
 }
 
 func handleEvent(e *mc.UprEvent) {
 	if e.Opcode == mcd.UPR_MUTATION && options.debug {
 		log.Printf("got mutation %s", e.Value)
-	}
-	if e.Opcode == mcd.UPR_STREAMEND {
-		log.Printf("received Stream end for vbucket %d", e.VBucket)
 	}
 }
 
@@ -178,14 +224,3 @@ func mf(err error, msg string) {
 		log.Fatalf("%v: %v", msg, err)
 	}
 }
-
-// after receving 1000 mutations close some streams
-//if callOnce == false {
-//    for i := 0; i < options.maxVb; i = i + 4 {
-//        log.Printf("closing stream for vbucket %d", i)
-//        if err := feed.UprCloseStream(uint16(i), uint16(0)); err != nil {
-//            log.Printf("received error while closing stream %d", i)
-//        }
-//    }
-//    callOnce = true
-//}
