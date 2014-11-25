@@ -35,6 +35,7 @@ type FeedInfo struct {
 	uprFeed   *memcached.UprFeed // UPR feed handle
 	host      string             // hostname
 	connected bool               // connected
+	quit      chan bool          // quit channel
 }
 
 type FailoverLog map[uint16]memcached.FailoverLog
@@ -259,6 +260,7 @@ func (feed *UprFeed) connectToNodes() (err error) {
 			uprFeed:   singleFeed,
 			connected: true,
 			host:      serverConn.host,
+			quit:      make(chan bool),
 		}
 		feed.nodeFeeds[serverConn.host] = feedInfo
 		go feed.forwardUprEvents(feedInfo, feed.killSwitch, serverConn.host)
@@ -278,7 +280,7 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 
 	for {
 		select {
-		case <-feed.quit:
+		case <-nodeFeed.quit:
 			nodeFeed.connected = false
 			return
 
@@ -312,6 +314,8 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 
 func (feed *UprFeed) closeNodeFeeds() {
 	for _, f := range feed.nodeFeeds {
+		log.Printf(" Sending close to forwardUprEvent ")
+		close(f.quit)
 		f.uprFeed.Close()
 	}
 	feed.nodeFeeds = nil
@@ -326,18 +330,11 @@ func (feed *UprFeed) Close() error {
 	}
 
 	feed.closing = true
-	close(feed.quit)
 	feed.closeNodeFeeds()
+	close(feed.quit)
 
-	// FIXME wait for all feeds to close before closing the output feed
-	// The following piece of code seems to deadlock at times.
-	// Can't figure out why, something
-	// to with the fact that close(feed.quit) doesn't seem to be delivered
-	// to all go-routines. This only seem to be happening when the feed is
-	// closed prematurely by the application
-
-	//feed.wg.Wait()
-	//close(feed.output)
+	feed.wg.Wait()
+	close(feed.output)
 
 	return nil
 }

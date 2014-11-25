@@ -126,7 +126,7 @@ func main() {
 	// observe the mutations from the channel.
 	var event *memcached.UprEvent
 	var mutations = 0
-	var callOnce bool
+	//var callOnce bool
 loop:
 	for {
 		select {
@@ -150,21 +150,23 @@ loop:
 
 		/*
 			if mutations%1000 == 0 && mutations != 0 {
-				feed.Close()
+				break loop
 				return
 			}
 		*/
 
 		// after receving 1000 mutations close some streams
-		if mutations%1000 == 0 && mutations != 0 && callOnce == false {
-			for i := 0; i < vbcount; i = i + 4 {
-				log.Printf(" closing stream for vbucket %d", i)
-				if err := feed.UprCloseStream(uint16(i), uint16(0)); err != nil {
-					log.Printf(" Received error while closing stream %d", i)
+		/*
+			if mutations%1000 == 0 && mutations != 0 && callOnce == false {
+				for i := 0; i < vbcount; i = i + 4 {
+					log.Printf(" closing stream for vbucket %d", i)
+					if err := feed.UprCloseStream(uint16(i), uint16(0)); err != nil {
+						log.Printf(" Received error while closing stream %d", i)
+					}
 				}
+				callOnce = true
 			}
-			callOnce = true
-		}
+		*/
 
 		if mutations%10000 == 0 {
 			log.Printf(" received %d mutations ", mutations)
