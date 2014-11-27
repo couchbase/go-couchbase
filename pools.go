@@ -133,6 +133,7 @@ type PoolServices struct {
 type NodeServices struct {
 	Services map[string]int `json:"services,omitempty"`
 	Hostname string         `json:"hostname"`
+	ThisNode bool		`json:"thisNode"`
 }
 
 // VBServerMap returns the current VBucketServerMap.
