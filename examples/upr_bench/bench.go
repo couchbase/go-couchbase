@@ -12,7 +12,6 @@ import (
 
 	mcd "github.com/couchbase/gomemcached"
 	mc "github.com/couchbase/gomemcached/client"
-	"github.com/couchbase/indexing/secondary/common"
 	"github.com/couchbaselabs/go-couchbase"
 )
 
@@ -22,9 +21,6 @@ var options struct {
 	stats      int      // periodic timeout(ms) to print stats, 0 will disable
 	duration   int
 	printflogs bool
-	info       bool
-	debug      bool
-	trace      bool
 }
 
 var done = make(chan bool, 16)
@@ -43,24 +39,10 @@ func argParse() string {
 		"receive mutations till duration milliseconds.")
 	flag.BoolVar(&options.printflogs, "flogs", false,
 		"display failover logs")
-	flag.BoolVar(&options.info, "info", false,
-		"display informational logs")
-	flag.BoolVar(&options.debug, "debug", false,
-		"display debug logs")
-	flag.BoolVar(&options.trace, "trace", false,
-		"display trace logs")
 
 	flag.Parse()
 
 	options.buckets = strings.Split(buckets, ",")
-	if options.debug {
-		common.SetLogLevel(common.LogLevelDebug)
-	} else if options.trace {
-		common.SetLogLevel(common.LogLevelTrace)
-	} else {
-		common.SetLogLevel(common.LogLevelInfo)
-	}
-
 	args := flag.Args()
 	if len(args) < 1 {
 		usage()
@@ -87,12 +69,11 @@ func startBucket(cluster, bucketn string, ch chan *couchbase.UprFeed) int {
 	defer func() {
 		if r := recover(); r != nil {
 			fmt.Printf("%s:\n%s\n", r, debug.Stack())
-			common.StackTrace(string(debug.Stack()))
 		}
 	}()
 
-	common.Infof("Connecting with %q\n", bucketn)
-	b, err := common.ConnectBucket(cluster, "default", bucketn)
+	log.Printf("Connecting with %q\n", bucketn)
+	b, err := ConnectBucket(cluster, "default", bucketn)
 	mf(err, "bucket")
 
 	uprFeed, err := b.StartUprFeed("rawupr", uint32(0))
@@ -114,7 +95,7 @@ func startBucket(cluster, bucketn string, ch chan *couchbase.UprFeed) int {
 	for {
 		e, ok := <-uprFeed.C
 		if ok == false {
-			common.Infof("Closing for bucket %q\n", bucketn)
+			log.Printf("Closing for bucket %q\n", bucketn)
 		}
 		rch <- []interface{}{bucketn, e}
 	}
@@ -170,10 +151,6 @@ loop:
 				break loop
 			}
 			bucket, e := msg[0].(string), msg[1].(*mc.UprEvent)
-			if e.Opcode == mcd.UPR_MUTATION {
-				common.Tracef("UprMutation KEY -- %v\n", string(e.Key))
-				common.Tracef("     %v\n", string(e.Value))
-			}
 			if _, ok := counts[bucket]; !ok {
 				counts[bucket] = make(map[mcd.CommandCode]int)
 			}
@@ -184,9 +161,8 @@ loop:
 
 		case <-tick:
 			for bucket, m := range counts {
-				common.Infof("%q %s\n", bucket, sprintCounts(m))
+				log.Printf("%q %s\n", bucket, sprintCounts(m))
 			}
-			common.Infof("\n")
 
 		case <-finTimeout:
 			for _, uprFeed := range uprFeeds {
@@ -221,8 +197,23 @@ func listOfVbnos(maxVbno int) []uint16 {
 
 func printFlogs(vbnos []uint16, flogs couchbase.FailoverLog) {
 	for i, vbno := range vbnos {
-		common.Infof("Failover log for vbucket %v\n", vbno)
-		common.Infof("   %#v\n", flogs[uint16(i)])
+		log.Printf("Failover log for vbucket %v\n", vbno)
+		log.Printf("   %#v\n", flogs[uint16(i)])
 	}
-	common.Infof("\n")
+}
+
+func ConnectBucket(cluster, pooln, bucketn string) (*couchbase.Bucket, error) {
+	couch, err := couchbase.Connect("http://" + cluster)
+	if err != nil {
+		return nil, err
+	}
+	pool, err := couch.GetPool(pooln)
+	if err != nil {
+		return nil, err
+	}
+	bucket, err := pool.GetBucket(bucketn)
+	if err != nil {
+		return nil, err
+	}
+	return bucket, err
 }
