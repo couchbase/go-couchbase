@@ -38,4 +38,40 @@ func main() {
 	bucketInfo, err := couchbase.GetBucketList(u.String())
 	fmt.Printf("List of buckets and password %v", bucketInfo)
 
+	//connect to a gamesim-sample
+	client, err := couchbase.Connect(u.String())
+	if err != nil {
+		fmt.Printf("Connect failed %v", err)
+		return
+	}
+
+	cbpool, err := client.GetPool("default")
+	if err != nil {
+		fmt.Printf("Failed to connect to default pool %v", err)
+		return
+	}
+
+	password := bucketInfo["gamesim-sample"]
+	var cbbucket *couchbase.Bucket
+
+	if password != "" {
+		cbbucket, err = cbpool.GetBucketWithAuth("gamesim-sample", password)
+		if err != nil {
+			fmt.Printf("Failed to connect to bucket %v", err)
+			return
+		}
+	} else {
+		cbbucket, err = cbpool.GetBucketWithAuth("gamesim-sample", password)
+		if err != nil {
+			fmt.Printf("Failed to connect to bucket %v", err)
+			return
+		}
+	}
+
+	err = cbbucket.Set("k1", 0, "value")
+	if err != nil {
+		fmt.Printf("set failed error %v", err)
+		return
+	}
+
 }

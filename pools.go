@@ -120,6 +120,7 @@ type Bucket struct {
 	vBucketServerMap unsafe.Pointer // *VBucketServerMap
 	nodeList         unsafe.Pointer // *[]Node
 	commonSufix      string
+	ah               AuthHandler // auth handler
 }
 
 // PoolServices is all the bucket-independent services in a pool
@@ -134,6 +135,19 @@ type NodeServices struct {
 	Services map[string]int `json:"services,omitempty"`
 	Hostname string         `json:"hostname"`
 	ThisNode bool		`json:"thisNode"`
+}
+
+type BucketAuth struct {
+	name    string
+	saslPwd string
+}
+
+func newBucketAuth(name string, pass string) *BucketAuth {
+	return &BucketAuth{name: name, saslPwd: pass}
+}
+
+func (ba *BucketAuth) GetCredentials() (string, string) {
+	return ba.name, ba.saslPwd
 }
 
 // VBServerMap returns the current VBucketServerMap.
@@ -358,12 +372,7 @@ func Connect(baseU string) (Client, error) {
 }
 
 //Get SASL buckets
-type BucketInfo struct {
-	Name     string // name of bucket
-	Password string // SASL password of bucket
-}
-
-func GetBucketList(baseU string) (bInfo []BucketInfo, err error) {
+func GetBucketList(baseU string) (bInfo map[string]string, err error) {
 
 	c := &Client{}
 	c.BaseURL, err = ParseURL(baseU)
@@ -377,10 +386,9 @@ func GetBucketList(baseU string) (bInfo []BucketInfo, err error) {
 	if err != nil {
 		return
 	}
-	bInfo = make([]BucketInfo, 0)
+	bInfo = make(map[string]string)
 	for _, bucket := range buckets {
-		bucketInfo := BucketInfo{Name: bucket.Name, Password: bucket.Password}
-		bInfo = append(bInfo, bucketInfo)
+		bInfo[bucket.Name] = bucket.Password
 	}
 	return bInfo, err
 }
@@ -394,11 +402,19 @@ func (b *Bucket) Refresh() error {
 	}
 	newcps := make([]*connectionPool, len(tmpb.VBSMJson.ServerList))
 	for i := range newcps {
-		newcps[i] = newConnectionPool(
-			tmpb.VBSMJson.ServerList[i],
-			b.authHandler(), PoolSize, PoolOverflow)
+		if b.ah != nil {
+			newcps[i] = newConnectionPool(
+				tmpb.VBSMJson.ServerList[i],
+				b.ah, PoolSize, PoolOverflow)
+
+		} else {
+			newcps[i] = newConnectionPool(
+				tmpb.VBSMJson.ServerList[i],
+				b.authHandler(), PoolSize, PoolOverflow)
+		}
 	}
 	b.replaceConnPools(newcps)
+	tmpb.ah = b.ah
 	atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&tmpb.VBSMJson))
 	atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJSON))
 	return nil
@@ -488,6 +504,21 @@ func (p *Pool) GetBucket(name string) (*Bucket, error) {
 		return nil, errors.New("No bucket named " + name)
 	}
 	runtime.SetFinalizer(&rv, bucketFinalizer)
+	err := rv.Refresh()
+	if err != nil {
+		return nil, err
+	}
+	return &rv, nil
+}
+
+// GetBucket gets a bucket from within this pool.
+func (p *Pool) GetBucketWithAuth(name string, password string) (*Bucket, error) {
+	rv, ok := p.BucketMap[name]
+	if !ok {
+		return nil, errors.New("No bucket named " + name)
+	}
+	runtime.SetFinalizer(&rv, bucketFinalizer)
+	rv.ah = newBucketAuth(name, password)
 	err := rv.Refresh()
 	if err != nil {
 		return nil, err

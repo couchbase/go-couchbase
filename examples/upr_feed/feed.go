@@ -12,7 +12,6 @@ import (
 	_ "net/http/pprof"
 	"net/url"
 	"os"
-	"runtime"
 	"runtime/pprof"
 	"time"
 )
@@ -30,7 +29,7 @@ func mf(err error, msg string) {
 // Flush the bucket before trying this program
 func main() {
 
-	runtime.GOMAXPROCS(4)
+	//runtime.GOMAXPROCS(4)
 
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
@@ -87,20 +86,6 @@ func main() {
 	bucket, err := p.GetBucket(*bname)
 	mf(err, "bucket")
 
-	//addKVset(bucket, 1000)
-	//return
-
-	// get failover logs for a few vbuckets
-	vbList := []uint16{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	failoverlogMap, err := bucket.GetFailoverLogs(vbList)
-	if err != nil {
-		mf(err, "failoverlog")
-	}
-
-	for vb, flog := range failoverlogMap {
-		log.Printf("Failover log for vbucket %d is %v", vb, flog)
-	}
-
 	// start upr feed
 	name := fmt.Sprintf("%v", time.Now().UnixNano())
 	feed, err := bucket.StartUprFeed(name, 0)
@@ -108,10 +93,6 @@ func main() {
 		log.Print(" Failed to start stream ", err)
 		return
 	}
-
-	// get the vbucket map for this bucket
-	vbm := bucket.VBServerMap()
-	log.Println(vbm)
 
 	// request stream for all vbuckets
 	for i := 0; i < vbcount; i++ {
@@ -148,27 +129,7 @@ loop:
 			log.Printf(" Received Stream end for vbucket %d", event.VBucket)
 		}
 
-		/*
-			if mutations%1000 == 0 && mutations != 0 {
-				break loop
-				return
-			}
-		*/
-
-		// after receving 1000 mutations close some streams
-		/*
-			if mutations%1000 == 0 && mutations != 0 && callOnce == false {
-				for i := 0; i < vbcount; i = i + 4 {
-					log.Printf(" closing stream for vbucket %d", i)
-					if err := feed.UprCloseStream(uint16(i), uint16(0)); err != nil {
-						log.Printf(" Received error while closing stream %d", i)
-					}
-				}
-				callOnce = true
-			}
-		*/
-
-		if mutations%10000 == 0 {
+		if mutations%1000000 == 0 {
 			log.Printf(" received %d mutations ", mutations)
 		}
 		//e.Release()
@@ -189,7 +150,7 @@ func addKVset(b *couchbase.Bucket, count int) {
 			panic(err)
 		}
 
-		if i%100000 == 0 {
+		if i%1000000 == 0 {
 			fmt.Printf("\n Added %d keys", i)
 		}
 	}
