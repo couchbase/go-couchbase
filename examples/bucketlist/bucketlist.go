@@ -51,7 +51,13 @@ func main() {
 		return
 	}
 
-	password := bucketInfo["gamesim-sample"]
+	var password string
+	for _, bi := range bucketInfo {
+		if bi.Name == "gamesim-sample" {
+			password = bi.Password
+		}
+	}
+
 	var cbbucket *couchbase.Bucket
 
 	if password != "" {

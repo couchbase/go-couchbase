@@ -134,7 +134,7 @@ type PoolServices struct {
 type NodeServices struct {
 	Services map[string]int `json:"services,omitempty"`
 	Hostname string         `json:"hostname"`
-	ThisNode bool		`json:"thisNode"`
+	ThisNode bool           `json:"thisNode"`
 }
 
 type BucketAuth struct {
@@ -371,8 +371,13 @@ func Connect(baseU string) (Client, error) {
 	return ConnectWithAuth(baseU, basicAuthFromURL(baseU))
 }
 
+type BucketInfo struct {
+	Name     string // name of bucket
+	Password string // SASL password of bucket
+}
+
 //Get SASL buckets
-func GetBucketList(baseU string) (bInfo map[string]string, err error) {
+func GetBucketList(baseU string) (bInfo []BucketInfo, err error) {
 
 	c := &Client{}
 	c.BaseURL, err = ParseURL(baseU)
@@ -386,9 +391,10 @@ func GetBucketList(baseU string) (bInfo map[string]string, err error) {
 	if err != nil {
 		return
 	}
-	bInfo = make(map[string]string)
+	bInfo = make([]BucketInfo, 0)
 	for _, bucket := range buckets {
-		bInfo[bucket.Name] = bucket.Password
+		bucketInfo := BucketInfo{Name: bucket.Name, Password: bucket.Password}
+		bInfo = append(bInfo, bucketInfo)
 	}
 	return bInfo, err
 }
