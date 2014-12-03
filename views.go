@@ -69,7 +69,7 @@ type DocID string
 func qParam(k, v string) string {
 	format := `"%s"`
 	switch k {
-	case "startkey_docid", "stale":
+	case "startkey_docid","endkey_docid","stale":
 		format = "%s"
 	}
 	return fmt.Sprintf(format, v)
@@ -178,8 +178,8 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 //
 //   res, err := couchbase.View("myddoc", "myview", map[string]interface{}{
 //       "group_level": 2,
-//       "start_key":    []interface{}{"thing"},
-//       "end_key":      []interface{}{"thing", map[string]string{}},
+//       "startkey_docid":    []interface{}{"thing"},
+//       "endkey_docid":      []interface{}{"thing", map[string]string{}},
 //       "stale": false,
 //       })
 func (b *Bucket) View(ddoc, name string, params map[string]interface{}) (ViewResult, error) {
