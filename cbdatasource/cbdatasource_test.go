@@ -728,7 +728,7 @@ func TestConnThatAlwaysErrors(t *testing.T) {
 	receiver.m.Lock()
 	defer receiver.m.Unlock()
 
-	if len(receiver.errs) != 1 {
+	if len(receiver.errs) < 1 {
 		t.Errorf("expected connect err")
 	}
 
