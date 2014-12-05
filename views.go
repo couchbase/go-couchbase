@@ -69,7 +69,7 @@ type DocID string
 func qParam(k, v string) string {
 	format := `"%s"`
 	switch k {
-	case "startkey_docid","endkey_docid","stale":
+	case "startkey_docid", "endkey_docid", "stale":
 		format = "%s"
 	}
 	return fmt.Sprintf(format, v)
