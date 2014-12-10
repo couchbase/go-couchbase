@@ -721,7 +721,7 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 	atomic.AddUint64(&d.stats.TotWorkerConnectOk, 1)
 
 	if d.auth != nil {
-		user, pswd := d.auth.GetCredentials()
+		user, pswd, _ := d.auth.GetCredentials()
 		if user != "" {
 			atomic.AddUint64(&d.stats.TotWorkerAuth, 1)
 			res, err := client.Auth(user, pswd)
