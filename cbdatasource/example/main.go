@@ -52,31 +52,23 @@ var authUser = flag.String("authUser", "",
 var authPswd = flag.String("authPswd", "",
 	"auth password")
 
-var optionClusterManagerBackoffFactor =
-	flag.Float64("optionClusterManagerBackoffFactor", 1.5,
+var optionClusterManagerBackoffFactor = flag.Float64("optionClusterManagerBackoffFactor", 1.5,
 	"factor to increase sleep time between retries to cluster manager")
-var optionClusterManagerSleepInitMS =
-	flag.Int("optionClusterManagerSleepInitMS", 100,
+var optionClusterManagerSleepInitMS = flag.Int("optionClusterManagerSleepInitMS", 100,
 	"initial sleep time for retries to cluster manager")
-var optionClusterManagerSleepMaxMS =
-	flag.Int("optionClusterManagerSleepMaxMS", 1000,
+var optionClusterManagerSleepMaxMS = flag.Int("optionClusterManagerSleepMaxMS", 1000,
 	"max sleep time for retries to cluster manager")
 
-var optionDataManagerBackoffFactor =
-	flag.Float64("optionDataManagerBackoffFactor", 1.5,
+var optionDataManagerBackoffFactor = flag.Float64("optionDataManagerBackoffFactor", 1.5,
 	"factor to increase sleep time between retries to data manager")
-var optionDataManagerSleepInitMS =
-	flag.Int("optionDataManagerSleepInitMS", 100,
+var optionDataManagerSleepInitMS = flag.Int("optionDataManagerSleepInitMS", 100,
 	"initial sleep time for retries to data manager")
-var optionDataManagerSleepMaxMS =
-	flag.Int("optionDataManagerSleepMaxMS", 1000,
+var optionDataManagerSleepMaxMS = flag.Int("optionDataManagerSleepMaxMS", 1000,
 	"max sleep time for retries to data manager")
 
-var optionFeedBufferSizeBytes =
-	flag.Int("optionFeedBufferSizeBytes", 20000000,
+var optionFeedBufferSizeBytes = flag.Int("optionFeedBufferSizeBytes", 20000000,
 	"buffer size for flow control")
-var optionFeedBufferAckThreshold =
-	flag.Float64("optionFeedBufferAckThreshold", 0.2,
+var optionFeedBufferAckThreshold = flag.Float64("optionFeedBufferAckThreshold", 0.2,
 	"percent (0-to-1.0) of buffer size before sending a flow control buffer-ack")
 
 var bds cbdatasource.BucketDataSource
@@ -159,8 +151,8 @@ func main() {
 
 type authUserPswd struct{}
 
-func (a authUserPswd) GetCredentials() (string, string) {
-	return *authUser, *authPswd
+func (a authUserPswd) GetCredentials() (string, string, string) {
+	return *authUser, *authPswd, ""
 }
 
 // ----------------------------------------------------------------
