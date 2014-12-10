@@ -35,7 +35,7 @@ var PoolOverflow = PoolSize
 // AuthHandler is a callback that gets the auth username and password
 // for the given bucket.
 type AuthHandler interface {
-	GetCredentials() (string, string, string)
+	GetCredentials() (string, string)
 }
 
 // RestPool represents a single pool returned from the pools REST API.
@@ -142,15 +142,14 @@ type NodeServices struct {
 type BucketAuth struct {
 	name    string
 	saslPwd string
-	bucket  string
 }
 
-func newBucketAuth(name string, pass string, bucket string) *BucketAuth {
-	return &BucketAuth{name: name, saslPwd: pass, bucket: bucket}
+func newBucketAuth(name string, pass string) *BucketAuth {
+	return &BucketAuth{name: name, saslPwd: pass}
 }
 
-func (ba *BucketAuth) GetCredentials() (string, string, string) {
-	return ba.name, ba.saslPwd, ba.bucket
+func (ba *BucketAuth) GetCredentials() (string, string) {
+	return ba.name, ba.saslPwd
 }
 
 // VBServerMap returns the current VBucketServerMap.
@@ -278,7 +277,7 @@ type Client struct {
 
 func maybeAddAuth(req *http.Request, ah AuthHandler) {
 	if ah != nil {
-		user, pass, _ := ah.GetCredentials()
+		user, pass := ah.GetCredentials()
 		req.Header.Set("Authorization", "Basic "+
 			base64.StdEncoding.EncodeToString([]byte(user+":"+pass)))
 	}
@@ -359,8 +358,8 @@ type basicAuth struct {
 	u, p string
 }
 
-func (b basicAuth) GetCredentials() (string, string, string) {
-	return b.u, b.p, b.u
+func (b basicAuth) GetCredentials() (string, string) {
+	return b.u, b.p
 }
 
 func basicAuthFromURL(us string) (ah AuthHandler) {
@@ -385,19 +384,6 @@ func ConnectWithAuth(baseU string, ah AuthHandler) (c Client, err error) {
 	c.ah = ah
 
 	return c, c.parseURLResponse("/pools", &c.Info)
-}
-
-// ConnectWithAuthCreds connects to a couchbase cluster with the give
-// authorization creds returned by cb_auth
-func ConnectWithAuthCreds(baseU, username, password string) (c Client, err error) {
-	c.BaseURL, err = ParseURL(baseU)
-	if err != nil {
-		return
-	}
-
-	c.ah = newBucketAuth(username, password, "")
-	return c, c.parseURLResponse("/pools", &c.Info)
-
 }
 
 // Connect to a couchbase cluster.  An authentication handler will be
@@ -553,13 +539,13 @@ func (p *Pool) GetBucket(name string) (*Bucket, error) {
 }
 
 // GetBucket gets a bucket from within this pool.
-func (p *Pool) GetBucketWithAuth(bucket, username, password string) (*Bucket, error) {
-	rv, ok := p.BucketMap[bucket]
+func (p *Pool) GetBucketWithAuth(name string, password string) (*Bucket, error) {
+	rv, ok := p.BucketMap[name]
 	if !ok {
-		return nil, errors.New("No bucket named " + bucket)
+		return nil, errors.New("No bucket named " + name)
 	}
 	runtime.SetFinalizer(&rv, bucketFinalizer)
-	rv.ah = newBucketAuth(username, password, bucket)
+	rv.ah = newBucketAuth(name, password)
 	err := rv.Refresh()
 	if err != nil {
 		return nil, err

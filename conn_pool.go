@@ -46,21 +46,12 @@ func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 	if err != nil {
 		return nil, err
 	}
-	name, pass, bucket := ah.GetCredentials()
+	name, pass := ah.GetCredentials()
 	if name != "default" {
 		_, err = conn.Auth(name, pass)
 		if err != nil {
 			conn.Close()
 			return nil, err
-		}
-		// Select bucket (Required for cb_auth creds)
-		// Required when doing auth with _admin credentials
-		if bucket != "" && bucket != name {
-			_, err = conn.SelectBucket(bucket)
-			if err != nil {
-				conn.Close()
-				return nil, err
-			}
 		}
 	}
 	return conn, nil

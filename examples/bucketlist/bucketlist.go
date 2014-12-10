@@ -51,21 +51,33 @@ func main() {
 		return
 	}
 
+	var password string
 	for _, bi := range bucketInfo {
-		var cbbucket *couchbase.Bucket
+		if bi.Name == "gamesim-sample" {
+			password = bi.Password
+		}
+	}
 
-		cbbucket, err = cbpool.GetBucketWithAuth(bi.Name, bi.Name, bi.Password)
+	var cbbucket *couchbase.Bucket
+
+	if password != "" {
+		cbbucket, err = cbpool.GetBucketWithAuth("gamesim-sample", password)
 		if err != nil {
-			fmt.Printf("Failed to connect to bucket %s %v", bi.Name, err)
+			fmt.Printf("Failed to connect to bucket %v", err)
 			return
 		}
-
-		err = cbbucket.Set("k1", 0, "value")
+	} else {
+		cbbucket, err = cbpool.GetBucketWithAuth("gamesim-sample", password)
 		if err != nil {
-			fmt.Printf("set failed error %v", err)
+			fmt.Printf("Failed to connect to bucket %v", err)
 			return
 		}
+	}
 
+	err = cbbucket.Set("k1", 0, "value")
+	if err != nil {
+		fmt.Printf("set failed error %v", err)
+		return
 	}
 
 }
