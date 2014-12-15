@@ -193,6 +193,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 			if err != nil {
 				if isAuthError(err) {
 					log.Printf(" Fatal Auth Error %v", err)
+					ech <- err
 					return err
 				}
 				// retry
@@ -235,7 +236,6 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 		}()
 
 		if err != nil {
-			ech <- err
 			return
 		}
 	}
