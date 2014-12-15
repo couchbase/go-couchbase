@@ -18,16 +18,17 @@ import (
 type UprFeed struct {
 	C <-chan *memcached.UprEvent
 
-	bucket     *Bucket
-	nodeFeeds  map[string]*FeedInfo     // The UPR feeds of the individual nodes
-	output     chan *memcached.UprEvent // Same as C but writeably-typed
-	quit       chan bool
-	name       string // name of this UPR feed
-	sequence   uint32 // sequence number for this feed
-	connected  bool
-	killSwitch chan bool
-	closing    bool
-	wg         sync.WaitGroup
+	bucket       *Bucket
+	nodeFeeds    map[string]*FeedInfo     // The UPR feeds of the individual nodes
+	output       chan *memcached.UprEvent // Same as C but writeably-typed
+	outputClosed bool
+	quit         chan bool
+	name         string // name of this UPR feed
+	sequence     uint32 // sequence number for this feed
+	connected    bool
+	killSwitch   chan bool
+	closing      bool
+	wg           sync.WaitGroup
 }
 
 // UprFeed from a single connection
@@ -214,9 +215,17 @@ func (feed *UprFeed) run() {
 			log.Printf("Unable to refresh bucket %s ", err.Error())
 			feed.closeNodeFeeds()
 		}
+
 		// this will only connect to nodes that are not connected or changed
 		// user will have to reconnect the stream
 		err := feed.connectToNodes()
+		if err != nil {
+			log.Printf("Unable to connect to nodes..exit ")
+			close(feed.output)
+			feed.outputClosed = true
+			feed.closeNodeFeeds()
+			return
+		}
 		bucketOK = err == nil
 
 		select {
@@ -231,6 +240,7 @@ func (feed *UprFeed) run() {
 }
 
 func (feed *UprFeed) connectToNodes() (err error) {
+	nodeCount := 0
 	for _, serverConn := range feed.bucket.getConnPools() {
 
 		// this maybe a reconnection, so check if the connection to the node
@@ -265,8 +275,13 @@ func (feed *UprFeed) connectToNodes() (err error) {
 		feed.nodeFeeds[serverConn.host] = feedInfo
 		go feed.forwardUprEvents(feedInfo, feed.killSwitch, serverConn.host)
 		feed.wg.Add(1)
+		nodeCount++
 	}
-	return
+	if nodeCount == 0 {
+		return fmt.Errorf("No connection to bucket")
+	}
+
+	return nil
 }
 
 // Goroutine that forwards Upr events from a single node's feed to the aggregate feed.
@@ -274,7 +289,6 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 	singleFeed := nodeFeed.uprFeed
 
 	defer func() {
-		log.Printf("been asked to close ...")
 		feed.wg.Done()
 	}()
 
@@ -334,7 +348,9 @@ func (feed *UprFeed) Close() error {
 	close(feed.quit)
 
 	feed.wg.Wait()
-	close(feed.output)
+	if feed.outputClosed == false {
+		close(feed.output)
+	}
 
 	return nil
 }
