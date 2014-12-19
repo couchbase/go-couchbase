@@ -29,6 +29,8 @@ func mf(err error, msg string) {
 // Flush the bucket before trying this program
 func main() {
 
+	//runtime.GOMAXPROCS(4)
+
 	go func() {
 		log.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
@@ -84,20 +86,6 @@ func main() {
 	bucket, err := p.GetBucket(*bname)
 	mf(err, "bucket")
 
-	//addKVset(bucket, 1000)
-	//return
-
-	// get failover logs for a few vbuckets
-	vbList := []uint16{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
-	failoverlogMap, err := bucket.GetFailoverLogs(vbList)
-	if err != nil {
-		mf(err, "failoverlog")
-	}
-
-	for vb, flog := range failoverlogMap {
-		log.Printf("Failover log for vbucket %d is %v", vb, flog)
-	}
-
 	// start upr feed
 	name := fmt.Sprintf("%v", time.Now().UnixNano())
 	feed, err := bucket.StartUprFeed(name, 0)
@@ -106,14 +94,10 @@ func main() {
 		return
 	}
 
-	// get the vbucket map for this bucket
-	vbm := bucket.VBServerMap()
-	log.Println(vbm)
-
 	// request stream for all vbuckets
 	for i := 0; i < vbcount; i++ {
 		err := feed.UprRequestStream(
-			uint16(i) /*vbno*/, uint32(i) /*opaque*/, 0 /*flag*/, 0, /*vbuuid*/
+			uint16(i) /*vbno*/, uint16(0) /*opaque*/, 0 /*flag*/, 0, /*vbuuid*/
 			0 /*seqStart*/, 0xFFFFFFFFFFFFFFFF /*seqEnd*/, 0 /*snaps*/, 0)
 		if err != nil {
 			fmt.Printf("%s", err.Error())
@@ -121,39 +105,34 @@ func main() {
 	}
 
 	// observe the mutations from the channel.
-	var e *memcached.UprEvent
+	var event *memcached.UprEvent
 	var mutations = 0
-	var callOnce bool
+	//var callOnce bool
 loop:
 	for {
 		select {
-		case e = <-feed.C:
+		case e, ok := <-feed.C:
+			if !ok {
+				break loop
+			} else {
+				event = e
+			}
 		case <-time.After(time.Second):
 			break loop
 		}
-		if e.Opcode == gomemcached.UPR_MUTATION {
+		if event.Opcode == gomemcached.UPR_MUTATION {
 			//log.Printf(" got mutation %s", e.Value)
 			mutations += 1
 		}
 
-		if e.Opcode == gomemcached.UPR_STREAMEND {
-			log.Printf(" Received Stream end for vbucket %d", e.VBucket)
+		if event.Opcode == gomemcached.UPR_STREAMEND {
+			log.Printf(" Received Stream end for vbucket %d", event.VBucket)
 		}
 
-		// after receving 1000 mutations close some streams
-		if callOnce == false {
-			for i := 0; i < vbcount; i = i + 4 {
-				log.Printf(" closing stream for vbucket %d", i)
-				if err := feed.UprCloseStream(uint16(i)); err != nil {
-					log.Printf(" Received error while closing stream %d", i)
-				}
-			}
-			callOnce = true
-		}
-
-		if mutations%10000 == 0 {
+		if mutations%1000000 == 0 {
 			log.Printf(" received %d mutations ", mutations)
 		}
+
 		//e.Release()
 	}
 
@@ -172,7 +151,7 @@ func addKVset(b *couchbase.Bucket, count int) {
 			panic(err)
 		}
 
-		if i%100000 == 0 {
+		if i%1000000 == 0 {
 			fmt.Printf("\n Added %d keys", i)
 		}
 	}

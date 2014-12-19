@@ -2,12 +2,12 @@ package couchbase
 
 import (
 	"log"
+	"sync"
 	"time"
 
 	"fmt"
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
-	"sync"
 )
 
 // A UprFeed streams mutation events from a bucket.
@@ -18,15 +18,17 @@ import (
 type UprFeed struct {
 	C <-chan *memcached.UprEvent
 
-	bucket     *Bucket
-	nodeFeeds  map[string]*FeedInfo     // The UPR feeds of the individual nodes
-	output     chan *memcached.UprEvent // Same as C but writeably-typed
-	quit       chan bool
-	name       string // name of this UPR feed
-	sequence   uint32 // sequence number for this feed
-	connected  bool
-	killSwitch chan bool
-	lock       sync.Mutex // synchronize access to feed.output CBIDXT-237
+	bucket       *Bucket
+	nodeFeeds    map[string]*FeedInfo     // The UPR feeds of the individual nodes
+	output       chan *memcached.UprEvent // Same as C but writeably-typed
+	outputClosed bool
+	quit         chan bool
+	name         string // name of this UPR feed
+	sequence     uint32 // sequence number for this feed
+	connected    bool
+	killSwitch   chan bool
+	closing      bool
+	wg           sync.WaitGroup
 }
 
 // UprFeed from a single connection
@@ -34,6 +36,7 @@ type FeedInfo struct {
 	uprFeed   *memcached.UprFeed // UPR feed handle
 	host      string             // hostname
 	connected bool               // connected
+	quit      chan bool          // quit channel
 }
 
 type FailoverLog map[uint16]memcached.FailoverLog
@@ -122,8 +125,8 @@ func (b *Bucket) StartUprFeed(name string, sequence uint32) (*UprFeed, error) {
 	return feed, nil
 }
 
-// AddUprStream starts a stream for a vb on a feed
-func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint32, flags uint32,
+// UprRequestStream starts a stream for a vb on a feed
+func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint16, flags uint32,
 	vuuid, startSequence, endSequence, snapStart, snapEnd uint64) error {
 
 	vbm := feed.bucket.VBServerMap()
@@ -154,9 +157,8 @@ func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint32, flags uint32,
 	return nil
 }
 
-// close stream for a vbucket
-func (feed *UprFeed) UprCloseStream(vb uint16) error {
-
+// UprCloseStream ends a vbucket stream.
+func (feed *UprFeed) UprCloseStream(vb, opaqueMSB uint16) error {
 	vbm := feed.bucket.VBServerMap()
 	if len(vbm.VBucketMap) < int(vb) {
 		return fmt.Errorf("vbmap smaller than vbucket list: %v vs. %v",
@@ -177,7 +179,10 @@ func (feed *UprFeed) UprCloseStream(vb uint16) error {
 		return fmt.Errorf("UprFeed for this host not found")
 	}
 
-	return singleFeed.uprFeed.CloseStream(vb)
+	if err := singleFeed.uprFeed.CloseStream(vb, opaqueMSB); err != nil {
+		return err
+	}
+	return nil
 }
 
 // Goroutine that runs the feed
@@ -197,6 +202,11 @@ func (feed *UprFeed) run() {
 			retryInterval = initialRetryInterval
 		}
 
+		if feed.closing == true {
+			// we have been asked to shut down
+			return
+		}
+
 		// On error, try to refresh the bucket in case the list of nodes changed:
 		log.Printf("go-couchbase: UPR connection lost; reconnecting to bucket %q in %v",
 			feed.bucket.Name, retryInterval)
@@ -205,9 +215,17 @@ func (feed *UprFeed) run() {
 			log.Printf("Unable to refresh bucket %s ", err.Error())
 			feed.closeNodeFeeds()
 		}
+
 		// this will only connect to nodes that are not connected or changed
 		// user will have to reconnect the stream
 		err := feed.connectToNodes()
+		if err != nil {
+			log.Printf("Unable to connect to nodes..exit ")
+			close(feed.output)
+			feed.outputClosed = true
+			feed.closeNodeFeeds()
+			return
+		}
 		bucketOK = err == nil
 
 		select {
@@ -222,6 +240,7 @@ func (feed *UprFeed) run() {
 }
 
 func (feed *UprFeed) connectToNodes() (err error) {
+	nodeCount := 0
 	for _, serverConn := range feed.bucket.getConnPools() {
 
 		// this maybe a reconnection, so check if the connection to the node
@@ -247,19 +266,38 @@ func (feed *UprFeed) connectToNodes() (err error) {
 			return
 		}
 		// add the node to the connection map
-		feedInfo := &FeedInfo{uprFeed: singleFeed, connected: true, host: serverConn.host}
+		feedInfo := &FeedInfo{
+			uprFeed:   singleFeed,
+			connected: true,
+			host:      serverConn.host,
+			quit:      make(chan bool),
+		}
 		feed.nodeFeeds[serverConn.host] = feedInfo
 		go feed.forwardUprEvents(feedInfo, feed.killSwitch, serverConn.host)
+		feed.wg.Add(1)
+		nodeCount++
 	}
-	return
+	if nodeCount == 0 {
+		return fmt.Errorf("No connection to bucket")
+	}
+
+	return nil
 }
 
 // Goroutine that forwards Upr events from a single node's feed to the aggregate feed.
 func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, host string) {
 	singleFeed := nodeFeed.uprFeed
 
+	defer func() {
+		feed.wg.Done()
+	}()
+
 	for {
 		select {
+		case <-nodeFeed.quit:
+			nodeFeed.connected = false
+			return
+
 		case event, ok := <-singleFeed.C:
 			if !ok {
 				if singleFeed.Error != nil {
@@ -268,9 +306,7 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 				killSwitch <- true
 				return
 			}
-			feed.lock.Lock()
 			feed.output <- event
-			feed.lock.Unlock()
 			if event.Status == gomemcached.NOT_MY_VBUCKET {
 				log.Printf(" Got a not my vbucket error !! ")
 				if err := feed.bucket.Refresh(); err != nil {
@@ -286,15 +322,14 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 				}
 
 			}
-		case <-feed.quit:
-			nodeFeed.connected = false
-			return
 		}
 	}
 }
 
 func (feed *UprFeed) closeNodeFeeds() {
 	for _, f := range feed.nodeFeeds {
+		log.Printf(" Sending close to forwardUprEvent ")
+		close(f.quit)
 		f.uprFeed.Close()
 	}
 	feed.nodeFeeds = nil
@@ -308,12 +343,14 @@ func (feed *UprFeed) Close() error {
 	default:
 	}
 
+	feed.closing = true
 	feed.closeNodeFeeds()
 	close(feed.quit)
 
-	feed.lock.Lock()
-	defer feed.lock.Unlock()
-	close(feed.output)
+	feed.wg.Wait()
+	if feed.outputClosed == false {
+		close(feed.output)
+	}
 
 	return nil
 }
