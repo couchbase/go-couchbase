@@ -7,6 +7,14 @@ import (
 	"github.com/couchbase/gomemcached/client"
 )
 
+// GenericMcdAuthHandler is a kind of AuthHandler that performs
+// special auth exchange (like non-standard auth, possibly followed by
+// select-bucket).
+type GenericMcdAuthHandler interface {
+	AuthHandler
+	AuthenticateMemcachedConn(host string, conn *memcached.Client) error
+}
+
 // Error raised when a connection can't be retrieved from a pool.
 var TimeoutError = errors.New("timeout waiting to build connection")
 var errClosedPool = errors.New("the connection pool is closed")
@@ -45,6 +53,14 @@ func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 	conn, err := memcached.Connect("tcp", host)
 	if err != nil {
 		return nil, err
+	}
+	if gah, ok := ah.(GenericMcdAuthHandler); ok {
+		err = gah.AuthenticateMemcachedConn(host, conn)
+		if err != nil {
+			conn.Close()
+			return nil, err
+		}
+		return conn, nil
 	}
 	name, pass, bucket := ah.GetCredentials()
 	if name != "default" {

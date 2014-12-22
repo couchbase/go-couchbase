@@ -38,6 +38,13 @@ type AuthHandler interface {
 	GetCredentials() (string, string, string)
 }
 
+// MultiBucketAuthHandler is kind of AuthHandler that may perform
+// different auth for different buckets.
+type MultiBucketAuthHandler interface {
+	AuthHandler
+	ForBucket(bucket string) AuthHandler
+}
+
 // RestPool represents a single pool returned from the pools REST API.
 type RestPool struct {
 	Name         string `json:"name"`
@@ -241,6 +248,9 @@ func (b Bucket) getMasterNode(i int) string {
 func (b Bucket) authHandler() (ah AuthHandler) {
 	if b.pool != nil {
 		ah = b.pool.client.ah
+	}
+	if mbah, ok := ah.(MultiBucketAuthHandler); ok {
+		return mbah.ForBucket(b.Name)
 	}
 	if ah == nil {
 		ah = &basicAuth{b.Name, ""}
