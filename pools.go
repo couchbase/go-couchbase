@@ -45,6 +45,15 @@ type MultiBucketAuthHandler interface {
 	ForBucket(bucket string) AuthHandler
 }
 
+// HTTPAuthHandler is kind of AuthHandler that performs more general
+// for outgoing http requests than is possible via simple
+// GetCredentials() call (i.e. digest auth or different auth per
+// different destinations).
+type HTTPAuthHandler interface {
+	AuthHandler
+	SetCredsForRequest(req *http.Request) error
+}
+
 // RestPool represents a single pool returned from the pools REST API.
 type RestPool struct {
 	Name         string `json:"name"`
@@ -286,12 +295,16 @@ type Client struct {
 	Info    Pools
 }
 
-func maybeAddAuth(req *http.Request, ah AuthHandler) {
+func maybeAddAuth(req *http.Request, ah AuthHandler) error {
+	if hah, ok := ah.(HTTPAuthHandler); ok {
+		return hah.SetCredsForRequest(req)
+	}
 	if ah != nil {
 		user, pass, _ := ah.GetCredentials()
 		req.Header.Set("Authorization", "Basic "+
 			base64.StdEncoding.EncodeToString([]byte(user+":"+pass)))
 	}
+	return nil
 }
 
 func queryRestAPI(
@@ -312,7 +325,10 @@ func queryRestAPI(
 	if err != nil {
 		return err
 	}
-	maybeAddAuth(req, authHandler)
+	err = maybeAddAuth(req, authHandler)
+	if err != nil {
+		return err
+	}
 
 	res, err := HTTPClient.Do(req)
 	if err != nil {
