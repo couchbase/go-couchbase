@@ -67,7 +67,10 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	maybeAddAuth(req, b.authHandler())
+	err = maybeAddAuth(req, b.authHandler())
+	if err != nil {
+		return err
+	}
 
 	res, err := HTTPClient.Do(req)
 	if err != nil {
@@ -95,7 +98,10 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	maybeAddAuth(req, b.authHandler())
+	err = maybeAddAuth(req, b.authHandler())
+	if err != nil {
+		return err
+	}
 
 	res, err := HTTPClient.Do(req)
 	if err != nil {
@@ -124,7 +130,10 @@ func (b *Bucket) DeleteDDoc(docname string) error {
 		return err
 	}
 	req.Header.Set("Content-Type", "application/json")
-	maybeAddAuth(req, b.authHandler())
+	err = maybeAddAuth(req, b.authHandler())
+	if err != nil {
+		return err
+	}
 
 	res, err := HTTPClient.Do(req)
 	if err != nil {
