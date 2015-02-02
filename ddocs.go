@@ -5,8 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 )
+
+const MAX_RETRY_COUNT = 3
 
 // ViewDefinition represents a single view within a design document.
 type ViewDefinition struct {
@@ -52,66 +55,90 @@ func (b *Bucket) ddocURL(docname string) (string, error) {
 
 // PutDDoc installs a design document.
 func (b *Bucket) PutDDoc(docname string, value interface{}) error {
-	ddocU, err := b.ddocURL(docname)
-	if err != nil {
-		return err
+
+	var Err error
+	for retryCount := 0; retryCount < MAX_RETRY_COUNT; retryCount++ {
+
+		Err = nil
+		ddocU, err := b.ddocURL(docname)
+		if err != nil {
+			return err
+		}
+
+		j, err := json.Marshal(value)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest("PUT", ddocU, bytes.NewReader(j))
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		err = maybeAddAuth(req, b.authHandler())
+		if err != nil {
+			return err
+		}
+
+		res, err := HTTPClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+		if res.StatusCode != 201 {
+			body, _ := ioutil.ReadAll(res.Body)
+			Err = fmt.Errorf("error installing view: %v / %s",
+				res.Status, body)
+			log.Printf(" Error in PutDDOC %v. Retrying...", Err)
+			b.Refresh()
+			continue
+		}
+		break
 	}
 
-	j, err := json.Marshal(value)
-	if err != nil {
-		return err
-	}
-
-	req, err := http.NewRequest("PUT", ddocU, bytes.NewReader(j))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	err = maybeAddAuth(req, b.authHandler())
-	if err != nil {
-		return err
-	}
-
-	res, err := HTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 201 {
-		body, _ := ioutil.ReadAll(res.Body)
-		return fmt.Errorf("error installing view: %v / %s",
-			res.Status, body)
-	}
-
-	return nil
+	return Err
 }
 
 // GetDDoc retrieves a specific a design doc.
 func (b *Bucket) GetDDoc(docname string, into interface{}) error {
-	ddocU, err := b.ddocURL(docname)
-	if err != nil {
-		return err
+	var Err error
+	var res *http.Response
+
+	for retryCount := 0; retryCount < MAX_RETRY_COUNT; retryCount++ {
+
+		Err = nil
+		ddocU, err := b.ddocURL(docname)
+		if err != nil {
+			return err
+		}
+
+		req, err := http.NewRequest("GET", ddocU, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		err = maybeAddAuth(req, b.authHandler())
+		if err != nil {
+			return err
+		}
+
+		res, err = HTTPClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+		if res.StatusCode != 200 {
+			body, _ := ioutil.ReadAll(res.Body)
+			Err = fmt.Errorf("error reading view: %v / %s",
+				res.Status, body)
+			log.Printf(" Error in GetDDOC %v Retrying...", Err)
+			b.Refresh()
+			continue
+		}
 	}
 
-	req, err := http.NewRequest("GET", ddocU, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	err = maybeAddAuth(req, b.authHandler())
-	if err != nil {
-		return err
-	}
-
-	res, err := HTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		body, _ := ioutil.ReadAll(res.Body)
-		return fmt.Errorf("error reading view: %v / %s",
-			res.Status, body)
+	if Err != nil {
+		return Err
 	}
 
 	d := json.NewDecoder(res.Body)
@@ -120,31 +147,40 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 
 // DeleteDDoc removes a design document.
 func (b *Bucket) DeleteDDoc(docname string) error {
-	ddocU, err := b.ddocURL(docname)
-	if err != nil {
-		return err
-	}
 
-	req, err := http.NewRequest("DELETE", ddocU, nil)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Content-Type", "application/json")
-	err = maybeAddAuth(req, b.authHandler())
-	if err != nil {
-		return err
-	}
+	var Err error
+	for retryCount := 0; retryCount < MAX_RETRY_COUNT; retryCount++ {
 
-	res, err := HTTPClient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer res.Body.Close()
-	if res.StatusCode != 200 {
-		body, _ := ioutil.ReadAll(res.Body)
-		return fmt.Errorf("error deleting view: %v / %s",
-			res.Status, body)
-	}
+		Err = nil
+		ddocU, err := b.ddocURL(docname)
+		if err != nil {
+			return err
+		}
 
-	return nil
+		req, err := http.NewRequest("DELETE", ddocU, nil)
+		if err != nil {
+			return err
+		}
+		req.Header.Set("Content-Type", "application/json")
+		err = maybeAddAuth(req, b.authHandler())
+		if err != nil {
+			return err
+		}
+
+		res, err := HTTPClient.Do(req)
+		if err != nil {
+			return err
+		}
+		defer res.Body.Close()
+		if res.StatusCode != 200 {
+			body, _ := ioutil.ReadAll(res.Body)
+			Err = fmt.Errorf("error deleting view : %v / %s", res.Status, body)
+			log.Printf(" Error in DeleteDDOC %v. Retrying ... ", Err)
+			b.Refresh()
+			continue
+		}
+
+		break
+	}
+	return Err
 }
