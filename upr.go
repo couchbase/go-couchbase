@@ -306,6 +306,11 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 				killSwitch <- true
 				return
 			}
+			if feed.outputClosed == true {
+				// someone closed the node feed
+				log.Printf("Node need closed, returning from forwardUprEvent")
+				return
+			}
 			feed.output <- event
 			if event.Status == gomemcached.NOT_MY_VBUCKET {
 				log.Printf(" Got a not my vbucket error !! ")
