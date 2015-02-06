@@ -86,6 +86,8 @@ func main() {
 	bucket, err := p.GetBucket(*bname)
 	mf(err, "bucket")
 
+	addKVset(bucket, 10000)
+
 	// start upr feed
 	name := fmt.Sprintf("%v", time.Now().UnixNano())
 	feed, err := bucket.StartUprFeed(name, 0)
