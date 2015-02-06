@@ -354,6 +354,7 @@ func (feed *UprFeed) Close() error {
 
 	feed.wg.Wait()
 	if feed.outputClosed == false {
+		feed.outputClosed = true
 		close(feed.output)
 	}
 
