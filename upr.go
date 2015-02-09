@@ -290,6 +290,15 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 
 	defer func() {
 		feed.wg.Done()
+		if r := recover(); r != nil {
+			//if feed is not closing, re-throw the panic
+			if feed.outputClosed != true && feed.closing != true {
+				panic(r)
+			} else {
+				log.Printf("Panic is recovered. Since feed is closed, exit gracefully")
+
+			}
+		}
 	}()
 
 	for {
