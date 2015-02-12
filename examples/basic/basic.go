@@ -50,10 +50,10 @@ func main() {
 	b, err := p.GetBucket(*bname)
 	mf(err, "bucket")
 
-	err = b.Set(",k", 90, map[string]interface{}{"x": 1})
+	err = b.Set("k", 90, map[string]interface{}{"x": 1})
 	mf(err, "set")
 
 	ob := map[string]interface{}{}
-	err = b.Get(",k", &ob)
+	err = b.Get("k", &ob)
 	mf(err, "get")
 }
