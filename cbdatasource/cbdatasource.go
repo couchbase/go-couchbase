@@ -1050,11 +1050,11 @@ func (d *bucketDataSource) handleRecv(sendCh chan *gomemcached.MCRequest,
 				if res.Status == gomemcached.ROLLBACK {
 					atomic.AddUint64(&d.stats.TotUPRStreamReqResRollback, 1)
 
-					if len(res.Extras) != 8 {
-						return fmt.Errorf("bad rollback extras: %#v", res)
+					if len(res.Body) < 8 {
+						return fmt.Errorf("bad rollback body: %#v", res)
 					}
 
-					rollbackSeq = binary.BigEndian.Uint64(res.Extras)
+					rollbackSeq = binary.BigEndian.Uint64(res.Body)
 				} else {
 					// NOTE: Not sure what else to do here on ERANGE
 					// error response besides rollback to zero.
