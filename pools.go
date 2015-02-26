@@ -364,16 +364,48 @@ func (b *Bucket) parseURLResponse(path string, out interface{}) error {
 	for i := 0; i < maxRetries; i++ {
 		node := nodes[(startNode+i)%len(nodes)] // Wrap around the nodes list.
 		// Skip non-healthy nodes.
-		if node.Status != "healthy" {
+		if node.Status != "healthy" || node.CouchAPIBase == "" {
 			continue
 		}
-
 		url := &url.URL{
 			Host:   node.Hostname,
 			Scheme: "http",
 		}
 
 		err := queryRestAPI(url, path, b.pool.client.ah, out)
+		if err == nil {
+			return err
+		}
+	}
+	return errors.New("all nodes failed to respond")
+}
+
+func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
+	nodes := b.Nodes()
+	if len(nodes) == 0 {
+		return errors.New("no couch rest URLs")
+	}
+
+	// Pick a random node to start querying.
+	startNode := rand.Intn(len(nodes))
+	maxRetries := len(nodes)
+	for i := 0; i < maxRetries; i++ {
+		node := nodes[(startNode+i)%len(nodes)] // Wrap around the nodes list.
+		// Skip non-healthy nodes.
+		if node.Status != "healthy" || node.CouchAPIBase == "" {
+			continue
+		}
+
+		url, err := ParseURL(node.CouchAPIBase)
+		if err != nil {
+			return fmt.Errorf("config error: Bucket %q node #%d CouchAPIBase=%q: %v",
+				b.Name, i, node.CouchAPIBase, err)
+		} else if b.pool != nil {
+			url.User = b.pool.client.BaseURL.User
+		}
+
+		log.Printf(" This is the url %s + %s ", url.String(), path)
+		err = queryRestAPI(url, path, b.pool.client.ah, out)
 		if err == nil {
 			return err
 		}

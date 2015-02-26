@@ -37,7 +37,28 @@ type DDocsResult struct {
 // GetDDocs lists all design documents
 func (b *Bucket) GetDDocs() (DDocsResult, error) {
 	var ddocsResult DDocsResult
+
 	err := b.pool.client.parseURLResponse(b.DDocs.URI, &ddocsResult)
+	if err != nil {
+		return DDocsResult{}, err
+	}
+	return ddocsResult, nil
+}
+
+func (b *Bucket) GetDDocWithRetry(docname string, into interface{}) error {
+
+	ddocURI := fmt.Sprintf("/%s/_design/%s", b.Name, docname)
+	err := b.parseAPIResponse(ddocURI, &into)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (b *Bucket) GetDDocsWithRetry() (DDocsResult, error) {
+	var ddocsResult DDocsResult
+
+	err := b.parseURLResponse(b.DDocs.URI, &ddocsResult)
 	if err != nil {
 		return DDocsResult{}, err
 	}
