@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
-	"github.com/couchbaselabs/go-couchbase"
+	"github.com/couchbase/go-couchbase"
 	"log"
 	"math/rand"
 	"net/http"

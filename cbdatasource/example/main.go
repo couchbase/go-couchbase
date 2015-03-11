@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/couchbase/gomemcached"
-	"github.com/couchbaselabs/go-couchbase"
-	"github.com/couchbaselabs/go-couchbase/cbdatasource"
+	"github.com/couchbase/go-couchbase"
+	"github.com/couchbase/go-couchbase/cbdatasource"
 )
 
 // Simple, memory-only sample program that uses the cbdatasource API's

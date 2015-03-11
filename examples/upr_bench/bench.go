@@ -12,7 +12,7 @@ import (
 
 	mcd "github.com/couchbase/gomemcached"
 	mc "github.com/couchbase/gomemcached/client"
-	"github.com/couchbaselabs/go-couchbase"
+	"github.com/couchbase/go-couchbase"
 )
 
 var options struct {

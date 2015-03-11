@@ -32,7 +32,7 @@ import (
 
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
-	"github.com/couchbaselabs/go-couchbase"
+	"github.com/couchbase/go-couchbase"
 )
 
 // BucketDataSource is the main control interface returned by
