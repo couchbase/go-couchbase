@@ -9,8 +9,6 @@ import (
 	"net/http"
 )
 
-const MAX_RETRY_COUNT = 3
-
 // ViewDefinition represents a single view within a design document.
 type ViewDefinition struct {
 	Map    string `json:"map"`
@@ -78,7 +76,14 @@ func (b *Bucket) ddocURL(docname string) (string, error) {
 func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 
 	var Err error
-	for retryCount := 0; retryCount < MAX_RETRY_COUNT; retryCount++ {
+
+	nodes := b.Nodes()
+	if len(nodes) == 0 {
+		return fmt.Errorf("no couch rest URLs")
+	}
+	maxRetries := len(nodes)
+
+	for retryCount := 0; retryCount < maxRetries; retryCount++ {
 
 		Err = nil
 		ddocU, err := b.ddocURL(docname)
@@ -105,15 +110,18 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 		if err != nil {
 			return err
 		}
-		defer res.Body.Close()
+
 		if res.StatusCode != 201 {
 			body, _ := ioutil.ReadAll(res.Body)
 			Err = fmt.Errorf("error installing view: %v / %s",
 				res.Status, body)
 			log.Printf(" Error in PutDDOC %v. Retrying...", Err)
+			res.Body.Close()
 			b.Refresh()
 			continue
 		}
+
+		res.Body.Close()
 		break
 	}
 
@@ -125,7 +133,13 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 	var Err error
 	var res *http.Response
 
-	for retryCount := 0; retryCount < MAX_RETRY_COUNT; retryCount++ {
+	nodes := b.Nodes()
+	if len(nodes) == 0 {
+		return fmt.Errorf("no couch rest URLs")
+	}
+	maxRetries := len(nodes)
+
+	for retryCount := 0; retryCount < maxRetries; retryCount++ {
 
 		Err = nil
 		ddocU, err := b.ddocURL(docname)
@@ -147,15 +161,17 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 		if err != nil {
 			return err
 		}
-		defer res.Body.Close()
 		if res.StatusCode != 200 {
 			body, _ := ioutil.ReadAll(res.Body)
 			Err = fmt.Errorf("error reading view: %v / %s",
 				res.Status, body)
 			log.Printf(" Error in GetDDOC %v Retrying...", Err)
 			b.Refresh()
+			res.Body.Close()
 			continue
 		}
+		res.Body.Close()
+		break
 	}
 
 	if Err != nil {
@@ -170,7 +186,13 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 func (b *Bucket) DeleteDDoc(docname string) error {
 
 	var Err error
-	for retryCount := 0; retryCount < MAX_RETRY_COUNT; retryCount++ {
+	nodes := b.Nodes()
+	if len(nodes) == 0 {
+		return fmt.Errorf("no couch rest URLs")
+	}
+	maxRetries := len(nodes)
+
+	for retryCount := 0; retryCount < maxRetries; retryCount++ {
 
 		Err = nil
 		ddocU, err := b.ddocURL(docname)
@@ -192,15 +214,16 @@ func (b *Bucket) DeleteDDoc(docname string) error {
 		if err != nil {
 			return err
 		}
-		defer res.Body.Close()
 		if res.StatusCode != 200 {
 			body, _ := ioutil.ReadAll(res.Body)
 			Err = fmt.Errorf("error deleting view : %v / %s", res.Status, body)
 			log.Printf(" Error in DeleteDDOC %v. Retrying ... ", Err)
 			b.Refresh()
+			res.Body.Close()
 			continue
 		}
 
+		res.Body.Close()
 		break
 	}
 	return Err
