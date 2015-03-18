@@ -199,6 +199,19 @@ func (b Bucket) Nodes() []Node {
 	return *(*[]Node)(atomic.LoadPointer(&b.nodeList))
 }
 
+// return the list of healthy nodes
+func (b Bucket) HealthyNodes() []Node {
+	nodes := make([]Node, 0, len(b.Nodes()))
+
+	for _, n := range b.Nodes() {
+		if n.Status == "healthy" && n.CouchAPIBase != "" {
+			nodes = append(nodes, n)
+		}
+	}
+
+	return nodes
+}
+
 func (b Bucket) getConnPools() []*connectionPool {
 	return *(*[]*connectionPool)(atomic.LoadPointer(&b.connPools))
 }
