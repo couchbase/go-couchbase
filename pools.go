@@ -417,7 +417,6 @@ func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
 			url.User = b.pool.client.BaseURL.User
 		}
 
-		log.Printf(" This is the url %s + %s ", url.String(), path)
 		err = queryRestAPI(url, path, b.pool.client.ah, out)
 		if err == nil {
 			return err

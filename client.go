@@ -154,9 +154,6 @@ func (b *Bucket) GetStats(which string) map[string]map[string]string {
 }
 
 func isAuthError(err error) bool {
-	if err == io.EOF {
-		return true
-	}
 	estr := err.Error()
 	return strings.Contains(estr, "Auth failure")
 }
@@ -168,7 +165,8 @@ func isConnError(err error) bool {
 	}
 	estr := err.Error()
 	return strings.Contains(estr, "broken pipe") ||
-		strings.Contains(estr, "connection reset")
+		strings.Contains(estr, "connection reset") ||
+		strings.Contains(estr, "connection refused")
 }
 
 func (b *Bucket) doBulkGet(vb uint16, keys []string,
@@ -195,6 +193,10 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 					log.Printf(" Fatal Auth Error %v", err)
 					ech <- err
 					return err
+				} else if isConnError(err) {
+					// for a connection error, refresh right away
+					log.Printf(" pool.Get returned error %v", err)
+					b.Refresh()
 				}
 				// retry
 				return nil
