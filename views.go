@@ -62,6 +62,39 @@ func (b *Bucket) randomBaseURL() (*url.URL, error) {
 	return u, err
 }
 
+const START_NODE_ID = -1
+
+func (b *Bucket) randomNextURL(lastNode int) (*url.URL, int, error) {
+	nodes := []Node{}
+	for _, n := range b.Nodes() {
+		if n.Status == "healthy" && n.CouchAPIBase != "" {
+			nodes = append(nodes, n)
+		}
+	}
+	if len(nodes) == 0 {
+		return nil, -1, errors.New("no available couch rest URLs")
+	}
+
+	var nodeNo int
+	if lastNode == START_NODE_ID || lastNode >= len(nodes) {
+		// randomly select a node if the value of lastNode is invalid
+		nodeNo = rand.Intn(len(nodes))
+	} else {
+		// wrap around the node list
+		nodeNo = (lastNode + 1) % len(nodes)
+	}
+
+	node := nodes[nodeNo]
+	u, err := ParseURL(node.CouchAPIBase)
+	if err != nil {
+		return nil, -1, fmt.Errorf("config error: Bucket %q node #%d CouchAPIBase=%q: %v",
+			b.Name, nodeNo, node.CouchAPIBase, err)
+	} else if b.pool != nil {
+		u.User = b.pool.client.BaseURL.User
+	}
+	return u, nodeNo, err
+}
+
 // DocID is the document ID type for the startkey_docid parameter in
 // views.
 type DocID string

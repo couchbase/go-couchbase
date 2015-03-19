@@ -72,25 +72,59 @@ func (b *Bucket) ddocURL(docname string) (string, error) {
 	return u.String(), nil
 }
 
+func (b *Bucket) ddocURLNext(nodeId int, docname string) (string, int, error) {
+	u, selected, err := b.randomNextURL(nodeId)
+	if err != nil {
+		return "", -1, err
+	}
+	u.Path = fmt.Sprintf("/%s/_design/%s", b.Name, docname)
+	return u.String(), selected, nil
+}
+
+const ABS_MAX_RETRIES = 10
+const ABS_MIN_RETRIES = 3
+
+func (b *Bucket) getMaxRetries() (int, error) {
+
+	maxRetries := len(b.Nodes())
+
+	if maxRetries == 0 {
+		return 0, fmt.Errorf("No available Couch rest URLs")
+	}
+
+	if maxRetries > ABS_MAX_RETRIES {
+		maxRetries = ABS_MAX_RETRIES
+	} else if maxRetries < ABS_MIN_RETRIES {
+		maxRetries = ABS_MIN_RETRIES
+	}
+
+	return maxRetries, nil
+}
+
 // PutDDoc installs a design document.
 func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 
 	var Err error
 
-	nodes := b.Nodes()
-	if len(nodes) == 0 {
-		return fmt.Errorf("no couch rest URLs")
+	maxRetries, err := b.getMaxRetries()
+	if err != nil {
+		return err
 	}
-	maxRetries := len(nodes)
+
+	lastNode := START_NODE_ID
 
 	for retryCount := 0; retryCount < maxRetries; retryCount++ {
 
 		Err = nil
-		ddocU, err := b.ddocURL(docname)
+
+		ddocU, selectedNode, err := b.ddocURLNext(lastNode, docname)
 		if err != nil {
 			return err
 		}
 
+		lastNode = selectedNode
+
+		log.Printf(" Trying with selected node %d", selectedNode)
 		j, err := json.Marshal(value)
 		if err != nil {
 			return err
@@ -133,19 +167,22 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 	var Err error
 	var res *http.Response
 
-	nodes := b.Nodes()
-	if len(nodes) == 0 {
-		return fmt.Errorf("no couch rest URLs")
+	maxRetries, err := b.getMaxRetries()
+	if err != nil {
+		return err
 	}
-	maxRetries := len(nodes)
 
+	lastNode := START_NODE_ID
 	for retryCount := 0; retryCount < maxRetries; retryCount++ {
 
 		Err = nil
-		ddocU, err := b.ddocURL(docname)
+		ddocU, selectedNode, err := b.ddocURLNext(lastNode, docname)
 		if err != nil {
 			return err
 		}
+
+		lastNode = selectedNode
+		log.Printf(" Trying with selected node %d", selectedNode)
 
 		req, err := http.NewRequest("GET", ddocU, nil)
 		if err != nil {
@@ -186,19 +223,24 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 func (b *Bucket) DeleteDDoc(docname string) error {
 
 	var Err error
-	nodes := b.Nodes()
-	if len(nodes) == 0 {
-		return fmt.Errorf("no couch rest URLs")
+
+	maxRetries, err := b.getMaxRetries()
+	if err != nil {
+		return err
 	}
-	maxRetries := len(nodes)
+
+	lastNode := START_NODE_ID
 
 	for retryCount := 0; retryCount < maxRetries; retryCount++ {
 
 		Err = nil
-		ddocU, err := b.ddocURL(docname)
+		ddocU, selectedNode, err := b.ddocURLNext(lastNode, docname)
 		if err != nil {
 			return err
 		}
+
+		lastNode = selectedNode
+		log.Printf(" Trying with selected node %d", selectedNode)
 
 		req, err := http.NewRequest("DELETE", ddocU, nil)
 		if err != nil {
