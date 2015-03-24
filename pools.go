@@ -325,19 +325,20 @@ func queryRestAPI(
 	path string,
 	authHandler AuthHandler,
 	out interface{}) error {
-	u := *baseURL
-	u.User = nil
+
+	var requestUrl string
+
 	if q := strings.Index(path, "?"); q > 0 {
-		u.Path = path[:q]
-		u.RawQuery = path[q+1:]
+		requestUrl = "http://" + baseURL.Host + path[:q] + "?" + path[q+1:]
 	} else {
-		u.Path = path
+		requestUrl = "http://" + baseURL.Host + path
 	}
 
-	req, err := http.NewRequest("GET", u.String(), nil)
+	req, err := http.NewRequest("GET", requestUrl, nil)
 	if err != nil {
 		return err
 	}
+
 	err = maybeAddAuth(req, authHandler)
 	if err != nil {
 		return err
@@ -351,7 +352,7 @@ func queryRestAPI(
 	if res.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
 		return fmt.Errorf("HTTP error %v getting %q: %s",
-			res.Status, u.String(), bod)
+			res.Status, requestUrl, bod)
 	}
 
 	d := json.NewDecoder(res.Body)
@@ -409,15 +410,20 @@ func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
 			continue
 		}
 
-		url, err := ParseURL(node.CouchAPIBase)
+		u, err := ParseURL(node.CouchAPIBase)
 		if err != nil {
 			return fmt.Errorf("config error: Bucket %q node #%d CouchAPIBase=%q: %v",
 				b.Name, i, node.CouchAPIBase, err)
 		} else if b.pool != nil {
-			url.User = b.pool.client.BaseURL.User
+			u.User = b.pool.client.BaseURL.User
 		}
+		u.Path = path
 
-		err = queryRestAPI(url, path, b.pool.client.ah, out)
+		// generate the path so that the strings are properly escaped
+		// MB-13770
+		requestPath := strings.Split(u.String(), u.Host)[1]
+
+		err = queryRestAPI(u, requestPath, b.pool.client.ah, out)
 		if err == nil {
 			return err
 		}
