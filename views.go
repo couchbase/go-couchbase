@@ -176,7 +176,7 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	}
 	maybeAddAuth(req, b.authHandler())
 
-	res, err := HTTPClient.Do(req)
+	res, err := doHTTPRequest(req)
 	if err != nil {
 		return fmt.Errorf("error starting view req at %v: %v", u, err)
 	}

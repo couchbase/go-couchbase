@@ -320,6 +320,38 @@ func maybeAddAuth(req *http.Request, ah AuthHandler) error {
 	return nil
 }
 
+// arbitary number, may need to be tuned #FIXME
+const HTTP_MAX_RETRY = 5
+
+// Someday golang network packages will implement standard
+// error codes. Until then #sigh
+func isHttpConnError(err error) bool {
+	estr := err.Error()
+	return strings.Contains(estr, "broken pipe") ||
+		strings.Contains(estr, "broken connection")
+}
+
+func doHTTPRequest(req *http.Request) (*http.Response, error) {
+
+	var err error
+	var res *http.Response
+
+	for i := 0; i < HTTP_MAX_RETRY; i++ {
+		res, err = HTTPClient.Do(req)
+		if err != nil && isHttpConnError(err) {
+			continue
+		}
+		break
+	}
+
+	if err != nil {
+		log.Printf(" HTTP request returned error %v", err)
+		return nil, err
+	}
+
+	return res, err
+}
+
 func queryRestAPI(
 	baseURL *url.URL,
 	path string,
@@ -344,10 +376,11 @@ func queryRestAPI(
 		return err
 	}
 
-	res, err := HTTPClient.Do(req)
+	res, err := doHTTPRequest(req)
 	if err != nil {
 		return err
 	}
+
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))

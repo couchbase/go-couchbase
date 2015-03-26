@@ -140,7 +140,7 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 			return err
 		}
 
-		res, err := HTTPClient.Do(req)
+		res, err := doHTTPRequest(req)
 		if err != nil {
 			return err
 		}
@@ -194,7 +194,7 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 			return err
 		}
 
-		res, err = HTTPClient.Do(req)
+		res, err = doHTTPRequest(req)
 		if err != nil {
 			return err
 		}
@@ -252,7 +252,7 @@ func (b *Bucket) DeleteDDoc(docname string) error {
 			return err
 		}
 
-		res, err := HTTPClient.Do(req)
+		res, err := doHTTPRequest(req)
 		if err != nil {
 			return err
 		}
