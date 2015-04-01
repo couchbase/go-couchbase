@@ -54,6 +54,17 @@ func slowLog(startTime time.Time, format string, args ...interface{}) {
 	}
 }
 
+// Return true if error is KEY_ENOENT. Required by cbq-engine
+func IsKeyNoEntError(err error) bool {
+
+	res := err.(*gomemcached.MCResponse)
+	if res.Status == gomemcached.KEY_ENOENT {
+		return true
+	}
+
+	return false
+}
+
 // ClientOpCallback is called for each invocation of Do.
 var ClientOpCallback func(opname, k string, start time.Time, err error)
 
