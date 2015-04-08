@@ -648,17 +648,8 @@ func bucketFinalizer(b *Bucket) {
 }
 
 // GetBucket gets a bucket from within this pool.
-func (p *Pool) GetBucket(name string) (*Bucket, error) {
-	rv, ok := p.BucketMap[name]
-	if !ok {
-		return nil, errors.New("No bucket named " + name)
-	}
-	runtime.SetFinalizer(&rv, bucketFinalizer)
-	err := rv.Refresh()
-	if err != nil {
-		return nil, err
-	}
-	return &rv, nil
+func (p *Pool) GetBucket(bucket string) (*Bucket, error) {
+	return p.GetBucketWithAuth(bucket, bucket, "")
 }
 
 // GetBucket gets a bucket from within this pool.
