@@ -21,9 +21,9 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/couchbase/go-couchbase"
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
-	"github.com/couchbase/go-couchbase"
 )
 
 type TestBucket struct {
