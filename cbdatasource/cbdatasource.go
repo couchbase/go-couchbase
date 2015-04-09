@@ -1276,7 +1276,13 @@ func (d *bucketDataSource) sendStreamReq(sendCh chan *gomemcached.MCRequest,
 
 	vbucketUUID := uint64(0)
 	if len(vbucketMetaData.FailOverLog) >= 1 {
-		vbucketUUID = vbucketMetaData.FailOverLog[len(vbucketMetaData.FailOverLog)-1][0]
+		smax := uint64(0)
+		for _, pair := range vbucketMetaData.FailOverLog {
+			if smax <= pair[1] {
+				smax = pair[1]
+				vbucketUUID = pair[0]
+			}
+		}
 	}
 
 	seqStart := lastSeq
