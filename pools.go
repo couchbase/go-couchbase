@@ -326,9 +326,11 @@ const HTTP_MAX_RETRY = 5
 // Someday golang network packages will implement standard
 // error codes. Until then #sigh
 func isHttpConnError(err error) bool {
+
 	estr := err.Error()
 	return strings.Contains(estr, "broken pipe") ||
-		strings.Contains(estr, "broken connection")
+		strings.Contains(estr, "broken connection") ||
+		strings.Contains(estr, "connection reset")
 }
 
 func doHTTPRequest(req *http.Request) (*http.Response, error) {
