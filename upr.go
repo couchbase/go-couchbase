@@ -129,6 +129,12 @@ func (b *Bucket) StartUprFeed(name string, sequence uint32) (*UprFeed, error) {
 func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint16, flags uint32,
 	vuuid, startSequence, endSequence, snapStart, snapEnd uint64) error {
 
+	defer func() {
+		if r := recover(); r != nil {
+			log.Panic("Panic in UprRequestStream. Feed %v Bucket %v ", feed, feed.bucket)
+		}
+	}()
+
 	vbm := feed.bucket.VBServerMap()
 	if len(vbm.VBucketMap) < int(vb) {
 		return fmt.Errorf("vbmap smaller than vbucket list: %v vs. %v",
@@ -159,6 +165,13 @@ func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint16, flags uint32,
 
 // UprCloseStream ends a vbucket stream.
 func (feed *UprFeed) UprCloseStream(vb, opaqueMSB uint16) error {
+
+	defer func() {
+		if r := recover(); r != nil {
+			log.Panic("Panic in UprCloseStream. Feed %v Bucket %v ", feed, feed.bucket)
+		}
+	}()
+
 	vbm := feed.bucket.VBServerMap()
 	if len(vbm.VBucketMap) < int(vb) {
 		return fmt.Errorf("vbmap smaller than vbucket list: %v vs. %v",

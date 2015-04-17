@@ -3,9 +3,9 @@ package main
 import (
 	"flag"
 	"fmt"
+	"github.com/couchbase/go-couchbase"
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
-	"github.com/couchbase/go-couchbase"
 	"log"
 	"math/rand"
 	"net/http"
@@ -129,11 +129,20 @@ loop:
 			log.Printf(" Received Stream end for vbucket %d", event.VBucket)
 		}
 
-		if mutations%1000000 == 0 {
+		if mutations%100000 == 0 && mutations != 0 {
 			log.Printf(" received %d mutations ", mutations)
 		}
 
 		//e.Release()
+	}
+
+	// close stream for all vbuckets
+	for i := 0; i < vbcount; i++ {
+		err := feed.UprCloseStream(
+			uint16(i) /*vbno*/, uint16(0))
+		if err != nil {
+			fmt.Printf("%s", err.Error())
+		}
 	}
 
 	feed.Close()
