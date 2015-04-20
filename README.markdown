@@ -1,5 +1,9 @@
 # A smart client for couchbase in go
 
+This is a *unoffical* version of a Couchbase Golang client. If you are
+looking for the *Offical* Couchbase Golang client please see
+    [CB-go])[https://github.com/couchbaselabs/gocb].
+
 This is an evolving package, but does provide a useful interface to a
 [couchbase](http://www.couchbase.com/) server including all of the
 pool/bucket discovery features, compatible key distribution with other
