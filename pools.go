@@ -201,11 +201,15 @@ func (b Bucket) Nodes() []Node {
 
 // return the list of healthy nodes
 func (b Bucket) HealthyNodes() []Node {
-	nodes := make([]Node, 0, len(b.Nodes()))
+	nodes := []Node{}
 
 	for _, n := range b.Nodes() {
 		if n.Status == "healthy" && n.CouchAPIBase != "" {
 			nodes = append(nodes, n)
+		}
+		if n.Status != "healthy" { // log non-healthy node
+			log.Printf("Non-healthy node; node details:")
+			log.Printf("Hostname=%v, Status=%v, CouchAPIBase=%v, ThisNode=%v", n.Hostname, n.Status, n.CouchAPIBase, n.ThisNode)
 		}
 	}
 

@@ -41,12 +41,7 @@ type ViewResult struct {
 }
 
 func (b *Bucket) randomBaseURL() (*url.URL, error) {
-	nodes := []Node{}
-	for _, n := range b.Nodes() {
-		if n.Status == "healthy" && n.CouchAPIBase != "" {
-			nodes = append(nodes, n)
-		}
-	}
+	nodes := b.HealthyNodes()
 	if len(nodes) == 0 {
 		return nil, errors.New("no available couch rest URLs")
 	}
@@ -65,12 +60,7 @@ func (b *Bucket) randomBaseURL() (*url.URL, error) {
 const START_NODE_ID = -1
 
 func (b *Bucket) randomNextURL(lastNode int) (*url.URL, int, error) {
-	nodes := []Node{}
-	for _, n := range b.Nodes() {
-		if n.Status == "healthy" && n.CouchAPIBase != "" {
-			nodes = append(nodes, n)
-		}
-	}
+	nodes := b.HealthyNodes()
 	if len(nodes) == 0 {
 		return nil, -1, errors.New("no available couch rest URLs")
 	}
