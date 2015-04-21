@@ -220,9 +220,10 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 				// retry
 				return nil
 			}
-			defer pool.Return(conn)
 
 			m, err := conn.GetBulk(vb, keys)
+			pool.Return(conn)
+
 			switch err.(type) {
 			case *gomemcached.MCResponse:
 				st := err.(*gomemcached.MCResponse).Status
@@ -243,6 +244,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 				// retry
 				return nil
 			}
+
 			if m != nil {
 				if len(rv) == 0 {
 					rv = m
