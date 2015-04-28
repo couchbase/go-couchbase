@@ -1,6 +1,7 @@
 package couchbase
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -358,6 +359,57 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 	return res, err
 }
 
+func doPostAPI(
+	baseURL *url.URL,
+	path string,
+	params map[string]interface{},
+	authHandler AuthHandler,
+	out interface{}) error {
+
+	var requestUrl string
+
+	if q := strings.Index(path, "?"); q > 0 {
+		requestUrl = "http://" + baseURL.Host + path[:q] + "?" + path[q+1:]
+	} else {
+		requestUrl = "http://" + baseURL.Host + path
+	}
+
+	postData := url.Values{}
+	for k, v := range params {
+		postData.Set(k, fmt.Sprintf("%v", v))
+	}
+
+	req, err := http.NewRequest("POST", requestUrl, bytes.NewBufferString(postData.Encode()))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+	err = maybeAddAuth(req, authHandler)
+	if err != nil {
+		return err
+	}
+
+	res, err := doHTTPRequest(req)
+	if err != nil {
+		return err
+	}
+
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
+		return fmt.Errorf("HTTP error %v getting %q: %s",
+			res.Status, requestUrl, bod)
+	}
+
+	d := json.NewDecoder(res.Body)
+	if err = d.Decode(&out); err != nil {
+		return err
+	}
+	return nil
+}
+
 func queryRestAPI(
 	baseURL *url.URL,
 	path string,
@@ -403,6 +455,10 @@ func queryRestAPI(
 
 func (c *Client) parseURLResponse(path string, out interface{}) error {
 	return queryRestAPI(c.BaseURL, path, c.ah, out)
+}
+
+func (c *Client) parsePostURLResponse(path string, params map[string]interface{}, out interface{}) error {
+	return doPostAPI(c.BaseURL, path, params, c.ah, out)
 }
 
 func (b *Bucket) parseURLResponse(path string, out interface{}) error {
@@ -547,6 +603,27 @@ func GetBucketList(baseU string) (bInfo []BucketInfo, err error) {
 		bInfo = append(bInfo, bucketInfo)
 	}
 	return bInfo, err
+}
+
+//Set viewUpdateDaemonOptions
+func SetViewUpdateParams(baseU string, params map[string]interface{}) (viewOpts map[string]interface{}, err error) {
+
+	c := &Client{}
+	c.BaseURL, err = ParseURL(baseU)
+	if err != nil {
+		return
+	}
+	c.ah = basicAuthFromURL(baseU)
+
+	if len(params) < 1 {
+		return nil, fmt.Errorf("No params to set")
+	}
+
+	err = c.parsePostURLResponse("/settings/viewUpdateDaemon", params, &viewOpts)
+	if err != nil {
+		return
+	}
+	return viewOpts, err
 }
 
 func (b *Bucket) Refresh() error {
