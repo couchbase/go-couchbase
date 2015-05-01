@@ -764,7 +764,10 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		if err != nil {
 			d.receiver.OnError(err)
 		}
-		go close(sendCh)
+		go func() {
+			<-recvEndCh
+			close(sendCh)
+		}()
 		return progress
 	}
 
