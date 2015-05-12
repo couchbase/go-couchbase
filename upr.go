@@ -225,8 +225,13 @@ func (feed *UprFeed) run() {
 			feed.bucket.Name, retryInterval)
 
 		if err := feed.bucket.Refresh(); err != nil {
+			// if we fail to refresh the bucket, exit the feed
+			// MB-14917
 			log.Printf("Unable to refresh bucket %s ", err.Error())
+			close(feed.output)
+			feed.outputClosed = true
 			feed.closeNodeFeeds()
+			return
 		}
 
 		// this will only connect to nodes that are not connected or changed
