@@ -291,6 +291,9 @@ func queryRestAPI(
 	out interface{}) error {
 	u := *baseURL
 	u.User = nil
+	if unescaped, err := url.QueryUnescape(path); err == nil {
+		path = unescaped
+	}
 	if q := strings.Index(path, "?"); q > 0 {
 		u.Path = path[:q]
 		u.RawQuery = path[q+1:]
