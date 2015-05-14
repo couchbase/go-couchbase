@@ -39,6 +39,9 @@ func main() {
 		return
 	}
 
+	couchbase.SetConnectionPoolParams(256, 16)
+	couchbase.SetTcpKeepalive(true, 30)
+
 	go performOp(cbbucket)
 
 	errCh := make(chan error)
@@ -58,13 +61,15 @@ func performOp(b *couchbase.Bucket) {
 	for {
 		key := fmt.Sprintf("k%d", i)
 		value := fmt.Sprintf("value%d", i)
+		log.Printf(" setting key %v", key)
 		err := b.Set(key, len(value), value)
 		if err != nil {
 			log.Printf("set failed error %v", err)
 			return
 		}
 		i++
-		<-time.After(1 * time.Second)
 
+		<-time.After(1 * time.Second)
 	}
+
 }

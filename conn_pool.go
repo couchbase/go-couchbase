@@ -51,6 +51,11 @@ var ConnPoolCallback func(host string, source string, start time.Time, err error
 
 func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 	conn, err := memcached.Connect("tcp", host)
+
+	if TCPKeepalive == true {
+		conn.SetKeepAliveOptions(time.Duration(TCPKeepaliveInterval) * time.Second)
+	}
+
 	if err != nil {
 		return nil, err
 	}

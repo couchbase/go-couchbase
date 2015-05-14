@@ -27,11 +27,39 @@ var HTTPTransport = &http.Transport{MaxIdleConnsPerHost: MaxIdleConnsPerHost}
 var HTTPClient = &http.Client{Transport: HTTPTransport}
 
 // PoolSize is the size of each connection pool (per host).
-var PoolSize = 4
+var PoolSize = 64
 
 // PoolOverflow is the number of overflow connections allowed in a
 // pool.
-var PoolOverflow = PoolSize
+var PoolOverflow = 16
+
+// TCP KeepAlive enabled/disabled
+var TCPKeepalive = false
+
+// TCP keepalive interval in seconds. Default 30 minutes
+var TCPKeepaliveInterval = 30 * 60
+
+// Allow applications to speciify the Poolsize and Overflow
+func SetConnectionPoolParams(size, overflow int) {
+
+	if size > 0 {
+		PoolSize = size
+	}
+
+	if overflow > 0 {
+		PoolOverflow = overflow
+	}
+}
+
+// Allow TCP keepalive parameters to be set by the application
+func SetTcpKeepalive(enabled bool, interval int) {
+
+	TCPKeepalive = enabled
+
+	if interval > 0 {
+		TCPKeepaliveInterval = interval
+	}
+}
 
 // AuthHandler is a callback that gets the auth username and password
 // for the given bucket.
