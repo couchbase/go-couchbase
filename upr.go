@@ -29,6 +29,8 @@ type UprFeed struct {
 	killSwitch   chan bool
 	closing      bool
 	wg           sync.WaitGroup
+	dcp_buffer_size uint32
+	data_chan_size int
 }
 
 // UprFeed from a single connection
@@ -100,18 +102,23 @@ func (b *Bucket) GetFailoverLogs(vBuckets []uint16) (FailoverLog, error) {
 	return failoverLogMap, nil
 }
 
+func (b *Bucket) StartUprFeed(name string, sequence uint32) (*UprFeed, error) {
+	return b.StartUprFeedWithConfig(name, sequence, 10, DEFAULT_WINDOW_SIZE)
+}
 // StartUprFeed creates and starts a new Upr feed
 // No data will be sent on the channel unless vbuckets streams are requested
-func (b *Bucket) StartUprFeed(name string, sequence uint32) (*UprFeed, error) {
+func (b *Bucket) StartUprFeedWithConfig(name string, sequence uint32, data_chan_size int, dcp_buffer_size uint32) (*UprFeed, error) {
 
 	feed := &UprFeed{
 		bucket:     b,
-		output:     make(chan *memcached.UprEvent, 10),
+		output:     make(chan *memcached.UprEvent, data_chan_size),
 		quit:       make(chan bool),
 		nodeFeeds:  make(map[string]*FeedInfo, 0),
 		name:       name,
 		sequence:   sequence,
 		killSwitch: make(chan bool),
+		dcp_buffer_size: dcp_buffer_size,
+		data_chan_size: data_chan_size,
 	}
 
 	err := feed.connectToNodes()
@@ -277,7 +284,7 @@ func (feed *UprFeed) connectToNodes() (err error) {
 		} else {
 			name = feed.name
 		}
-		singleFeed, err = serverConn.StartUprFeed(name, feed.sequence)
+		singleFeed, err = serverConn.StartUprFeed(name, feed.sequence, feed.dcp_buffer_size, feed.data_chan_size)
 		if err != nil {
 			log.Printf("go-couchbase: Error connecting to upr feed of %s: %v", serverConn.host, err)
 			feed.closeNodeFeeds()

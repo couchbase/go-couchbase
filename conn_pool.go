@@ -215,7 +215,7 @@ func (cp *connectionPool) StartTapFeed(args *memcached.TapArguments) (*memcached
 
 const DEFAULT_WINDOW_SIZE = 20 * 1024 * 1024 // 20 Mb
 
-func (cp *connectionPool) StartUprFeed(name string, sequence uint32) (*memcached.UprFeed, error) {
+func (cp *connectionPool) StartUprFeed(name string, sequence uint32, dcp_buffer_size uint32, data_chan_size int) (*memcached.UprFeed, error) {
 	if cp == nil {
 		return nil, errNoPool
 	}
@@ -233,11 +233,11 @@ func (cp *connectionPool) StartUprFeed(name string, sequence uint32) (*memcached
 		return nil, err
 	}
 
-	if err := uf.UprOpen(name, sequence, DEFAULT_WINDOW_SIZE); err != nil {
+	if err := uf.UprOpen(name, sequence, dcp_buffer_size); err != nil {
 		return nil, err
 	}
 
-	if err := uf.StartFeed(); err != nil {
+	if err := uf.StartFeedWithConfig(data_chan_size); err != nil {
 		return nil, err
 	}
 
