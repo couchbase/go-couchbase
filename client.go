@@ -238,7 +238,11 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 					ech <- err
 					ch <- rv
 					return err
+				} else if strings.EqualFold(err.Error(), "Bounds") {
+					// We got an out of bound error, retry the operation
+					return nil
 				}
+
 				log.Printf("Connection Error: %s. Refreshing bucket", err.Error())
 				b.Refresh()
 				// retry
