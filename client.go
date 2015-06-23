@@ -202,14 +202,18 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 		masterID := b.VBServerMap().VBucketMap[vb][0]
 		attempts++
 
+		if masterID < 0 {
+			// fatal
+			log.Printf("No master node available for vb %d", vb)
+			err := fmt.Errorf("No master node available for vb %d", vb)
+			ech <- err
+			return
+		}
+
 		// This stack frame exists to ensure we can clean up
 		// connection at a reasonable time.
 		err := func() error {
 			pool := b.getConnPool(masterID)
-			if pool == nil {
-				// retry
-				return nil
-			}
 			conn, err := pool.Get()
 			if err != nil {
 				if isAuthError(err) {

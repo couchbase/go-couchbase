@@ -267,19 +267,13 @@ func (b *Bucket) replaceConnPools(with []*connectionPool) {
 
 func (b Bucket) getConnPool(i int) *connectionPool {
 
-	// MB-15091. Panic seen after a rebalance operation
-	// when trying to return p[i]. Seems like the check for len(p) > i
-	// for some reason fails to catch the fact that p[i] maybe invalid
-	defer func() {
-		if r := recover(); r != nil {
-			log.Printf("Recovered in getConnPool %d %d")
-		}
-	}()
+	if i < 0 {
+		return nil
+	}
 
 	p := b.getConnPools()
 	if len(p) > i {
-		cp := p[i]
-		return cp
+		return p[i]
 	}
 
 	return nil
@@ -295,6 +289,9 @@ func (b Bucket) getConnectionToVBucket(vb uint32) (*memcached.Client, *connectio
 				vb, vbm.VBucketMap)
 		}
 		masterId := vbm.VBucketMap[vb][0]
+		if masterId < 0 {
+			return nil, nil, fmt.Errorf("go-couchbase: No master for vbucket %d", vb)
+		}
 		pool := b.getConnPool(masterId)
 		conn, err := pool.Get()
 		if err != errClosedPool {
