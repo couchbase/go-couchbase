@@ -266,10 +266,23 @@ func (b *Bucket) replaceConnPools(with []*connectionPool) {
 }
 
 func (b Bucket) getConnPool(i int) *connectionPool {
+
 	p := b.getConnPools()
 	if len(p) > i {
-		return p[i]
+		cp := p[i]
+		return cp
 	}
+
+	// MB-15091. Panic seen after a rebalance operation
+	// when trying to return p[i]. Seems like the check for len(p) > i
+	// for some reason fails to catch the fact that p[i] maybe invalid
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("Recovered in getConnPool %d %d", i, len(p))
+		}
+		return
+	}()
+
 	return nil
 }
 

@@ -206,6 +206,10 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 		// connection at a reasonable time.
 		err := func() error {
 			pool := b.getConnPool(masterID)
+			if pool == nil {
+				// retry
+				return nil
+			}
 			conn, err := pool.Get()
 			if err != nil {
 				if isAuthError(err) {
