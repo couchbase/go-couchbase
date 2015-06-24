@@ -199,6 +199,15 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 	attempts := 0
 	done := false
 	for attempts < MaxBulkRetries && !done {
+
+		if len(b.VBServerMap().VBucketMap) < int(vb) {
+			//fatal
+			log.Printf("go-couchbase: vbmap smaller than requested vbucket number. vb %d vbmap len %d", vb, len(b.VBServerMap().VBucketMap))
+			err := fmt.Errorf("vbmap smaller than requested vbucket")
+			ech <- err
+			return
+		}
+
 		masterID := b.VBServerMap().VBucketMap[vb][0]
 		attempts++
 
