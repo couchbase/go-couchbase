@@ -56,7 +56,7 @@ func main() {
 	if *set == true {
 		value := generateRandomDoc(*size)
 		for i := 0; i < *threads; i++ {
-			go doSetOps(cbbucket, i, *documents / *threads, string(value))
+			go doSetOps(cbbucket, i*(*documents / *threads), *documents / *threads, string(value))
 			wg.Add(1)
 		}
 	} else {
