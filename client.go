@@ -189,7 +189,7 @@ func isConnError(err error) bool {
 }
 
 func (b *Bucket) doBulkGet(vb uint16, keys []string,
-	ch chan<- map[string]*gomemcached.MCResponse, ech chan error) {
+	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to doBulkGet(%d, %d keys)", vb, len(keys))
 	}
@@ -283,7 +283,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 }
 
 func (b *Bucket) processBulkGet(kdm map[uint16][]string,
-	ch chan map[string]*gomemcached.MCResponse, ech chan error) {
+	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
 	wch := make(chan uint16)
 	defer close(ch)
 	defer close(ech)
@@ -341,6 +341,40 @@ func errorCollector(ech <-chan error, eout chan<- error) {
 // map for each key.  Keys that were not found will not be included in
 // the map.
 func (b *Bucket) GetBulk(keys []string) (map[string]*gomemcached.MCResponse, error) {
+
+	ch, eout := b.getBulk(keys)
+
+	rv := make(map[string]*gomemcached.MCResponse, len(keys))
+	for m := range ch {
+		for k, v := range m {
+			rv[k] = v
+		}
+	}
+
+	return rv, <-eout
+}
+
+// Fetches multiple keys concurrently, with []byte values
+//
+// This is a wrapper around GetBulk which converts all values returned
+// by GetBulk from raw memcached responses into []byte slices.
+func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
+
+	ch, eout := b.getBulk(keys)
+
+	rv := make(map[string][]byte, len(keys))
+	for m := range ch {
+		for k, mcResponse := range m {
+			rv[k] = mcResponse.Body
+		}
+	}
+
+	return rv, <-eout
+
+}
+
+func (b *Bucket) getBulk(keys []string) (<-chan map[string]*gomemcached.MCResponse, <-chan error) {
+
 	// Organize by vbucket
 	kdm := map[uint16][]string{}
 	for _, k := range keys {
@@ -362,14 +396,8 @@ func (b *Bucket) GetBulk(keys []string) (map[string]*gomemcached.MCResponse, err
 
 	go errorCollector(ech, eout)
 
-	rv := map[string]*gomemcached.MCResponse{}
-	for m := range ch {
-		for k, v := range m {
-			rv[k] = v
-		}
-	}
+	return ch, eout
 
-	return rv, <-eout
 }
 
 // WriteOptions is the set of option flags availble for the Write
