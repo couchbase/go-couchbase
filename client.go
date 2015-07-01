@@ -557,6 +557,11 @@ func (b *Bucket) Set(k string, exp int, v interface{}) error {
 	return b.Write(k, 0, exp, v, 0)
 }
 
+// Set a value in this bucket with with flags
+func (b *Bucket) SetWithMeta(k string, flags int, exp int, v interface{}) error {
+	return b.Write(k, flags, exp, v, 0)
+}
+
 // SetRaw sets a value in this bucket without JSON encoding it.
 func (b *Bucket) SetRaw(k string, exp int, v []byte) error {
 	return b.Write(k, 0, exp, v, Raw)
