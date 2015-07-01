@@ -541,6 +541,11 @@ func (b *Bucket) Cas(k string, exp int, cas uint64, v interface{}) error {
 	return b.WriteCas(k, 0, exp, cas, v, 0)
 }
 
+// Set a value in this bucket with Cas with flags
+func (b *Bucket) CasWithMeta(k string, flags int, exp int, cas uint64, v interface{}) error {
+	return b.WriteCas(k, flags, exp, cas, v, 0)
+}
+
 // Set a value in this bucket with Cas without json encoding it
 func (b *Bucket) CasRaw(k string, exp int, cas uint64, v interface{}) error {
 	return b.WriteCas(k, 0, exp, cas, v, Raw)
