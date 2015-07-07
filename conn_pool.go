@@ -34,6 +34,7 @@ type connectionPool struct {
 	auth        AuthHandler
 	connections chan *memcached.Client
 	createsem   chan bool
+	inUse       bool
 }
 
 func newConnectionPool(host string, ah AuthHandler, poolSize, poolOverflow int) *connectionPool {

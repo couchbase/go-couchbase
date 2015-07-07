@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 
@@ -138,6 +139,7 @@ type VBucketServerMap struct {
 
 // Bucket is the primary entry point for most data operations.
 type Bucket struct {
+	sync.Mutex
 	AuthType            string             `json:"authType"`
 	Capabilities        []string           `json:"bucketCapabilities"`
 	CapabilitiesVersion string             `json:"bucketCapabilitiesVer"`
@@ -274,6 +276,18 @@ func (b Bucket) getConnPool(i int) *connectionPool {
 	p := b.getConnPools()
 	if len(p) > i {
 		return p[i]
+	}
+
+	return nil
+}
+
+func (b Bucket) getConnPoolByHost(host string) *connectionPool {
+
+	pools := b.getConnPools()
+	for _, p := range pools {
+		if p != nil && p.host == host {
+			return p
+		}
 	}
 
 	return nil
@@ -670,8 +684,32 @@ func (b *Bucket) Refresh() error {
 	if err != nil {
 		return err
 	}
+
+	pools := b.getConnPools()
+
+	// We need this lock to ensure that bucket refreshes happening because
+	// of NMVb errors received during bulkGet do not end up over-writing
+	// pool.inUse.
+	b.Lock()
+	defer b.Unlock()
+
+	for _, pool := range pools {
+		if pool != nil {
+			pool.inUse = false
+		}
+	}
+
 	newcps := make([]*connectionPool, len(tmpb.VBSMJson.ServerList))
 	for i := range newcps {
+
+		pool := b.getConnPoolByHost(tmpb.VBSMJson.ServerList[i])
+		if pool != nil && pool.inUse == false {
+			// if the hostname and index is unchanged then reuse this pool
+			newcps[i] = pool
+			pool.inUse = true
+			continue
+		}
+
 		if b.ah != nil {
 			newcps[i] = newConnectionPool(
 				tmpb.VBSMJson.ServerList[i],
@@ -683,7 +721,7 @@ func (b *Bucket) Refresh() error {
 				b.authHandler(), PoolSize, PoolOverflow)
 		}
 	}
-	b.replaceConnPools(newcps)
+	b.replaceConnPools2(newcps)
 	tmpb.ah = b.ah
 	atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&tmpb.VBSMJson))
 	atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJSON))

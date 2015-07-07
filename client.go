@@ -40,7 +40,7 @@ import (
 )
 
 // Maximum number of times to retry a chunk of a bulk get on error.
-var MaxBulkRetries = 1000
+var MaxBulkRetries = 5000
 
 // If this is set to a nonzero duration, Do() and ViewCustom() will log a warning if the call
 // takes longer than that.
@@ -185,7 +185,8 @@ func isConnError(err error) bool {
 	estr := err.Error()
 	return strings.Contains(estr, "broken pipe") ||
 		strings.Contains(estr, "connection reset") ||
-		strings.Contains(estr, "connection refused")
+		strings.Contains(estr, "connection refused") ||
+		strings.Contains(estr, "connection pool is closed")
 }
 
 func (b *Bucket) doBulkGet(vb uint16, keys []string,
@@ -231,9 +232,9 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 					return err
 				} else if isConnError(err) {
 					// for a connection error, refresh right away
-					log.Printf(" pool.Get returned error %v", err)
 					b.Refresh()
 				}
+				log.Printf("Pool Get returned %v", err)
 				// retry
 				return nil
 			}

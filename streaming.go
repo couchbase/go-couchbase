@@ -68,6 +68,23 @@ func (b *Bucket) RunBucketUpdater(notify NotifyFn) {
 	}()
 }
 
+// this version of replaceConnPools will not close the pools that are being reused
+func (b *Bucket) replaceConnPools2(with []*connectionPool) {
+	for {
+		old := atomic.LoadPointer(&b.connPools)
+		if atomic.CompareAndSwapPointer(&b.connPools, old, unsafe.Pointer(&with)) {
+			if old != nil {
+				for _, pool := range *(*[]*connectionPool)(old) {
+					if pool != nil && pool.inUse == false {
+						pool.Close()
+					}
+				}
+			}
+			return
+		}
+	}
+}
+
 func (b *Bucket) UpdateBucket() error {
 
 	var failures int
@@ -129,9 +146,27 @@ func (b *Bucket) UpdateBucket() error {
 
 			// if we got here, reset failure count
 			failures = 0
+			b.Lock()
+
+			// mark all the old connection pools for deletion
+			pools := b.getConnPools()
+			for _, pool := range pools {
+				if pool != nil {
+					pool.inUse = false
+				}
+			}
 
 			newcps := make([]*connectionPool, len(tmpb.VBSMJson.ServerList))
 			for i := range newcps {
+				// get the old connection pool and check if it is still valid
+				pool := b.getConnPoolByHost(tmpb.VBSMJson.ServerList[i])
+				if pool != nil && pool.inUse == false {
+					// if the hostname and index is unchanged then reuse this pool
+					newcps[i] = pool
+					pool.inUse = true
+					continue
+				}
+				// else create a new pool
 				if b.ah != nil {
 					newcps[i] = newConnectionPool(
 						tmpb.VBSMJson.ServerList[i],
@@ -143,7 +178,10 @@ func (b *Bucket) UpdateBucket() error {
 						b.authHandler(), PoolSize, PoolOverflow)
 				}
 			}
-			b.replaceConnPools(newcps)
+
+			b.replaceConnPools2(newcps)
+			b.Unlock()
+
 			tmpb.ah = b.ah
 			atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&tmpb.VBSMJson))
 			atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJSON))
