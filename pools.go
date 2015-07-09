@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	atomic "github.com/couchbase/go-couchbase/platform"
 	"io"
 	"io/ioutil"
 	"log"
@@ -16,7 +17,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"unsafe"
 
 	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
@@ -691,7 +691,6 @@ func (b *Bucket) Refresh() error {
 	// of NMVb errors received during bulkGet do not end up over-writing
 	// pool.inUse.
 	b.Lock()
-	defer b.Unlock()
 
 	for _, pool := range pools {
 		if pool != nil {
@@ -722,6 +721,7 @@ func (b *Bucket) Refresh() error {
 		}
 	}
 	b.replaceConnPools2(newcps)
+	b.Unlock()
 	tmpb.ah = b.ah
 	atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&tmpb.VBSMJson))
 	atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJSON))

@@ -9,9 +9,10 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
-	"sync/atomic"
 	"time"
 	"unsafe"
+
+	atomic "github.com/couchbase/go-couchbase/platform"
 )
 
 // Bucket auto-updater gets the latest version of the bucket config from
