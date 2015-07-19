@@ -169,8 +169,7 @@ type Bucket struct {
 	vBucketServerMap unsafe.Pointer // *VBucketServerMap
 	nodeList         unsafe.Pointer // *[]Node
 	commonSufix      string
-	ah               AuthHandler  // auth handler
-	nodeListLock     sync.RWMutex // RW mutex to synchronize access to nodelist
+	ah               AuthHandler // auth handler
 }
 
 // PoolServices is all the bucket-independent services in a pool
@@ -228,8 +227,6 @@ func (b *Bucket) GetVBmap(addrs []string) (map[string][]uint16, error) {
 
 // Nodes returns teh current list of nodes servicing this bucket.
 func (b Bucket) Nodes() []Node {
-	b.nodeListLock.RLock()
-	defer b.nodeListLock.RUnlock()
 	return *(*[]Node)(atomic.LoadPointer(&b.nodeList))
 }
 
@@ -726,10 +723,7 @@ func (b *Bucket) Refresh() error {
 	b.replaceConnPools2(newcps)
 	tmpb.ah = b.ah
 	atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&tmpb.VBSMJson))
-
-	b.nodeListLock.Lock()
 	atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJSON))
-	b.nodeListLock.Unlock()
 
 	b.Unlock()
 	return nil

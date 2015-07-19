@@ -184,10 +184,7 @@ func (b *Bucket) UpdateBucket() error {
 
 			tmpb.ah = b.ah
 			atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&tmpb.VBSMJson))
-
-			b.nodeListLock.Lock()
 			atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJSON))
-			b.nodeListLock.Unlock()
 			b.Unlock()
 
 			log.Printf("Got new configuration for bucket %s", b.Name)

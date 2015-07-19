@@ -57,14 +57,6 @@ func slowLog(startTime time.Time, format string, args ...interface{}) {
 // Return true if error is KEY_ENOENT. Required by cbq-engine
 func IsKeyEExistsError(err error) bool {
 
-	defer func() {
-		// panic can happen due to the type-cast, catch it
-		// and return false.
-		if r := recover(); r != nil {
-			return
-		}
-	}()
-
 	res, ok := err.(*gomemcached.MCResponse)
 	if ok && res.Status == gomemcached.KEY_EEXISTS {
 		return true
@@ -75,14 +67,6 @@ func IsKeyEExistsError(err error) bool {
 
 // Return true if error is KEY_ENOENT. Required by cbq-engine
 func IsKeyNoEntError(err error) bool {
-
-	defer func() {
-		// panic can happen due to the type-cast, catch it
-		// and return false.
-		if r := recover(); r != nil {
-			return
-		}
-	}()
 
 	res, ok := err.(*gomemcached.MCResponse)
 	if ok && res.Status == gomemcached.KEY_ENOENT {
