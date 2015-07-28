@@ -248,7 +248,11 @@ func (b Bucket) HealthyNodes() []Node {
 }
 
 func (b Bucket) getConnPools() []*connectionPool {
-	return *(*[]*connectionPool)(atomic.LoadPointer(&b.connPools))
+	if b.connPools != nil {
+		return *(*[]*connectionPool)(atomic.LoadPointer(&b.connPools))
+	} else {
+		return nil
+	}
 }
 
 func (b *Bucket) replaceConnPools(with []*connectionPool) {
