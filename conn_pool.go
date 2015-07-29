@@ -56,6 +56,10 @@ func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 		return nil, err
 	}
 
+	if err != nil {
+		return nil, err
+	}
+
 	if TCPKeepalive == true {
 		conn.SetKeepAliveOptions(time.Duration(TCPKeepaliveInterval) * time.Second)
 	}
