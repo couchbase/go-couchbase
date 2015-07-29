@@ -65,7 +65,7 @@ func performOp(b *couchbase.Bucket) {
 		err := b.Set(key, len(value), value)
 		if err != nil {
 			log.Printf("set failed error %v", err)
-			return
+			continue
 		}
 		i++
 
