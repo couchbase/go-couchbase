@@ -253,6 +253,8 @@ type BucketDataSourceStats struct {
 	TotWorkerAuth       uint64
 	TotWorkerAuthErr    uint64
 	TotWorkerAuthFail   uint64
+	TotWorkerSelBktFail uint64
+	TotWorkerSelBktOk   uint64
 	TotWorkerAuthOk     uint64
 	TotWorkerUPROpenErr uint64
 	TotWorkerUPROpenOk  uint64
@@ -352,7 +354,7 @@ type bucketDataSource struct {
 	bucketName string
 	bucketUUID string
 	vbucketIDs []uint16
-	auth       couchbase.AuthHandler
+	auth       couchbase.AuthHandler // auth for couchbase
 	receiver   Receiver
 	options    *BucketDataSourceOptions
 
@@ -721,7 +723,14 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 	atomic.AddUint64(&d.stats.TotWorkerConnectOk, 1)
 
 	if d.auth != nil {
-		user, pswd, _ := d.auth.GetCredentials()
+		var user, pswd string
+		var adminCred bool
+		if auth, ok := d.auth.(couchbase.AuthWithSaslHandler); ok {
+			user, pswd = auth.GetSaslCredentials()
+			adminCred = true
+		} else {
+			user, pswd, _ = d.auth.GetCredentials()
+		}
 		if user != "" {
 			atomic.AddUint64(&d.stats.TotWorkerAuth, 1)
 			res, err := client.Auth(user, pswd)
@@ -736,7 +745,16 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 				d.receiver.OnError(&AuthFailError{ServerURL: server, User: user})
 				return 0
 			}
-			atomic.AddUint64(&d.stats.TotWorkerAuthOk, 1)
+			if adminCred {
+				atomic.AddUint64(&d.stats.TotWorkerAuthOk, 1)
+				_, err = client.SelectBucket(d.bucketName)
+				if err != nil {
+					atomic.AddUint64(&d.stats.TotWorkerSelBktFail, 1)
+					d.receiver.OnError(fmt.Errorf("worker select bucket err: %v", err))
+					return 0
+				}
+				atomic.AddUint64(&d.stats.TotWorkerSelBktOk, 1)
+			}
 		}
 	}
 

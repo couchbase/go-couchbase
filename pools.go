@@ -68,6 +68,13 @@ type AuthHandler interface {
 	GetCredentials() (string, string, string)
 }
 
+// AuthHandler is a callback that gets the auth username and password
+// for the given bucket and sasl for memcached.
+type AuthWithSaslHandler interface {
+	AuthHandler
+	GetSaslCredentials() (string, string)
+}
+
 // MultiBucketAuthHandler is kind of AuthHandler that may perform
 // different auth for different buckets.
 type MultiBucketAuthHandler interface {
