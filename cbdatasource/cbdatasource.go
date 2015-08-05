@@ -253,6 +253,8 @@ type BucketDataSourceStats struct {
 	TotWorkerAuth       uint64
 	TotWorkerAuthErr    uint64
 	TotWorkerAuthFail   uint64
+	TotWorkerSelBktFail uint64
+	TotWorkerSelBktOk   uint64
 	TotWorkerAuthOk     uint64
 	TotWorkerUPROpenErr uint64
 	TotWorkerUPROpenOk  uint64
@@ -352,7 +354,7 @@ type bucketDataSource struct {
 	bucketName string
 	bucketUUID string
 	vbucketIDs []uint16
-	auth       couchbase.AuthHandler
+	auth       interface{} // auth for couchbase
 	receiver   Receiver
 	options    *BucketDataSourceOptions
 
@@ -391,7 +393,7 @@ func NewBucketDataSource(
 	bucketName string,
 	bucketUUID string,
 	vbucketIDs []uint16,
-	auth couchbase.AuthHandler,
+	auth interface{},
 	receiver Receiver,
 	options *BucketDataSourceOptions) (BucketDataSource, error) {
 	if len(serverURLs) < 1 {
@@ -486,7 +488,8 @@ func (d *bucketDataSource) refreshCluster() int {
 			connectBucket = ConnectBucket
 		}
 
-		bucket, err := connectBucket(serverURL, d.poolName, d.bucketName, d.auth)
+		bucket, err := connectBucket(serverURL, d.poolName, d.bucketName,
+            d.auth.(couchbase.AuthHandler))
 		if err != nil {
 			atomic.AddUint64(&d.stats.TotRefreshClusterConnectBucketErr, 1)
 			d.receiver.OnError(err)
@@ -721,7 +724,8 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 	atomic.AddUint64(&d.stats.TotWorkerConnectOk, 1)
 
 	if d.auth != nil {
-		user, pswd, _ := d.auth.GetCredentials()
+        if auth, ok := d.auth.(couchbase.AuthWithSaslHandler); ok {
+		user, pswd := auth.GetSaslCredentials()
 		if user != "" {
 			atomic.AddUint64(&d.stats.TotWorkerAuth, 1)
 			res, err := client.Auth(user, pswd)
@@ -738,6 +742,14 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 			}
 			atomic.AddUint64(&d.stats.TotWorkerAuthOk, 1)
 		}
+		_, err = client.SelectBucket(d.bucketName)
+		if err != nil {
+			atomic.AddUint64(&d.stats.TotWorkerSelBktFail, 1)
+			d.receiver.OnError(fmt.Errorf("worker select bucket err: %v", err))
+			return 0
+		}
+		atomic.AddUint64(&d.stats.TotWorkerSelBktOk, 1)
+        }
 	}
 
 	uprOpenName := d.options.Name
