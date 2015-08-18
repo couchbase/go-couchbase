@@ -57,19 +57,33 @@ func main() {
 
 func performOp(b *couchbase.Bucket) {
 
-	i := 0
-	for {
-		key := fmt.Sprintf("k%d", i)
-		value := fmt.Sprintf("value%d", i)
-		log.Printf(" setting key %v", key)
-		err := b.Set(key, len(value), value)
-		if err != nil {
-			log.Printf("set failed error %v", err)
-			continue
-		}
-		i++
+	i := 512
+	key := fmt.Sprintf("k%d", i)
+	value := fmt.Sprintf("value%d", i)
+	err := b.Set(key, len(value), value)
+	if err != nil {
+		log.Printf("set failed error %v", err)
+		return
+	}
+	var rv interface{}
+	var cas uint64
+	// get the CAS value for this key
+	err = b.Gets(key, &rv, &cas)
+	if err != nil {
+		log.Printf("Gets failed. error %v", err)
+		return
+	}
 
+	for {
+		value = fmt.Sprintf("value%d", i)
+		cas, err = b.Cas(key, 0, cas, value)
+		if err != nil {
+			log.Printf(" Cas2 operation failed. error %v", err)
+			return
+		}
+		log.Printf(" Got new cas value %v", cas)
 		<-time.After(1 * time.Second)
+		i++
 	}
 
 }
