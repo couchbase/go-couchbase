@@ -517,8 +517,13 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 	return err
 }
 
+// Set a value in this bucket with Cas and return the new Cas value
+func (b *Bucket) Cas(k string, exp int, cas uint64, v interface{}) (uint64, error) {
+	return b.WriteCas(k, 0, exp, cas, v, 0)
+}
+
 func (b *Bucket) WriteCas(k string, flags, exp int, cas uint64, v interface{},
-	opt WriteOptions) (err error) {
+	opt WriteOptions) (newCas uint64, err error) {
 
 	if ClientOpCallback != nil {
 		defer func(t time.Time) {
@@ -530,7 +535,7 @@ func (b *Bucket) WriteCas(k string, flags, exp int, cas uint64, v interface{},
 	if opt&Raw == 0 {
 		data, err = json.Marshal(v)
 		if err != nil {
-			return err
+			return 0, err
 		}
 	} else if v != nil {
 		data = v.([]byte)
@@ -546,21 +551,16 @@ func (b *Bucket) WriteCas(k string, flags, exp int, cas uint64, v interface{},
 		err = b.WaitForPersistence(k, res.Cas, data == nil)
 	}
 
-	return err
-}
-
-// Set a value in this bucket with Cas
-func (b *Bucket) Cas(k string, exp int, cas uint64, v interface{}) error {
-	return b.WriteCas(k, 0, exp, cas, v, 0)
+	return res.Cas, err
 }
 
 // Set a value in this bucket with Cas with flags
-func (b *Bucket) CasWithMeta(k string, flags int, exp int, cas uint64, v interface{}) error {
+func (b *Bucket) CasWithMeta(k string, flags int, exp int, cas uint64, v interface{}) (uint64, error) {
 	return b.WriteCas(k, flags, exp, cas, v, 0)
 }
 
 // Set a value in this bucket with Cas without json encoding it
-func (b *Bucket) CasRaw(k string, exp int, cas uint64, v interface{}) error {
+func (b *Bucket) CasRaw(k string, exp int, cas uint64, v interface{}) (uint64, error) {
 	return b.WriteCas(k, 0, exp, cas, v, Raw)
 }
 

@@ -48,14 +48,16 @@ func doMoreOps(b *couchbase.Bucket) {
 			log.Fatalf("Expected %#v, got %#v",
 				[]string{"a", "b", "c"}, rv)
 		}
-		maybeFatal(b.Cas(k, 0, cas, []string{"a", "b", "d"}))
+		if _, err := b.Cas(k, 0, cas, []string{"a", "b", "d"}); err != nil {
+			log.Fatalf("Error:  %v", err)
+		}
 		maybeFatal(b.Get(k, &rv))
 		if fmt.Sprintf("%#v", rv) != `[]string{"a", "b", "d"}` {
 			log.Fatalf("Expected %#v, got %#v",
 				[]string{"a", "b", "c"}, rv)
 		}
 		// this should fail since we don't know the latest cas value
-		err := b.Cas(k, 0, cas, []string{"a", "b", "x"})
+		_, err := b.Cas(k, 0, cas, []string{"a", "b", "x"})
 		if err == nil {
 			log.Fatalf("Expected \"Data exists for key\"")
 		}
