@@ -657,6 +657,27 @@ func (b *Bucket) GetRaw(k string) ([]byte, error) {
 	return d, err
 }
 
+// GetAndTouchRaw gets a raw value from this bucket including its CAS
+// counter and flags, and updates the expiry on the doc.
+func (b *Bucket) GetAndTouchRaw(k string, exp int) (data []byte,
+	cas uint64, err error) {
+
+	if ClientOpCallback != nil {
+		defer func(t time.Time) { ClientOpCallback("GetsRaw", k, t, err) }(time.Now())
+	}
+
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		res, err := mc.GetAndTouch(vb, k, exp)
+		if err != nil {
+			return err
+		}
+		cas = res.Cas
+		data = res.Body
+		return nil
+	})
+	return data, cas, err
+}
+
 // Delete a key from this bucket.
 func (b *Bucket) Delete(k string) error {
 	return b.Write(k, 0, 0, nil, Raw)
