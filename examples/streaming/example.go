@@ -76,12 +76,23 @@ func performOp(b *couchbase.Bucket) {
 
 	for {
 		value = fmt.Sprintf("value%d", i)
-		cas, err = b.Cas(key, 0, cas, value)
+		cas, err = b.Cas(key, 10, cas, value)
 		if err != nil {
 			log.Printf(" Cas2 operation failed. error %v", err)
 			return
 		}
 		log.Printf(" Got new cas value %v", cas)
+		var flags, expiry int
+		var seqNo uint64
+
+		err = b.GetMeta(key, &flags, &expiry, &cas, &seqNo)
+		if err != nil {
+			log.Printf(" Failed to get meta . Error %v", err)
+			return
+		}
+
+		log.Printf(" meta values for key %s. Flags %d, Expiry %v, Cas %d, Sequence %d", key, flags, time.Unix(int64(expiry), 0), cas, seqNo)
+
 		<-time.After(1 * time.Second)
 		i++
 	}

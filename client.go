@@ -678,6 +678,37 @@ func (b *Bucket) GetAndTouchRaw(k string, exp int) (data []byte,
 	return data, cas, err
 }
 
+// GetMeta returns the meta values for a key
+func (b *Bucket) GetMeta(k string, flags *int, expiry *int, cas *uint64, seqNo *uint64) (err error) {
+
+	if ClientOpCallback != nil {
+		defer func(t time.Time) { ClientOpCallback("GetsMeta", k, t, err) }(time.Now())
+	}
+
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		res, err := mc.GetMeta(vb, k)
+		if err != nil {
+			return err
+		}
+
+		*cas = res.Cas
+		if len(res.Extras) >= 8 {
+			*flags = int(binary.BigEndian.Uint32(res.Extras[4:]))
+		}
+
+		if len(res.Extras) >= 12 {
+			*expiry = int(binary.BigEndian.Uint32(res.Extras[8:]))
+		}
+
+		if len(res.Extras) >= 20 {
+			*seqNo = uint64(binary.BigEndian.Uint64(res.Extras[12:]))
+		}
+		return nil
+	})
+
+	return err
+}
+
 // Delete a key from this bucket.
 func (b *Bucket) Delete(k string) error {
 	return b.Write(k, 0, 0, nil, Raw)
