@@ -30,6 +30,7 @@ var size = flag.Int("size", 1024, "document size")
 var documents = flag.Int("documents", 2000000, "total documents")
 var threads = flag.Int("threads", 10, "Number of threads")
 var quantum = flag.Int("quantum", 1024, "Number of documents per bulkGet")
+var jsonDoc = flag.Bool("generate-json", false, "generate json documents")
 
 var wg sync.WaitGroup
 
@@ -54,9 +55,12 @@ func main() {
 
 	start := time.Now()
 	if *set == true {
-		value := generateRandomDoc(*size)
+		var value []byte
+		if *jsonDoc == false {
+			value = generateRandomDoc(*size)
+		}
 		for i := 0; i < *threads; i++ {
-			go doSetOps(cbbucket, i*(*documents / *threads), *documents / *threads, string(value))
+			go doSetOps(cbbucket, i*(*documents / *threads), *documents / *threads, value)
 			wg.Add(1)
 		}
 	} else {
@@ -120,13 +124,23 @@ func generateRandomDoc(size int) []byte {
 
 }
 
-func doSetOps(b *couchbase.Bucket, startNum int, total int, data string) {
+func doSetOps(b *couchbase.Bucket, startNum int, total int, data []byte) {
 
 	defer wg.Done()
+
 	start := time.Now()
+
+	var err error
 	for i := 0; i < total; i++ {
+		if data == nil {
+			data, err = generateRandomDocument()
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+
 		k := fmt.Sprintf("test%d", startNum+i)
-		maybeFatal(b.Set(k, 0, data))
+		maybeFatal(b.SetRaw(k, 0, data))
 	}
 	fmt.Printf("Did %d ops in %s\n",
 		total, time.Now().Sub(start).String())
