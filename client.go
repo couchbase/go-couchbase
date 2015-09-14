@@ -714,7 +714,7 @@ func (b *Bucket) Delete(k string) error {
 	return b.Write(k, 0, 0, nil, Raw)
 }
 
-// Incr increments the value at a given key.
+// Incr increments the value at a given key by amt and defaults to def if no value present.
 func (b *Bucket) Incr(k string, amt, def uint64, exp int) (val uint64, err error) {
 	if ClientOpCallback != nil {
 		defer func(t time.Time) { ClientOpCallback("Incr", k, t, err) }(time.Now())
@@ -723,6 +723,24 @@ func (b *Bucket) Incr(k string, amt, def uint64, exp int) (val uint64, err error
 	var rv uint64
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		res, err := mc.Incr(vb, k, amt, def, exp)
+		if err != nil {
+			return err
+		}
+		rv = res
+		return nil
+	})
+	return rv, err
+}
+
+// Decr decrements the value at a given key by amt and defaults to def if no value present
+func (b *Bucket) Decr(k string, amt, def uint64, exp int) (val uint64, err error) {
+	if ClientOpCallback != nil {
+		defer func(t time.Time) { ClientOpCallback("Decr", k, t, err) }(time.Now())
+	}
+
+	var rv uint64
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		res, err := mc.Decr(vb, k, amt, def, exp)
 		if err != nil {
 			return err
 		}
