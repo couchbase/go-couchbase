@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/couchbase/gomemcached"
-	"github.com/couchbase/gomemcached/client"
+	"github.com/VerveWireless/gomemcached"
+	"github.com/VerveWireless/gomemcached/client"
 )
 
 type testT struct {

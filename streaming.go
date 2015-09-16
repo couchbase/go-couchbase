@@ -12,7 +12,7 @@ import (
 	"time"
 	"unsafe"
 
-	atomic "github.com/couchbase/go-couchbase/platform"
+	atomic "github.com/VerveWireless/go-couchbase/platform"
 )
 
 // Bucket auto-updater gets the latest version of the bucket config from

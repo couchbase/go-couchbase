@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"github.com/couchbase/go-couchbase"
+	"github.com/VerveWireless/go-couchbase"
 	"log"
 	"runtime"
 	"sync"

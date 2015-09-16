@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	mcd "github.com/couchbase/gomemcached"
-	mc "github.com/couchbase/gomemcached/client"
-	"github.com/couchbase/go-couchbase"
+	"github.com/VerveWireless/go-couchbase"
+	mcd "github.com/VerveWireless/gomemcached"
+	mc "github.com/VerveWireless/gomemcached/client"
 )
 
 var options struct {

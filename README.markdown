@@ -15,7 +15,7 @@ don't bang on all one node to do all the work.
 
 ## Install
 
-    go get github.com/couchbase/go-couchbase
+    go get github.com/VerveWireless/go-couchbase
 
 ## Example
 

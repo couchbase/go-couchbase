@@ -35,8 +35,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/couchbase/gomemcached"
-	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
+	"github.com/VerveWireless/gomemcached"
+	"github.com/VerveWireless/gomemcached/client" // package name is 'memcached'
 )
 
 // Maximum number of times to retry a chunk of a bulk get on error.

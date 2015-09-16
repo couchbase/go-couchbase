@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/couchbase/go-couchbase"
+	"github.com/VerveWireless/go-couchbase"
 )
 
 func init() {
