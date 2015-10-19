@@ -207,7 +207,7 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 			res.Body.Close()
 			continue
 		}
-		res.Body.Close()
+		defer res.Body.Close()
 		break
 	}
 
