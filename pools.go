@@ -548,7 +548,7 @@ func (b *Bucket) parseURLResponse(path string, out interface{}) error {
 			return err
 		}
 	}
-	return errors.New("all nodes failed to respond")
+	return errors.New("All nodes failed to respond or no healthy nodes for bucket found")
 }
 
 func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
@@ -585,7 +585,7 @@ func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
 			return err
 		}
 	}
-	return errors.New("all nodes failed to respond")
+	return errors.New("All nodes failed to respond or no healthy nodes for bucket found")
 }
 
 type basicAuth struct {
