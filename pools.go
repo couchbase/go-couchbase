@@ -6,7 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	atomic "github.com/couchbase/go-couchbase/platform"
+	atomic "github.com/VerveWireless/go-couchbase/platform"
 	"io"
 	"io/ioutil"
 	"log"
@@ -19,7 +19,7 @@ import (
 	"sync"
 	"unsafe"
 
-	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
+	"github.com/VerveWireless/gomemcached/client" // package name is 'memcached'
 )
 
 // HTTPClient to use for REST and view operations.

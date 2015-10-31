@@ -15,4 +15,4 @@ LICENSE: Apache 2.0
 
 ### Status & Links
 
-[![GoDoc](https://godoc.org/github.com/couchbase/go-couchbase/cbdatasource?status.svg)](https://godoc.org/github.com/steveyen/cbdatasource)
+[![GoDoc](https://godoc.org/github.com/VerveWireless/go-couchbase/cbdatasource?status.svg)](https://godoc.org/github.com/steveyen/cbdatasource)

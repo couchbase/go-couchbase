@@ -4,7 +4,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/couchbase/gomemcached/client"
+	"github.com/VerveWireless/gomemcached/client"
 )
 
 // GenericMcdAuthHandler is a kind of AuthHandler that performs

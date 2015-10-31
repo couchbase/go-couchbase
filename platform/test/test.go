@@ -2,7 +2,7 @@ package main
 
 import (
 	"fmt"
-	atomic "github.com/couchbase/go-couchbase/platform"
+	atomic "github.com/VerveWireless/go-couchbase/platform"
 )
 
 func main() {

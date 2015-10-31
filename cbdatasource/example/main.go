@@ -26,9 +26,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/couchbase/gomemcached"
-	"github.com/couchbase/go-couchbase"
-	"github.com/couchbase/go-couchbase/cbdatasource"
+	"github.com/VerveWireless/go-couchbase"
+	"github.com/VerveWireless/go-couchbase/cbdatasource"
+	"github.com/VerveWireless/gomemcached"
 )
 
 // Simple, memory-only sample program that uses the cbdatasource API's

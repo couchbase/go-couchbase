@@ -4,7 +4,7 @@ import (
 	"database/sql"
 	"flag"
 	"fmt"
-	"github.com/couchbase/go-couchbase"
+	"github.com/VerveWireless/go-couchbase"
 	_ "github.com/couchbaselabs/go_n1ql"
 	"log"
 )

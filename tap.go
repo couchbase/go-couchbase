@@ -4,7 +4,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/couchbase/gomemcached/client"
+	"github.com/VerveWireless/gomemcached/client"
 )
 
 const initialRetryInterval = 1 * time.Second

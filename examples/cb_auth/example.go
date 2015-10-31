@@ -2,8 +2,8 @@ package main
 
 import (
 	"flag"
-	"github.com/couchbase/cbauth"
-	"github.com/couchbase/go-couchbase"
+	"github.com/VerveWireless/cbauth"
+	"github.com/VerveWireless/go-couchbase"
 	"log"
 	"net/url"
 )
