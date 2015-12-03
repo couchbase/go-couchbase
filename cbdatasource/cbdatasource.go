@@ -224,6 +224,7 @@ type BucketDataSourceStats struct {
 	TotRefreshClusterVBMNilErr                     uint64
 	TotRefreshClusterKickWorkers                   uint64
 	TotRefreshClusterKickWorkersOk                 uint64
+	TotRefreshClusterStopped                       uint64
 	TotRefreshClusterAwokenClosed                  uint64
 	TotRefreshClusterAwokenStopped                 uint64
 	TotRefreshClusterAwokenRestart                 uint64
@@ -358,6 +359,7 @@ type bucketDataSource struct {
 	receiver   Receiver
 	options    *BucketDataSourceOptions
 
+	stopCh           chan struct{}
 	refreshClusterCh chan string
 	refreshWorkersCh chan string
 	closedCh         chan bool
@@ -421,6 +423,7 @@ func NewBucketDataSource(
 		receiver:   receiver,
 		options:    options,
 
+		stopCh:           make(chan struct{}),
 		refreshClusterCh: make(chan string, 1),
 		refreshWorkersCh: make(chan string, 1),
 		closedCh:         make(chan bool),
@@ -526,11 +529,21 @@ func (d *bucketDataSource) refreshCluster() int {
 			d.refreshWorkersCh <- "new-vbm" // Kick the workers to refresh.
 			atomic.AddUint64(&d.stats.TotRefreshClusterKickWorkersOk, 1)
 
-			reason, alive := <-d.refreshClusterCh // Wait for a refresh cluster kick.
-			if !alive || reason == "CLOSE" {      // Or, if we're closed then shutdown.
-				atomic.AddUint64(&d.stats.TotRefreshClusterAwokenClosed, 1)
+			var reason string
+			var alive bool
+
+			select {
+			case <-d.stopCh:
+				atomic.AddUint64(&d.stats.TotRefreshClusterStopped, 1)
 				return -1
+
+			case reason, alive = <-d.refreshClusterCh: // Wait for kick.
+				if !alive || reason == "CLOSE" {
+					atomic.AddUint64(&d.stats.TotRefreshClusterAwokenClosed, 1)
+					return -1
+				}
 			}
+
 			if !d.isRunning() {
 				atomic.AddUint64(&d.stats.TotRefreshClusterAwokenStopped, 1)
 				return -1
@@ -1351,10 +1364,10 @@ func (d *bucketDataSource) Close() error {
 	d.life = "closed"
 	d.m.Unlock()
 
-	// A close message to refreshClusterCh's goroutine will end
+	// Stopping the refreshClusterCh's goroutine will end
 	// refreshWorkersCh's goroutine, which closes every workerCh and
 	// then finally closes the closedCh.
-	d.refreshClusterCh <- "CLOSE"
+	close(d.stopCh)
 
 	<-d.closedCh
 
