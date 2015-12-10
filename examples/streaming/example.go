@@ -19,6 +19,7 @@ func main() {
 
 	flag.Parse()
 
+	couchbase.EnableMutationToken = true
 	client, err := couchbase.Connect(*serverURL)
 	if err != nil {
 		log.Printf("Connect failed %v", err)
@@ -67,6 +68,7 @@ func performOp(b *couchbase.Bucket) {
 	}
 	var rv interface{}
 	var cas uint64
+	var mt *couchbase.MutationToken
 	// get the CAS value for this key
 	err = b.Gets(key, &rv, &cas)
 	if err != nil {
@@ -76,12 +78,12 @@ func performOp(b *couchbase.Bucket) {
 
 	for {
 		value = fmt.Sprintf("value%d", i)
-		cas, err = b.Cas(key, 10, cas, value)
+		cas, mt, err = b.CasWithMeta(key, 0, 10, cas, value)
 		if err != nil {
 			log.Printf(" Cas2 operation failed. error %v", err)
 			return
 		}
-		log.Printf(" Got new cas value %v", cas)
+		log.Printf(" Got new cas value %v mutation token %v", cas, mt)
 		var flags, expiry int
 		var seqNo uint64
 

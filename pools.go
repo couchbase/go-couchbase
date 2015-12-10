@@ -37,6 +37,9 @@ var PoolOverflow = 16
 // TCP KeepAlive enabled/disabled
 var TCPKeepalive = false
 
+// Enable MutationToken
+var EnableMutationToken = false
+
 // TCP keepalive interval in seconds. Default 30 minutes
 var TCPKeepaliveInterval = 30 * 60
 
@@ -557,6 +560,9 @@ func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
 		return errors.New("no couch rest URLs")
 	}
 
+	var err error
+	var u *url.URL
+
 	// Pick a random node to start querying.
 	startNode := rand.Intn(len(nodes))
 	maxRetries := len(nodes)
@@ -567,7 +573,7 @@ func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
 			continue
 		}
 
-		u, err := ParseURL(node.CouchAPIBase)
+		u, err = ParseURL(node.CouchAPIBase)
 		if err != nil {
 			return fmt.Errorf("config error: Bucket %q node #%d CouchAPIBase=%q: %v",
 				b.Name, i, node.CouchAPIBase, err)
@@ -585,7 +591,7 @@ func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
 			return err
 		}
 	}
-	return errors.New("All nodes failed to respond or no healthy nodes for bucket found")
+	return errors.New("All nodes failed to respond or returned error or no healthy nodes for bucket found. Error " + err.Error())
 }
 
 type basicAuth struct {

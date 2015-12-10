@@ -39,6 +39,13 @@ import (
 	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
 )
 
+// Mutation Token
+type MutationToken struct {
+	VBid  uint16 // vbucket id
+	Guard uint64 // vbuuid
+	Value uint64 // sequence number
+}
+
 // Maximum number of times to retry a chunk of a bulk get on error.
 var MaxBulkRetries = 5000
 
@@ -507,6 +514,7 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 		} else {
 			res, err = mc.Set(vb, k, flags, exp, data)
 		}
+
 		return err
 	})
 
@@ -517,9 +525,69 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 	return err
 }
 
+func (b *Bucket) WriteWithMT(k string, flags, exp int, v interface{},
+	opt WriteOptions) (mt *MutationToken, err error) {
+
+	if ClientOpCallback != nil {
+		defer func(t time.Time) {
+			ClientOpCallback(fmt.Sprintf("WriteWithMT(%v)", opt), k, t, err)
+		}(time.Now())
+	}
+
+	var data []byte
+	if opt&Raw == 0 {
+		data, err = json.Marshal(v)
+		if err != nil {
+			return nil, err
+		}
+	} else if v != nil {
+		data = v.([]byte)
+	}
+
+	var res *gomemcached.MCResponse
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		if opt&AddOnly != 0 {
+			res, err = memcached.UnwrapMemcachedError(
+				mc.Add(vb, k, flags, exp, data))
+			if err == nil && res.Status != gomemcached.SUCCESS {
+				if res.Status == gomemcached.KEY_EEXISTS {
+					err = ErrKeyExists
+				} else {
+					err = res
+				}
+			}
+		} else if opt&Append != 0 {
+			res, err = mc.Append(vb, k, data)
+		} else if data == nil {
+			res, err = mc.Del(vb, k)
+		} else {
+			res, err = mc.Set(vb, k, flags, exp, data)
+		}
+
+		if len(res.Extras) >= 16 {
+			vbuuid := uint64(binary.BigEndian.Uint64(res.Extras[0:8]))
+			seqNo := uint64(binary.BigEndian.Uint64(res.Extras[8:16]))
+			mt = &MutationToken{VBid: vb, Guard: vbuuid, Value: seqNo}
+		}
+
+		return err
+	})
+
+	if err == nil && (opt&(Persist|Indexable) != 0) {
+		err = b.WaitForPersistence(k, res.Cas, data == nil)
+	}
+
+	return mt, err
+}
+
 // Set a value in this bucket with Cas and return the new Cas value
 func (b *Bucket) Cas(k string, exp int, cas uint64, v interface{}) (uint64, error) {
 	return b.WriteCas(k, 0, exp, cas, v, 0)
+}
+
+// Set a value in this bucket with Cas without json encoding it
+func (b *Bucket) CasRaw(k string, exp int, cas uint64, v interface{}) (uint64, error) {
+	return b.WriteCas(k, 0, exp, cas, v, Raw)
 }
 
 func (b *Bucket) WriteCas(k string, flags, exp int, cas uint64, v interface{},
@@ -554,14 +622,53 @@ func (b *Bucket) WriteCas(k string, flags, exp int, cas uint64, v interface{},
 	return res.Cas, err
 }
 
-// Set a value in this bucket with Cas with flags
-func (b *Bucket) CasWithMeta(k string, flags int, exp int, cas uint64, v interface{}) (uint64, error) {
-	return b.WriteCas(k, flags, exp, cas, v, 0)
+// Extended CAS operation. These functions will return the mutation token, i.e vbuuid & guard
+func (b *Bucket) CasWithMeta(k string, flags int, exp int, cas uint64, v interface{}) (uint64, *MutationToken, error) {
+	return b.WriteCasWithMT(k, flags, exp, cas, v, 0)
 }
 
-// Set a value in this bucket with Cas without json encoding it
-func (b *Bucket) CasRaw(k string, exp int, cas uint64, v interface{}) (uint64, error) {
-	return b.WriteCas(k, 0, exp, cas, v, Raw)
+func (b *Bucket) CasWithMetaRaw(k string, flags int, exp int, cas uint64, v interface{}) (uint64, *MutationToken, error) {
+	return b.WriteCasWithMT(k, flags, exp, cas, v, Raw)
+}
+
+func (b *Bucket) WriteCasWithMT(k string, flags, exp int, cas uint64, v interface{},
+	opt WriteOptions) (newCas uint64, mt *MutationToken, err error) {
+
+	if ClientOpCallback != nil {
+		defer func(t time.Time) {
+			ClientOpCallback(fmt.Sprintf("Write(%v)", opt), k, t, err)
+		}(time.Now())
+	}
+
+	var data []byte
+	if opt&Raw == 0 {
+		data, err = json.Marshal(v)
+		if err != nil {
+			return 0, nil, err
+		}
+	} else if v != nil {
+		data = v.([]byte)
+	}
+
+	var res *gomemcached.MCResponse
+	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
+		res, err = mc.SetCas(vb, k, flags, exp, cas, data)
+		return err
+	})
+
+	// check for extras
+	if len(res.Extras) >= 16 {
+		vbuuid := uint64(binary.BigEndian.Uint64(res.Extras[0:8]))
+		seqNo := uint64(binary.BigEndian.Uint64(res.Extras[8:16]))
+		vb := b.VBHash(k)
+		mt = &MutationToken{VBid: uint16(vb), Guard: vbuuid, Value: seqNo}
+	}
+
+	if err == nil && (opt&(Persist|Indexable) != 0) {
+		err = b.WaitForPersistence(k, res.Cas, data == nil)
+	}
+
+	return res.Cas, mt, err
 }
 
 // Set a value in this bucket.
@@ -599,6 +706,27 @@ func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
 		return false, nil
 	}
 	return (err == nil), err
+}
+
+// Add adds a value to this bucket; like Set except that nothing
+// happens if the key exists.  The value will be serialized into a
+// JSON document.
+func (b *Bucket) AddWithMT(k string, exp int, v interface{}) (added bool, mt *MutationToken, err error) {
+	mt, err = b.WriteWithMT(k, 0, exp, v, AddOnly)
+	if err == ErrKeyExists {
+		return false, mt, nil
+	}
+	return (err == nil), mt, err
+}
+
+// AddRaw adds a value to this bucket; like SetRaw except that nothing
+// happens if the key exists.  The value will be stored as raw bytes.
+func (b *Bucket) AddRawWithMT(k string, exp int, v []byte) (added bool, mt *MutationToken, err error) {
+	mt, err = b.WriteWithMT(k, 0, exp, v, AddOnly|Raw)
+	if err == ErrKeyExists {
+		return false, mt, nil
+	}
+	return (err == nil), mt, err
 }
 
 // Append appends raw data to an existing item.
@@ -703,6 +831,7 @@ func (b *Bucket) GetMeta(k string, flags *int, expiry *int, cas *uint64, seqNo *
 		if len(res.Extras) >= 20 {
 			*seqNo = uint64(binary.BigEndian.Uint64(res.Extras[12:]))
 		}
+
 		return nil
 	})
 

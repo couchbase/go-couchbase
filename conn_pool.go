@@ -2,8 +2,10 @@ package couchbase
 
 import (
 	"errors"
+	"log"
 	"time"
 
+	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
 )
 
@@ -58,6 +60,13 @@ func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 
 	if TCPKeepalive == true {
 		conn.SetKeepAliveOptions(time.Duration(TCPKeepaliveInterval) * time.Second)
+	}
+
+	if EnableMutationToken == true {
+		res, err := conn.EnableMutationToken()
+		if err != nil || res.Status != gomemcached.SUCCESS {
+			log.Printf("Warning: Unable to enable mutation token %v", err)
+		}
 	}
 
 	if gah, ok := ah.(GenericMcdAuthHandler); ok {
