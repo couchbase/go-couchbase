@@ -18,19 +18,19 @@ import (
 type UprFeed struct {
 	C <-chan *memcached.UprEvent
 
-	bucket       *Bucket
-	nodeFeeds    map[string]*FeedInfo     // The UPR feeds of the individual nodes
-	output       chan *memcached.UprEvent // Same as C but writeably-typed
-	outputClosed bool
-	quit         chan bool
-	name         string // name of this UPR feed
-	sequence     uint32 // sequence number for this feed
-	connected    bool
-	killSwitch   chan bool
-	closing      bool
-	wg           sync.WaitGroup
+	bucket          *Bucket
+	nodeFeeds       map[string]*FeedInfo     // The UPR feeds of the individual nodes
+	output          chan *memcached.UprEvent // Same as C but writeably-typed
+	outputClosed    bool
+	quit            chan bool
+	name            string // name of this UPR feed
+	sequence        uint32 // sequence number for this feed
+	connected       bool
+	killSwitch      chan bool
+	closing         bool
+	wg              sync.WaitGroup
 	dcp_buffer_size uint32
-	data_chan_size int
+	data_chan_size  int
 }
 
 // UprFeed from a single connection
@@ -105,20 +105,21 @@ func (b *Bucket) GetFailoverLogs(vBuckets []uint16) (FailoverLog, error) {
 func (b *Bucket) StartUprFeed(name string, sequence uint32) (*UprFeed, error) {
 	return b.StartUprFeedWithConfig(name, sequence, 10, DEFAULT_WINDOW_SIZE)
 }
+
 // StartUprFeed creates and starts a new Upr feed
 // No data will be sent on the channel unless vbuckets streams are requested
 func (b *Bucket) StartUprFeedWithConfig(name string, sequence uint32, data_chan_size int, dcp_buffer_size uint32) (*UprFeed, error) {
 
 	feed := &UprFeed{
-		bucket:     b,
-		output:     make(chan *memcached.UprEvent, data_chan_size),
-		quit:       make(chan bool),
-		nodeFeeds:  make(map[string]*FeedInfo, 0),
-		name:       name,
-		sequence:   sequence,
-		killSwitch: make(chan bool),
+		bucket:          b,
+		output:          make(chan *memcached.UprEvent, data_chan_size),
+		quit:            make(chan bool),
+		nodeFeeds:       make(map[string]*FeedInfo, 0),
+		name:            name,
+		sequence:        sequence,
+		killSwitch:      make(chan bool),
 		dcp_buffer_size: dcp_buffer_size,
-		data_chan_size: data_chan_size,
+		data_chan_size:  data_chan_size,
 	}
 
 	err := feed.connectToNodes()

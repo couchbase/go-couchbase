@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/couchbase/gomemcached/client"
 	"github.com/couchbase/go-couchbase"
+	"github.com/couchbase/gomemcached/client"
 )
 
 var poolName = flag.String("pool", "default", "Pool name")

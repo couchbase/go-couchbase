@@ -2,11 +2,12 @@ package main
 
 import (
 	"fmt"
-	"github.com/couchbase/gomemcached"
-	"github.com/couchbase/gomemcached/client"
-	"github.com/couchbase/go-couchbase"
 	"log"
 	"time"
+
+	"github.com/couchbase/go-couchbase"
+	"github.com/couchbase/gomemcached"
+	"github.com/couchbase/gomemcached/client"
 )
 
 var vbcount = 2
