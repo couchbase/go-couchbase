@@ -575,6 +575,7 @@ func (d *bucketDataSource) refreshWorkers() {
 	// worker needs to provide.
 	workers := make(map[string]chan []uint16)
 
+OUTER_LOOP:
 	for _ = range d.refreshWorkersCh { // Wait for a refresh kick.
 		atomic.AddUint64(&d.stats.TotRefreshWorkers, 1)
 
@@ -605,6 +606,7 @@ func (d *bucketDataSource) refreshWorkers() {
 				d.receiver.OnError(fmt.Errorf("refreshWorkers"+
 					" saw bad vbucketID: %d, vbm: %#v",
 					vbucketID, vbm))
+				d.Kick("bad-vbm")
 				continue
 			}
 			serverIdxs := vbm.VBucketMap[vbucketID]
@@ -658,7 +660,13 @@ func (d *bucketDataSource) refreshWorkers() {
 				d.workerStart(server, workerCh)
 			}
 
-			workerCh <- serverVBucketIDs
+			select {
+			case <-d.stopCh:
+				break OUTER_LOOP
+			case workerCh <- serverVBucketIDs:
+				// NOOP.
+			}
+
 			atomic.AddUint64(&d.stats.TotRefreshWorkersKickWorker, 1)
 		}
 	}
