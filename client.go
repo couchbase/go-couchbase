@@ -678,8 +678,8 @@ func (b *Bucket) Set(k string, exp int, v interface{}) error {
 }
 
 // Set a value in this bucket with with flags
-func (b *Bucket) SetWithMeta(k string, flags int, exp int, v interface{}) error {
-	return b.Write(k, flags, exp, v, 0)
+func (b *Bucket) SetWithMeta(k string, flags int, exp int, v interface{}) (*MutationToken, error) {
+	return b.WriteWithMT(k, flags, exp, v, 0)
 }
 
 // SetRaw sets a value in this bucket without JSON encoding it.

@@ -147,6 +147,11 @@ type VBucketServerMap struct {
 	VBucketMap    [][]int  `json:"vBucketMap"`
 }
 
+type DurablitySettings struct {
+	Persist PersistTo
+	Observe ObserveTo
+}
+
 // Bucket is the primary entry point for most data operations.
 type Bucket struct {
 	sync.Mutex
@@ -179,7 +184,8 @@ type Bucket struct {
 	vBucketServerMap unsafe.Pointer // *VBucketServerMap
 	nodeList         unsafe.Pointer // *[]Node
 	commonSufix      string
-	ah               AuthHandler // auth handler
+	ah               AuthHandler        // auth handler
+	ds               *DurablitySettings // Durablity Settings for this bucket
 }
 
 // PoolServices is all the bucket-independent services in a pool
