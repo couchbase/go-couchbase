@@ -50,7 +50,6 @@ func doHTTPRequestForUpdate(req *http.Request) (*http.Response, error) {
 	}
 
 	if err != nil {
-		log.Printf(" HTTP request returned error %v", err)
 		return nil, err
 	}
 
