@@ -223,6 +223,9 @@ type BucketDataSourceStats struct {
 	TotRefreshClusterBucketUUIDErr                 uint64
 	TotRefreshClusterVBMNilErr                     uint64
 	TotRefreshClusterKickWorkers                   uint64
+	TotRefreshClusterKickWorkersClosed             uint64
+	TotRefreshClusterKickWorkersStopped            uint64
+	TotRefreshClusterKickWorkersDeduped            uint64
 	TotRefreshClusterKickWorkersOk                 uint64
 	TotRefreshClusterStopped                       uint64
 	TotRefreshClusterAwokenClosed                  uint64
@@ -277,6 +280,9 @@ type BucketDataSourceStats struct {
 	TotWorkerHandleRecv    uint64
 	TotWorkerHandleRecvErr uint64
 	TotWorkerHandleRecvOk  uint64
+
+	TotWorkerCleanup     uint64
+	TotWorkerCleanupDone uint64
 
 	TotRefreshWorker     uint64
 	TotRefreshWorkerDone uint64
@@ -525,22 +531,46 @@ func (d *bucketDataSource) refreshCluster() int {
 		d.m.Unlock()
 
 		for {
+			refreshReason := ""
+			refreshAlive := true
+			wasKicked := 0
+
 			atomic.AddUint64(&d.stats.TotRefreshClusterKickWorkers, 1)
-			d.refreshWorkersCh <- "new-vbm" // Kick the workers to refresh.
+		REFRESH_WORKERS_LOOP:
+			for {
+				select {
+				case d.refreshWorkersCh <- "new-vbm": // Kick workers to refresh.
+					break REFRESH_WORKERS_LOOP
+
+				case <-d.stopCh:
+					atomic.AddUint64(&d.stats.TotRefreshClusterKickWorkersStopped, 1)
+					return -1
+
+				case refreshReason, refreshAlive = <-d.refreshClusterCh:
+					if !refreshAlive || refreshReason == "CLOSE" {
+						atomic.AddUint64(&d.stats.TotRefreshClusterKickWorkersClosed, 1)
+						return -1
+					}
+
+					// Remember we were kicked while we were trying to kick the workers.
+					atomic.AddUint64(&d.stats.TotRefreshClusterKickWorkersDeduped, 1)
+					wasKicked += 1
+				}
+			}
 			atomic.AddUint64(&d.stats.TotRefreshClusterKickWorkersOk, 1)
 
-			var reason string
-			var alive bool
-
-			select {
-			case <-d.stopCh:
-				atomic.AddUint64(&d.stats.TotRefreshClusterStopped, 1)
-				return -1
-
-			case reason, alive = <-d.refreshClusterCh: // Wait for kick.
-				if !alive || reason == "CLOSE" {
-					atomic.AddUint64(&d.stats.TotRefreshClusterAwokenClosed, 1)
+			if wasKicked <= 0 {
+				select {
+				case <-d.stopCh:
+					atomic.AddUint64(&d.stats.TotRefreshClusterStopped, 1)
 					return -1
+
+				// Wait for kick.
+				case refreshReason, refreshAlive = <-d.refreshClusterCh:
+					if !refreshAlive || refreshReason == "CLOSE" {
+						atomic.AddUint64(&d.stats.TotRefreshClusterAwokenClosed, 1)
+						return -1
+					}
 				}
 			}
 
@@ -552,7 +582,7 @@ func (d *bucketDataSource) refreshCluster() int {
 			// If it's only that a new worker appeared, then we can
 			// keep with this inner loop and not have to restart all
 			// the way at the top / retrieve a new cluster map, etc.
-			if reason != "new-worker" {
+			if refreshReason != "new-worker" {
 				atomic.AddUint64(&d.stats.TotRefreshClusterAwokenRestart, 1)
 				return 1 // Assume progress, so restart at first serverURL.
 			}
@@ -800,13 +830,18 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 	recvEndCh := make(chan struct{})
 
 	cleanup := func(progress int, err error) int {
+		atomic.AddUint64(&d.stats.TotWorkerCleanup, 1)
+
 		if err != nil {
 			d.receiver.OnError(err)
 		}
+
 		go func() {
 			<-recvEndCh
 			close(sendCh)
 		}()
+
+		atomic.AddUint64(&d.stats.TotWorkerCleanupDone, 1)
 		return progress
 	}
 
