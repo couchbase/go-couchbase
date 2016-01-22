@@ -52,6 +52,9 @@ type TestMutation struct {
 }
 
 type TestReceiver struct {
+	onErrorCh       chan []string
+	onGetMetaDataCh chan []string
+
 	m    sync.Mutex
 	errs []error
 	muts []*TestMutation
@@ -68,6 +71,10 @@ type TestReceiver struct {
 func (r *TestReceiver) OnError(err error) {
 	r.m.Lock()
 	defer r.m.Unlock()
+
+	if r.onErrorCh != nil {
+		r.onErrorCh <- []string{"TestReceiver.OnError"}
+	}
 
 	// fmt.Printf("  testName: %s: %v\n", r.testName, err)
 	r.errs = append(r.errs, err)
@@ -122,6 +129,10 @@ func (r *TestReceiver) SetMetaData(vbucketID uint16, value []byte) error {
 func (r *TestReceiver) GetMetaData(vbucketID uint16) (value []byte, lastSeq uint64, err error) {
 	r.m.Lock()
 	defer r.m.Unlock()
+
+	if r.onGetMetaDataCh != nil {
+		r.onGetMetaDataCh <- []string{"TestReceiver.GetMetaData"}
+	}
 
 	r.numGetMetaDatas++
 	rv := []byte(nil)
@@ -594,7 +605,10 @@ func TestConnectError(t *testing.T) {
 	bucketUUID := ""
 	vbucketIDs := []uint16{0, 1, 2, 3}
 	var auth couchbase.AuthHandler
-	receiver := &TestReceiver{testName: "TestBucketDataSourceStartVBSM"}
+	receiver := &TestReceiver{
+		testName:  "TestBucketDataSourceStartVBSM",
+		onErrorCh: make(chan []string),
+	}
 	options := &BucketDataSourceOptions{
 		ConnectBucket: connectBucket,
 		Connect:       connect,
@@ -633,6 +647,10 @@ func TestConnectError(t *testing.T) {
 	if !reflect.DeepEqual(c, []string{"tcp", "serverA"}) {
 		t.Errorf("expected connect params, got: %#v", c)
 	}
+	e, eok := <-receiver.onErrorCh
+	if e == nil || !eok {
+		t.Errorf("expected receiver.onErrorCh")
+	}
 	err = bds.Close()
 	if err != nil {
 		t.Errorf("expected clean Close(), got err: %v", err)
@@ -642,7 +660,7 @@ func TestConnectError(t *testing.T) {
 	defer receiver.m.Unlock()
 
 	if len(receiver.errs) != 1 {
-		t.Errorf("expected connect err")
+		t.Errorf("expected connect err, got: %d", len(receiver.errs))
 	}
 }
 
@@ -650,11 +668,16 @@ func TestConnThatAlwaysErrors(t *testing.T) {
 	var lastRWCM sync.Mutex
 	var lastRWC *TestRWC
 
+	rwcWriteCh := make(chan RWReq)
+
 	newFakeConn := func(dest string) io.ReadWriteCloser {
 		lastRWCM.Lock()
 		defer lastRWCM.Unlock()
 
-		lastRWC = &TestRWC{name: dest}
+		lastRWC = &TestRWC{
+			name:    dest,
+			writeCh: rwcWriteCh,
+		}
 		return lastRWC
 	}
 
@@ -673,8 +696,9 @@ func TestConnThatAlwaysErrors(t *testing.T) {
 		if protocol != "tcp" || dest != "serverA" {
 			t.Errorf("unexpected connect, protocol: %s, dest: %s", protocol, dest)
 		}
+		rv, err := memcached.Wrap(newFakeConn(dest))
 		connectCh <- []string{protocol, dest}
-		return memcached.Wrap(newFakeConn(dest))
+		return rv, err
 	}
 
 	serverURLs := []string{"serverA"}
@@ -720,6 +744,7 @@ func TestConnThatAlwaysErrors(t *testing.T) {
 	if !reflect.DeepEqual(c, []string{"tcp", "serverA"}) {
 		t.Errorf("expected connect params, got: %#v", c)
 	}
+	<-rwcWriteCh
 	err = bds.Close()
 	if err != nil {
 		t.Errorf("expected clean Close(), got err: %v", err)
@@ -786,15 +811,19 @@ func TestUPROpenStreamReq(t *testing.T) {
 		if protocol != "tcp" || dest != "serverA" {
 			t.Errorf("unexpected connect, protocol: %s, dest: %s", protocol, dest)
 		}
+		rv, err := memcached.Wrap(newFakeConn(dest))
 		connectCh <- []string{protocol, dest}
-		return memcached.Wrap(newFakeConn(dest))
+		return rv, err
 	}
 
 	serverURLs := []string{"serverA"}
 	bucketUUID := ""
 	vbucketIDs := []uint16{2}
 	var auth couchbase.AuthHandler
-	receiver := &TestReceiver{testName: "TestBucketDataSourceStartVBSM"}
+	receiver := &TestReceiver{
+		testName:        "TestBucketDataSourceStartVBSM",
+		onGetMetaDataCh: make(chan []string),
+	}
 	options := &BucketDataSourceOptions{
 		ConnectBucket: connectBucket,
 		Connect:       connect,
@@ -862,6 +891,12 @@ func TestUPROpenStreamReq(t *testing.T) {
 	reqR.resCh <- RWRes{n: len(reqR.buf), err: nil}
 
 	// ------------------------------------------------------------
+	e, eok := <-receiver.onGetMetaDataCh
+	if e == nil || !eok {
+		t.Errorf("expected receiver.onGetMetaDataCh")
+	}
+
+	// ------------------------------------------------------------
 	receiver.m.Lock()
 	if len(receiver.errs) != 0 {
 		t.Errorf("expected 0 errs, got: %v", receiver.errs)
@@ -870,7 +905,7 @@ func TestUPROpenStreamReq(t *testing.T) {
 		t.Errorf("expected 0 numSetMetaDatas, got: %#v", receiver)
 	}
 	if receiver.numGetMetaDatas != 1 {
-		t.Errorf("expected 0 numGetMetaDatas, got: %#v", receiver)
+		t.Errorf("expected 1 numGetMetaDatas, got: %#v", receiver)
 	}
 	if receiver.meta[2] != nil {
 		t.Errorf("expected nil meta for vbucket 2")
@@ -920,6 +955,12 @@ func TestUPROpenStreamReq(t *testing.T) {
 	reqR = <-rwc.readCh
 	copy(reqR.buf, res.Body)
 	reqR.resCh <- RWRes{n: len(reqR.buf), err: nil}
+
+	// ------------------------------------------------------------
+	e, eok = <-receiver.onGetMetaDataCh
+	if e == nil || !eok {
+		t.Errorf("expected receiver.onGetMetaDataCh")
+	}
 
 	// ------------------------------------------------------------
 	req = &gomemcached.MCRequest{
@@ -991,6 +1032,8 @@ func TestUPROpenStreamReq(t *testing.T) {
 	}
 	receiver.m.Unlock()
 
+	// ------------------------------------------------------------
+
 	req = &gomemcached.MCRequest{
 		Opcode:  gomemcached.UPR_MUTATION,
 		VBucket: 2,
@@ -1014,6 +1057,14 @@ func TestUPROpenStreamReq(t *testing.T) {
 	reqR.resCh <- RWRes{n: len(reqR.buf), err: nil}
 
 	runtime.Gosched()
+
+	// ------------------------------------------------------------
+	e, eok = <-receiver.onGetMetaDataCh
+	if e == nil || !eok {
+		t.Errorf("expected receiver.onGetMetaDataCh")
+	}
+
+	// ------------------------------------------------------------
 
 	receiver.m.Lock()
 	if len(receiver.muts) != 1 {
@@ -1112,6 +1163,10 @@ func TestUPROpenStreamReq(t *testing.T) {
 	if receiver.meta[2] == nil {
 		t.Errorf("expected meta for vbucket 2")
 	}
+
+	close(receiver.onGetMetaDataCh)
+	receiver.onGetMetaDataCh = nil
+
 	receiver.m.Unlock()
 
 	vbmd, lastSeq, err := bds.(*bucketDataSource).getVBucketMetaData(2)
