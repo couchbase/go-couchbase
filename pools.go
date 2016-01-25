@@ -202,6 +202,14 @@ type NodeServices struct {
 	ThisNode bool           `json:"thisNode"`
 }
 
+type BucketNotFoundError struct {
+    bucket string
+}
+
+func (e *BucketNotFoundError) Error() string {
+    return fmt.Sprint("No bucket named " + e.bucket)
+}
+
 type BucketAuth struct {
 	name    string
 	saslPwd string
@@ -832,7 +840,7 @@ func bucketFinalizer(b *Bucket) {
 func (p *Pool) GetBucket(name string) (*Bucket, error) {
 	rv, ok := p.BucketMap[name]
 	if !ok {
-		return nil, errors.New("No bucket named " + name)
+		return nil, &BucketNotFoundError{bucket:name}
 	}
 	runtime.SetFinalizer(&rv, bucketFinalizer)
 	err := rv.Refresh()
@@ -846,7 +854,7 @@ func (p *Pool) GetBucket(name string) (*Bucket, error) {
 func (p *Pool) GetBucketWithAuth(bucket, username, password string) (*Bucket, error) {
 	rv, ok := p.BucketMap[bucket]
 	if !ok {
-		return nil, errors.New("No bucket named " + bucket)
+		return nil, &BucketNotFoundError{bucket:bucket}
 	}
 	runtime.SetFinalizer(&rv, bucketFinalizer)
 	rv.ah = newBucketAuth(username, password, bucket)
