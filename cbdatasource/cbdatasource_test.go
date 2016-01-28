@@ -26,6 +26,19 @@ import (
 	"github.com/couchbase/gomemcached/client"
 )
 
+// NOTE: Some of the tests are single-threaded, and will be skipped
+// when run with GOMAXPROCS > 1.  To run them all, try using...
+//
+//    go test -cpu 1
+//
+func checkMaxProcs1(t *testing.T) bool {
+	if runtime.GOMAXPROCS(-1) > 1 {
+		t.Skip("skipping test; GOMAXPROCS > 1, see checkMaxProcs1()")
+		return false
+	}
+	return true
+}
+
 type TestBucket struct {
 	uuid     string
 	vbsm     *couchbase.VBucketServerMap
@@ -329,7 +342,11 @@ func TestBucketDataSourceStatsAtomicCopyTo(t *testing.T) {
 	}
 }
 
-func TestImmediateStartClose(t *testing.T) {
+func TestImmediateStartCloseMAXPROCS1(t *testing.T) {
+	if !checkMaxProcs1(t) {
+		return
+	}
+
 	connectBucket := func(serverURL, poolName, bucketName string,
 		auth couchbase.AuthHandler) (Bucket, error) {
 		return nil, fmt.Errorf("fake connectBucket err")
@@ -419,7 +436,11 @@ func TestImmediateStartClose(t *testing.T) {
 	}
 }
 
-func TestErrOnConnectBucket(t *testing.T) {
+func TestErrOnConnectBucketMAXPROCS1(t *testing.T) {
+	if !checkMaxProcs1(t) {
+		return
+	}
+
 	theErr := fmt.Errorf("fake connectBucket err")
 
 	connectBucket := func(serverURL, poolName, bucketName string,
@@ -470,7 +491,11 @@ func TestErrOnConnectBucket(t *testing.T) {
 	}
 }
 
-func TestWrongBucketUUID(t *testing.T) {
+func TestWrongBucketUUIDMAXPROCS1(t *testing.T) {
+	if !checkMaxProcs1(t) {
+		return
+	}
+
 	connectBucket := func(serverURL, poolName, bucketName string,
 		auth couchbase.AuthHandler) (Bucket, error) {
 		return &TestBucket{vbsm: &couchbase.VBucketServerMap{}}, nil
@@ -780,7 +805,11 @@ func TestConnThatAlwaysErrors(t *testing.T) {
 	}
 }
 
-func TestUPROpenStreamReq(t *testing.T) {
+func TestUPROpenStreamReqMAXPROCS1(t *testing.T) {
+	if !checkMaxProcs1(t) {
+		return
+	}
+
 	var lastRWCM sync.Mutex
 	var lastRWC *TestRWC
 
