@@ -1481,14 +1481,16 @@ func ConnectBucket(serverURL, poolName, bucketName string,
 	auth couchbase.AuthHandler) (Bucket, error) {
 	var bucket *couchbase.Bucket
 	var err error
+	var client couchbase.Client
+	var pool couchbase.Pool
 
 	if auth != nil {
-		client, err := couchbase.ConnectWithAuth(serverURL, auth)
+		client, err = couchbase.ConnectWithAuth(serverURL, auth)
 		if err != nil {
 			return nil, err
 		}
 
-		pool, err := client.GetPool(poolName)
+		pool, err = client.GetPool(poolName)
 		if err != nil {
 			return nil, err
 		}
