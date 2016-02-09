@@ -19,6 +19,7 @@ import (
 	"sync"
 	"unsafe"
 
+	"github.com/couchbase/gomemcached"        // package name is 'gomemcached'
 	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
 )
 
@@ -341,6 +342,51 @@ func (b Bucket) getConnectionToVBucket(vb uint32) (*memcached.Client, *connectio
 		}
 		// If conn pool was closed, because another goroutine refreshed the vbucket map, retry...
 	}
+}
+
+// To get random documents, we need to cover all the nodes, so select
+// a connection at random.
+
+func (b Bucket) getRandomConnection() (*memcached.Client, *connectionPool, error) {
+	for {
+		var currentPool = 0
+		pools := b.getConnPools()
+		if len(pools) == 0 {
+			return nil, nil, fmt.Errorf("No connection pool found")
+		} else if len(pools) > 1 { // choose a random connection
+			currentPool = rand.Intn(len(pools))
+		} // if only one pool, currentPool defaults to 0, i.e., the only pool
+
+		// get the pool
+		pool := pools[currentPool]
+		conn, err := pool.Get()
+		if err != errClosedPool {
+			return conn, pool, err
+		}
+
+		// If conn pool was closed, because another goroutine refreshed the vbucket map, retry...
+	}
+}
+
+//
+// Get a random document from a bucket. Since the bucket may be distributed
+// across nodes, we must first select a random connection, and then use the
+// Client.GetRandomDoc() call to get a random document from that node.
+//
+
+func (b Bucket) GetRandomDoc() (*gomemcached.MCResponse, error) {
+	// get a connection from the pool
+	conn, pool, err := b.getRandomConnection()
+
+	if err != nil {
+		return nil, err
+	}
+
+	// get a randomm document from the connection
+	doc, err := conn.GetRandomDoc()
+	// need to return the connection to the pool
+	pool.Return(conn)
+	return doc, err
 }
 
 func (b Bucket) getMasterNode(i int) string {
