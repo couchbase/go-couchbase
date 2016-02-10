@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
+	"github.com/couchbase/goutils/logging"
 )
 
 // A UprFeed streams mutation events from a bucket.
@@ -79,7 +80,7 @@ func (b *Bucket) GetFailoverLogs(vBuckets []uint16) (FailoverLog, error) {
 
 		mc, err := serverConn.Get()
 		if err != nil {
-			log.Printf("No Free connections for vblist %v", vbList)
+			logging.Infof("No Free connections for vblist %v", vbList)
 			return nil, fmt.Errorf("No Free connections for host %s",
 				serverConn.host)
 
@@ -229,13 +230,13 @@ func (feed *UprFeed) run() {
 		}
 
 		// On error, try to refresh the bucket in case the list of nodes changed:
-		log.Printf("go-couchbase: UPR connection lost; reconnecting to bucket %q in %v",
+		logging.Infof("go-couchbase: UPR connection lost; reconnecting to bucket %q in %v",
 			feed.bucket.Name, retryInterval)
 
 		if err := feed.bucket.Refresh(); err != nil {
 			// if we fail to refresh the bucket, exit the feed
 			// MB-14917
-			log.Printf("Unable to refresh bucket %s ", err.Error())
+			logging.Infof("Unable to refresh bucket %s ", err.Error())
 			close(feed.output)
 			feed.outputClosed = true
 			feed.closeNodeFeeds()
@@ -246,7 +247,7 @@ func (feed *UprFeed) run() {
 		// user will have to reconnect the stream
 		err := feed.connectToNodes()
 		if err != nil {
-			log.Printf("Unable to connect to nodes..exit ")
+			logging.Infof("Unable to connect to nodes..exit ")
 			close(feed.output)
 			feed.outputClosed = true
 			feed.closeNodeFeeds()
@@ -287,7 +288,7 @@ func (feed *UprFeed) connectToNodes() (err error) {
 		}
 		singleFeed, err = serverConn.StartUprFeed(name, feed.sequence, feed.dcp_buffer_size, feed.data_chan_size)
 		if err != nil {
-			log.Printf("go-couchbase: Error connecting to upr feed of %s: %v", serverConn.host, err)
+			logging.Errorf("go-couchbase: Error connecting to upr feed of %s: %v", serverConn.host, err)
 			feed.closeNodeFeeds()
 			return
 		}
@@ -321,7 +322,7 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 			if feed.outputClosed != true && feed.closing != true {
 				panic(r)
 			} else {
-				log.Printf("Panic is recovered. Since feed is closed, exit gracefully")
+				logging.Errorf("Panic is recovered. Since feed is closed, exit gracefully")
 
 			}
 		}
@@ -336,28 +337,28 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 		case event, ok := <-singleFeed.C:
 			if !ok {
 				if singleFeed.Error != nil {
-					log.Printf("go-couchbase: Upr feed from %s failed: %v", host, singleFeed.Error)
+					logging.Errorf("go-couchbase: Upr feed from %s failed: %v", host, singleFeed.Error)
 				}
 				killSwitch <- true
 				return
 			}
 			if feed.outputClosed == true {
 				// someone closed the node feed
-				log.Printf("Node need closed, returning from forwardUprEvent")
+				logging.Infof("Node need closed, returning from forwardUprEvent")
 				return
 			}
 			feed.output <- event
 			if event.Status == gomemcached.NOT_MY_VBUCKET {
-				log.Printf(" Got a not my vbucket error !! ")
+				logging.Infof(" Got a not my vbucket error !! ")
 				if err := feed.bucket.Refresh(); err != nil {
-					log.Printf("Unable to refresh bucket %s ", err.Error())
+					logging.Errorf("Unable to refresh bucket %s ", err.Error())
 					feed.closeNodeFeeds()
 					return
 				}
 				// this will only connect to nodes that are not connected or changed
 				// user will have to reconnect the stream
 				if err := feed.connectToNodes(); err != nil {
-					log.Printf("Unable to connect to nodes %s", err.Error())
+					logging.Errorf("Unable to connect to nodes %s", err.Error())
 					return
 				}
 
@@ -368,7 +369,7 @@ func (feed *UprFeed) forwardUprEvents(nodeFeed *FeedInfo, killSwitch chan bool, 
 
 func (feed *UprFeed) closeNodeFeeds() {
 	for _, f := range feed.nodeFeeds {
-		log.Printf(" Sending close to forwardUprEvent ")
+		logging.Infof(" Sending close to forwardUprEvent ")
 		close(f.quit)
 		f.uprFeed.Close()
 	}

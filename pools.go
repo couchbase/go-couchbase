@@ -7,9 +7,9 @@ import (
 	"errors"
 	"fmt"
 	atomic "github.com/couchbase/go-couchbase/platform"
+	"github.com/couchbase/goutils/logging"
 	"io"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net/http"
 	"net/url"
@@ -203,11 +203,11 @@ type NodeServices struct {
 }
 
 type BucketNotFoundError struct {
-    bucket string
+	bucket string
 }
 
 func (e *BucketNotFoundError) Error() string {
-    return fmt.Sprint("No bucket named " + e.bucket)
+	return fmt.Sprint("No bucket named " + e.bucket)
 }
 
 type BucketAuth struct {
@@ -263,8 +263,8 @@ func (b Bucket) HealthyNodes() []Node {
 			nodes = append(nodes, n)
 		}
 		if n.Status != "healthy" { // log non-healthy node
-			log.Printf("Non-healthy node; node details:")
-			log.Printf("Hostname=%v, Status=%v, CouchAPIBase=%v, ThisNode=%v", n.Hostname, n.Status, n.CouchAPIBase, n.ThisNode)
+			logging.Infof("Non-healthy node; node details:")
+			logging.Infof("Hostname=%v, Status=%v, CouchAPIBase=%v, ThisNode=%v", n.Hostname, n.Status, n.CouchAPIBase, n.ThisNode)
 		}
 	}
 
@@ -832,7 +832,7 @@ func (b *Bucket) Close() {
 
 func bucketFinalizer(b *Bucket) {
 	if b.connPools != nil {
-		log.Printf("Warning: Finalizing a bucket with active connections.")
+		logging.Warnf("Finalizing a bucket with active connections.")
 	}
 }
 
@@ -840,7 +840,7 @@ func bucketFinalizer(b *Bucket) {
 func (p *Pool) GetBucket(name string) (*Bucket, error) {
 	rv, ok := p.BucketMap[name]
 	if !ok {
-		return nil, &BucketNotFoundError{bucket:name}
+		return nil, &BucketNotFoundError{bucket: name}
 	}
 	runtime.SetFinalizer(&rv, bucketFinalizer)
 	err := rv.Refresh()
@@ -854,7 +854,7 @@ func (p *Pool) GetBucket(name string) (*Bucket, error) {
 func (p *Pool) GetBucketWithAuth(bucket, username, password string) (*Bucket, error) {
 	rv, ok := p.BucketMap[bucket]
 	if !ok {
-		return nil, &BucketNotFoundError{bucket:bucket}
+		return nil, &BucketNotFoundError{bucket: bucket}
 	}
 	runtime.SetFinalizer(&rv, bucketFinalizer)
 	rv.ah = newBucketAuth(username, password, bucket)

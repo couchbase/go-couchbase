@@ -2,7 +2,7 @@ package couchbase
 
 import (
 	"fmt"
-	"log"
+	"github.com/couchbase/goutils/logging"
 	"sync"
 )
 
@@ -102,7 +102,7 @@ func (b *Bucket) ObserveAndPersistPoll(vb uint16, vbuuid uint64, seqNo uint64) (
 		return fmt.Errorf("Not enough healthy nodes in the cluster"), false
 	}
 
-	log.Printf("Node list %v", nodes)
+	logging.Infof("Node list %v", nodes)
 
 	if b.ds.Observe >= ObserveReplicateOne {
 		// create a job for each host
@@ -178,7 +178,7 @@ func (b *Bucket) ObserveAndPersistPoll(vb uint16, vbuuid uint64, seqNo uint64) (
 			}
 
 		case Err := <-errChan:
-			log.Printf("Error in Observe/Persist %v", Err.err)
+			logging.Errorf("Error in Observe/Persist %v", Err.err)
 			err = fmt.Errorf("Error in Observe/Persist job %v", Err.err)
 			nj--
 			ObservePersistPool.Put(Err.job)
@@ -232,7 +232,7 @@ func (b *Bucket) OPJobPoll() {
 
 			job.resultChan <- job
 		case <-OPJobDone:
-			log.Printf("Observe Persist Poller exitting")
+			logging.Infof("Observe Persist Poller exitting")
 			ok = false
 		}
 	}
@@ -243,7 +243,7 @@ func (b *Bucket) GetNodeList(vb uint16) []string {
 
 	vbm := b.VBServerMap()
 	if len(vbm.VBucketMap) < int(vb) {
-		log.Printf("vbmap smaller than vblist")
+		logging.Infof("vbmap smaller than vblist")
 		return nil
 	}
 

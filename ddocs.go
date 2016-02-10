@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"github.com/couchbase/goutils/logging"
 	"io/ioutil"
-	"log"
 	"net/http"
 )
 
@@ -124,7 +124,7 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 
 		lastNode = selectedNode
 
-		log.Printf(" Trying with selected node %d", selectedNode)
+		logging.Infof(" Trying with selected node %d", selectedNode)
 		j, err := json.Marshal(value)
 		if err != nil {
 			return err
@@ -149,7 +149,7 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 			body, _ := ioutil.ReadAll(res.Body)
 			Err = fmt.Errorf("error installing view: %v / %s",
 				res.Status, body)
-			log.Printf(" Error in PutDDOC %v. Retrying...", Err)
+			logging.Errorf(" Error in PutDDOC %v. Retrying...", Err)
 			res.Body.Close()
 			b.Refresh()
 			continue
@@ -182,7 +182,7 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 		}
 
 		lastNode = selectedNode
-		log.Printf(" Trying with selected node %d", selectedNode)
+		logging.Infof(" Trying with selected node %d", selectedNode)
 
 		req, err := http.NewRequest("GET", ddocU, nil)
 		if err != nil {
@@ -202,7 +202,7 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 			body, _ := ioutil.ReadAll(res.Body)
 			Err = fmt.Errorf("error reading view: %v / %s",
 				res.Status, body)
-			log.Printf(" Error in GetDDOC %v Retrying...", Err)
+			logging.Errorf(" Error in GetDDOC %v Retrying...", Err)
 			b.Refresh()
 			res.Body.Close()
 			continue
@@ -240,7 +240,7 @@ func (b *Bucket) DeleteDDoc(docname string) error {
 		}
 
 		lastNode = selectedNode
-		log.Printf(" Trying with selected node %d", selectedNode)
+		logging.Infof(" Trying with selected node %d", selectedNode)
 
 		req, err := http.NewRequest("DELETE", ddocU, nil)
 		if err != nil {
@@ -259,7 +259,7 @@ func (b *Bucket) DeleteDDoc(docname string) error {
 		if res.StatusCode != 200 {
 			body, _ := ioutil.ReadAll(res.Body)
 			Err = fmt.Errorf("error deleting view : %v / %s", res.Status, body)
-			log.Printf(" Error in DeleteDDOC %v. Retrying ... ", Err)
+			logging.Errorf(" Error in DeleteDDOC %v. Retrying ... ", Err)
 			b.Refresh()
 			res.Body.Close()
 			continue

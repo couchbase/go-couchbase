@@ -3,9 +3,9 @@ package couchbase
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/couchbase/goutils/logging"
 	"io"
 	"io/ioutil"
-	"log"
 	"math/rand"
 	"net"
 	"net/http"
@@ -63,7 +63,7 @@ func (b *Bucket) RunBucketUpdater(notify NotifyFn) {
 			if notify != nil {
 				notify(b.Name, err)
 			}
-			log.Printf(" Bucket Updater exited with err %v", err)
+			logging.Errorf(" Bucket Updater exited with err %v", err)
 		}
 	}()
 }
@@ -93,7 +93,7 @@ func (b *Bucket) UpdateBucket() error {
 	for {
 
 		if failures == MAX_RETRY_COUNT {
-			log.Printf(" Maximum failures reached. Exiting loop...")
+			logging.Errorf(" Maximum failures reached. Exiting loop...")
 			return fmt.Errorf("Max failures reached. Last Error %v", returnErr)
 		}
 
@@ -106,7 +106,7 @@ func (b *Bucket) UpdateBucket() error {
 		node := nodes[(startNode)%len(nodes)]
 
 		streamUrl := fmt.Sprintf("http://%s/pools/default/bucketsStreaming/%s", node.Hostname, b.Name)
-		log.Printf(" Trying with %s", streamUrl)
+		logging.Infof(" Trying with %s", streamUrl)
 		req, err := http.NewRequest("GET", streamUrl, nil)
 		if err != nil {
 			return err
@@ -124,7 +124,7 @@ func (b *Bucket) UpdateBucket() error {
 
 		if res.StatusCode != 200 {
 			bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
-			log.Printf("Failed to connect to host, unexpected status code: %v. Body %s", res.StatusCode, bod)
+			logging.Errorf("Failed to connect to host, unexpected status code: %v. Body %s", res.StatusCode, bod)
 			res.Body.Close()
 			returnErr = fmt.Errorf("Failed to connect to host. Status %v Body %s", res.StatusCode, bod)
 			failures++
@@ -138,7 +138,7 @@ func (b *Bucket) UpdateBucket() error {
 
 			err := dec.Decode(&tmpb)
 			if err != nil {
-				log.Printf(" Unable to decode response %v", err)
+				logging.Errorf(" Unable to decode response %v", err)
 				returnErr = err
 				res.Body.Close()
 				break
@@ -186,7 +186,7 @@ func (b *Bucket) UpdateBucket() error {
 			atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJSON))
 			b.Unlock()
 
-			log.Printf("Got new configuration for bucket %s", b.Name)
+			logging.Infof("Got new configuration for bucket %s", b.Name)
 
 		}
 		// we are here because of an error

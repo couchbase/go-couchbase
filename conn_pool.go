@@ -2,7 +2,7 @@ package couchbase
 
 import (
 	"errors"
-	"log"
+	"github.com/couchbase/goutils/logging"
 	"time"
 
 	"github.com/couchbase/gomemcached"
@@ -65,7 +65,7 @@ func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 	if EnableMutationToken == true {
 		res, err := conn.EnableMutationToken()
 		if err != nil || res.Status != gomemcached.SUCCESS {
-			log.Printf("Warning: Unable to enable mutation token %v", err)
+			logging.Warnf("Unable to enable mutation token %v", err)
 		}
 	}
 

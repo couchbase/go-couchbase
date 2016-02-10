@@ -29,7 +29,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log"
 	"runtime"
 	"strings"
 	"sync"
@@ -37,6 +36,7 @@ import (
 
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
+	"github.com/couchbase/goutils/logging"
 )
 
 // Mutation Token
@@ -57,7 +57,7 @@ func slowLog(startTime time.Time, format string, args ...interface{}) {
 	if elapsed := time.Now().Sub(startTime); elapsed > SlowServerCallWarningThreshold {
 		pc, _, _, _ := runtime.Caller(2)
 		caller := runtime.FuncForPC(pc).Name()
-		log.Printf("go-couchbase: "+format+" in "+caller+" took "+elapsed.String(), args...)
+		logging.Infof("go-couchbase: "+format+" in "+caller+" took "+elapsed.String(), args...)
 	}
 }
 
@@ -213,7 +213,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 
 		if len(b.VBServerMap().VBucketMap) < int(vb) {
 			//fatal
-			log.Printf("go-couchbase: vbmap smaller than requested vbucket number. vb %d vbmap len %d", vb, len(b.VBServerMap().VBucketMap))
+			logging.Errorf("go-couchbase: vbmap smaller than requested vbucket number. vb %d vbmap len %d", vb, len(b.VBServerMap().VBucketMap))
 			err := fmt.Errorf("vbmap smaller than requested vbucket")
 			ech <- err
 			return
@@ -224,7 +224,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 
 		if masterID < 0 {
 			// fatal
-			log.Printf("No master node available for vb %d", vb)
+			logging.Errorf("No master node available for vb %d", vb)
 			err := fmt.Errorf("No master node available for vb %d", vb)
 			ech <- err
 			return
@@ -237,14 +237,14 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 			conn, err := pool.Get()
 			if err != nil {
 				if isAuthError(err) {
-					log.Printf(" Fatal Auth Error %v", err)
+					logging.Errorf(" Fatal Auth Error %v", err)
 					ech <- err
 					return err
 				} else if isConnError(err) {
 					// for a connection error, refresh right away
 					b.Refresh()
 				}
-				log.Printf("Pool Get returned %v", err)
+				logging.Infof("Pool Get returned %v", err)
 				// retry
 				return nil
 			}
@@ -271,7 +271,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 					return nil
 				}
 
-				log.Printf("Connection Error: %s. Refreshing bucket", err.Error())
+				logging.Errorf("Connection Error: %s. Refreshing bucket", err.Error())
 				b.Refresh()
 				// retry
 				return nil
