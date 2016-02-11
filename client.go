@@ -29,7 +29,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"log"
+	"net/http"
 	"runtime"
 	"strings"
 	"sync"
@@ -1011,4 +1013,49 @@ func (b *Bucket) WaitForPersistence(k string, cas uint64, deletion bool) error {
 			return ErrTimeout
 		}
 	}
+}
+
+func (b *Bucket) Flush() error {
+	u := *b.pool.client.BaseURL
+	u.User = nil
+	u.Path = "/pools/default/buckets/" + b.Name + "/controller/doFlush"
+	req, err := http.NewRequest("POST", u.String(), nil)
+	if err != nil {
+		return err
+	}
+	maybeAddAuth(req, b.pool.client.ah)
+	res, err := HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
+		return fmt.Errorf("HTTP error %v deleting %q: %s", res.Status, u.String(), bod)
+	}
+	return nil
+}
+
+func (b *Bucket) DeleteBucket() error {
+	u := *b.pool.client.BaseURL
+	u.User = nil
+	u.Path = "/pools/default/buckets/" + b.Name
+	req, err := http.NewRequest("DELETE", u.String(), nil)
+	if err != nil {
+		return err
+	}
+	maybeAddAuth(req, b.pool.client.ah)
+	res, err := HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
+		return fmt.Errorf("HTTP error %v deleting %q: %s", res.Status, u.String(), bod)
+	}
+	if err := b.pool.refresh(); err != nil {
+		return err
+	}
+	return nil
 }
