@@ -200,12 +200,12 @@ func isConnError(err error) bool {
 }
 
 func (b *Bucket) doBulkGet(vb uint16, keys []string,
-	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
+	ch chan<- map[string][]*gomemcached.MCResponse, ech chan<- error) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to doBulkGet(%d, %d keys)", vb, len(keys))
 	}
 
-	rv := map[string]*gomemcached.MCResponse{}
+	rv := map[string][]*gomemcached.MCResponse{}
 
 	attempts := 0
 	done := false
@@ -249,7 +249,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 				return nil
 			}
 
-			m, err := conn.GetBulk(vb, keys)
+			m, err := conn.GetBulkAll(vb, keys)
 			pool.Return(conn)
 
 			switch err.(type) {
@@ -281,8 +281,11 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 				if len(rv) == 0 {
 					rv = m
 				} else {
-					for k, v := range m {
-						rv[k] = v
+					for k, av := range m {
+						rv[k] = make([]*gomemcached.MCResponse, 0, len(av))
+						for _, v := range av {
+							rv[k] = append(rv[k], v)
+						}
 					}
 				}
 			}
@@ -303,7 +306,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 }
 
 func (b *Bucket) processBulkGet(kdm map[uint16][]string,
-	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
+	ch chan<- map[string][]*gomemcached.MCResponse, ech chan<- error) {
 	wch := make(chan uint16)
 	defer close(ch)
 	defer close(ech)
@@ -355,19 +358,21 @@ func errorCollector(ech <-chan error, eout chan<- error) {
 	}
 }
 
-// GetBulk fetches multiple keys concurrently.
+// GetBulkDistinct fetches multiple keys concurrently.
 //
 // Unlike more convenient GETs, the entire response is returned in the
 // map for each key.  Keys that were not found will not be included in
-// the map.
-func (b *Bucket) GetBulk(keys []string) (map[string]*gomemcached.MCResponse, error) {
+// the map.  Returns one document for duplicate keys
+func (b *Bucket) GetBulkDistinct(keys []string) (map[string]*gomemcached.MCResponse, error) {
 
-	ch, eout := b.getBulk(keys)
+	ch, eout := b.getBulkAll(keys)
 
 	rv := make(map[string]*gomemcached.MCResponse, len(keys))
 	for m := range ch {
-		for k, v := range m {
-			rv[k] = v
+		for k, av := range m {
+			for _, v := range av {
+				rv[k] = v
+			}
 		}
 	}
 
@@ -376,16 +381,19 @@ func (b *Bucket) GetBulk(keys []string) (map[string]*gomemcached.MCResponse, err
 
 // Fetches multiple keys concurrently, with []byte values
 //
-// This is a wrapper around GetBulk which converts all values returned
+// This is a wrapper around GetBulkAll which converts all values returned
 // by GetBulk from raw memcached responses into []byte slices.
+// Returns one document for duplicate keys
 func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
 
-	ch, eout := b.getBulk(keys)
+	ch, eout := b.getBulkAll(keys)
 
 	rv := make(map[string][]byte, len(keys))
 	for m := range ch {
-		for k, mcResponse := range m {
-			rv[k] = mcResponse.Body
+		for k, av := range m {
+			for _, mcResponse := range av {
+				rv[k] = mcResponse.Body
+			}
 		}
 	}
 
@@ -393,7 +401,28 @@ func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
 
 }
 
-func (b *Bucket) getBulk(keys []string) (<-chan map[string]*gomemcached.MCResponse, <-chan error) {
+// GetBulkAll fetches multiple keys concurrently.
+//
+// Unlike more convenient GETs, the entire response is returned in the
+// map array for each key.  Keys that were not found will not be included in
+// the map. Returns separate document for duplicate keys
+func (b *Bucket) GetBulkAll(keys []string) (map[string][]*gomemcached.MCResponse, error) {
+
+	ch, eout := b.getBulkAll(keys)
+
+	rv := make(map[string][]*gomemcached.MCResponse, len(keys))
+	for m := range ch {
+		for k, av := range m {
+			for _, v := range av {
+				rv[k] = append(rv[k], v)
+			}
+		}
+	}
+
+	return rv, <-eout
+}
+
+func (b *Bucket) getBulkAll(keys []string) (<-chan map[string][]*gomemcached.MCResponse, <-chan error) {
 
 	// Organize by vbucket
 	kdm := map[uint16][]string{}
@@ -410,7 +439,7 @@ func (b *Bucket) getBulk(keys []string) (<-chan map[string]*gomemcached.MCRespon
 
 	// processBulkGet will own both of these channels and
 	// guarantee they're closed before it returns.
-	ch := make(chan map[string]*gomemcached.MCResponse)
+	ch := make(chan map[string][]*gomemcached.MCResponse)
 	ech := make(chan error)
 	go b.processBulkGet(kdm, ch, ech)
 
