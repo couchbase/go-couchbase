@@ -344,6 +344,12 @@ type BucketDataSourceStats struct {
 	TotSetVBucketMetaDataOk         uint64
 }
 
+// ServerCredProvider interface may be implemented by the app on its
+// couchbase.AuthHandler object, to provider per-server credentials.
+type ServerCredProvider interface {
+	ProvideServerCred(server string) (user string, pswd string, err error)
+}
+
 // --------------------------------------------------------
 
 // VBucketMetaData is an internal struct is exposed to enable json
@@ -783,28 +789,40 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 
 	if d.auth != nil {
 		var user, pswd string
-		var adminCred bool
-		if auth, ok := d.auth.(couchbase.AuthWithSaslHandler); ok {
+		var selectBucket bool
+
+		if auth, ok := d.auth.(ServerCredProvider); ok {
+			user, pswd, err = auth.ProvideServerCred(server)
+			if err != nil {
+				d.receiver.OnError(fmt.Errorf("worker auth ProvideServerCred,"+
+					" server: %s, err: %v", server, err))
+				return 0
+			}
+			selectBucket = true
+		} else if auth, ok := d.auth.(couchbase.AuthWithSaslHandler); ok {
 			user, pswd = auth.GetSaslCredentials()
-			adminCred = true
+			selectBucket = true
 		} else {
 			user, pswd, _ = d.auth.GetCredentials()
 		}
+
 		if user != "" {
 			atomic.AddUint64(&d.stats.TotWorkerAuth, 1)
 			res, err := client.Auth(user, pswd)
 			if err != nil {
 				atomic.AddUint64(&d.stats.TotWorkerAuthErr, 1)
-				d.receiver.OnError(fmt.Errorf("worker auth, server: %s, user: %s, err: %v",
-					server, user, err))
+				d.receiver.OnError(fmt.Errorf("worker auth, server: %s,"+
+					" user: %s, err: %v", server, user, err))
 				return 0
 			}
+
 			if res.Status != gomemcached.SUCCESS {
 				atomic.AddUint64(&d.stats.TotWorkerAuthFail, 1)
 				d.receiver.OnError(&AuthFailError{ServerURL: server, User: user})
 				return 0
 			}
-			if adminCred {
+
+			if selectBucket {
 				atomic.AddUint64(&d.stats.TotWorkerAuthOk, 1)
 				_, err = client.SelectBucket(d.bucketName)
 				if err != nil {
