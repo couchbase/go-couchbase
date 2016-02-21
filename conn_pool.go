@@ -98,7 +98,11 @@ func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 }
 
 func (cp *connectionPool) Close() (err error) {
-	defer func() { err, _ = recover().(error) }()
+	defer func() {
+		if recover() != nil {
+			err = errors.New("connectionPool.Close error")
+		}
+	}()
 	close(cp.connections)
 	for c := range cp.connections {
 		c.Close()
