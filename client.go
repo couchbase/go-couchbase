@@ -128,29 +128,25 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 		maxTries)
 }
 
-type gatheredStats struct {
-	sn   string
-	vals map[string]string
+type GatheredStats struct {
+	Server string
+	Stats  map[string]string
+	Err    error
 }
 
-func getStatsParallel(b *Bucket, offset int, which string,
-	ch chan<- gatheredStats) {
-	sn := b.VBServerMap().ServerList[offset]
-
-	results := map[string]string{}
+func getStatsParallel(sn string, b *Bucket, offset int, which string,
+	ch chan<- GatheredStats) {
 	pool := b.getConnPool(offset)
+
 	conn, err := pool.Get()
 	defer pool.Return(conn)
 	if err != nil {
-		ch <- gatheredStats{sn, results}
-	} else {
-		st, err := conn.StatsMap(which)
-		if err == nil {
-			ch <- gatheredStats{sn, st}
-		} else {
-			ch <- gatheredStats{sn, results}
-		}
+		ch <- GatheredStats{Server: sn, Err: err}
+		return
 	}
+
+	sm, err := conn.StatsMap(which)
+	ch <- GatheredStats{Server: sn, Stats: sm, Err: err}
 }
 
 // GetStats gets a set of stats from all servers.
@@ -158,27 +154,33 @@ func getStatsParallel(b *Bucket, offset int, which string,
 // Returns a map of server ID -> map of stat key to map value.
 func (b *Bucket) GetStats(which string) map[string]map[string]string {
 	rv := map[string]map[string]string{}
+	for server, gs := range b.GatherStats(which) {
+		if len(gs.Stats) > 0 {
+			rv[server] = gs.Stats
+		}
+	}
+	return rv
+}
 
+// GatherStats returns a map of server ID -> GatheredStats from all servers.
+func (b *Bucket) GatherStats(which string) map[string]GatheredStats {
 	vsm := b.VBServerMap()
 	if vsm.ServerList == nil {
-		return rv
+		return nil
 	}
-	// Go grab all the things at once.
-	todo := len(vsm.ServerList)
-	ch := make(chan gatheredStats, todo)
 
-	for offset := range vsm.ServerList {
-		go getStatsParallel(b, offset, which, ch)
+	// Go grab all the things at once.
+	ch := make(chan GatheredStats, len(vsm.ServerList))
+	for i, sn := range vsm.ServerList {
+		go getStatsParallel(sn, b, i, which, ch)
 	}
 
 	// Gather the results
-	for i := 0; i < len(vsm.ServerList); i++ {
-		g := <-ch
-		if len(g.vals) > 0 {
-			rv[g.sn] = g.vals
-		}
+	rv := map[string]GatheredStats{}
+	for range vsm.ServerList {
+		gs := <-ch
+		rv[gs.Server] = gs
 	}
-
 	return rv
 }
 
