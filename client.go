@@ -321,7 +321,12 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 		}
 	}
 
-	for i := 0; i < 4; i++ {
+	n := runtime.NumCPU()
+	if len(kdm) < n {
+		n = len(kdm)
+	}
+
+	for i := 0; i < n; i++ {
 		wg.Add(1)
 		go worker()
 	}
