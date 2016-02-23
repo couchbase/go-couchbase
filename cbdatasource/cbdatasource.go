@@ -258,8 +258,6 @@ type BucketDataSourceStats struct {
 	TotWorkerAuth       uint64
 	TotWorkerAuthErr    uint64
 	TotWorkerAuthFail   uint64
-	TotWorkerSelBktFail uint64
-	TotWorkerSelBktOk   uint64
 	TotWorkerAuthOk     uint64
 	TotWorkerUPROpenErr uint64
 	TotWorkerUPROpenOk  uint64
@@ -342,12 +340,6 @@ type BucketDataSourceStats struct {
 	TotSetVBucketMetaDataMarshalErr uint64
 	TotSetVBucketMetaDataErr        uint64
 	TotSetVBucketMetaDataOk         uint64
-}
-
-// ServerCredProvider interface may be implemented by the app on its
-// couchbase.AuthHandler object, to provider per-server credentials.
-type ServerCredProvider interface {
-	ProvideServerCred(server string) (user string, pswd string, err error)
 }
 
 // --------------------------------------------------------
@@ -789,19 +781,17 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 
 	if d.auth != nil {
 		var user, pswd string
-		var selectBucket bool
 
-		if auth, ok := d.auth.(ServerCredProvider); ok {
-			user, pswd, err = auth.ProvideServerCred(server)
+		if auth, ok := d.auth.(couchbase.GenericMcdAuthHandler); ok {
+			err = auth.AuthenticateMemcachedConn(server, client)
 			if err != nil {
-				d.receiver.OnError(fmt.Errorf("worker auth ProvideServerCred,"+
-					" server: %s, err: %v", server, err))
+				d.receiver.OnError(fmt.Errorf("worker auth,"+
+					" AuthenticateMemcachedConn, server: %s, err: %v",
+					server, err))
 				return 0
 			}
-			selectBucket = true
 		} else if auth, ok := d.auth.(couchbase.AuthWithSaslHandler); ok {
 			user, pswd = auth.GetSaslCredentials()
-			selectBucket = true
 		} else {
 			user, pswd, _ = d.auth.GetCredentials()
 		}
@@ -820,17 +810,6 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 				atomic.AddUint64(&d.stats.TotWorkerAuthFail, 1)
 				d.receiver.OnError(&AuthFailError{ServerURL: server, User: user})
 				return 0
-			}
-
-			if selectBucket {
-				atomic.AddUint64(&d.stats.TotWorkerAuthOk, 1)
-				_, err = client.SelectBucket(d.bucketName)
-				if err != nil {
-					atomic.AddUint64(&d.stats.TotWorkerSelBktFail, 1)
-					d.receiver.OnError(fmt.Errorf("worker select bucket err: %v", err))
-					return 0
-				}
-				atomic.AddUint64(&d.stats.TotWorkerSelBktOk, 1)
 			}
 		}
 	}
