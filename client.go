@@ -321,7 +321,8 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 		}
 	}
 
-	n := runtime.NumCPU()
+	// runtime.NumCPU() uses double the CPU and same throughput
+	n := 4
 	if len(kdm) < n {
 		n = len(kdm)
 	}
