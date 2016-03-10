@@ -2,6 +2,7 @@ package couchbase
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -463,13 +464,24 @@ func isHttpConnError(err error) bool {
 		strings.Contains(estr, "connection reset")
 }
 
+var client *http.Client
+
 func doHTTPRequest(req *http.Request) (*http.Response, error) {
 
 	var err error
 	var res *http.Response
 
+	// we need a client that ignores certificate errors, since we self-sign
+	// our certs
+	if client == nil {
+		tr := &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		}
+		client = &http.Client{Transport: tr}
+	}
+
 	for i := 0; i < HTTP_MAX_RETRY; i++ {
-		res, err = HTTPClient.Do(req)
+		res, err = client.Do(req)
 		if err != nil && isHttpConnError(err) {
 			continue
 		}
@@ -493,9 +505,9 @@ func doPostAPI(
 	var requestUrl string
 
 	if q := strings.Index(path, "?"); q > 0 {
-		requestUrl = "http://" + baseURL.Host + path[:q] + "?" + path[q+1:]
+		requestUrl = baseURL.Scheme + "://" + baseURL.Host + path[:q] + "?" + path[q+1:]
 	} else {
-		requestUrl = "http://" + baseURL.Host + path
+		requestUrl = baseURL.Scheme + "://" + baseURL.Host + path
 	}
 
 	postData := url.Values{}
@@ -540,12 +552,14 @@ func queryRestAPI(
 	authHandler AuthHandler,
 	out interface{}) error {
 
+	fmt.Printf("queryRestAPI, baseURL: %v, schema %s, path: %s\n", baseURL, baseURL.Scheme, path)
+
 	var requestUrl string
 
 	if q := strings.Index(path, "?"); q > 0 {
-		requestUrl = "http://" + baseURL.Host + path[:q] + "?" + path[q+1:]
+		requestUrl = baseURL.Scheme + "://" + baseURL.Host + path[:q] + "?" + path[q+1:]
 	} else {
-		requestUrl = "http://" + baseURL.Host + path
+		requestUrl = baseURL.Scheme + "://" + baseURL.Host + path
 	}
 
 	req, err := http.NewRequest("GET", requestUrl, nil)
