@@ -552,8 +552,6 @@ func queryRestAPI(
 	authHandler AuthHandler,
 	out interface{}) error {
 
-	fmt.Printf("queryRestAPI, baseURL: %v, schema %s, path: %s\n", baseURL, baseURL.Scheme, path)
-
 	var requestUrl string
 
 	if q := strings.Index(path, "?"); q > 0 {
