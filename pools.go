@@ -170,6 +170,7 @@ type Bucket struct {
 	StreamingURI        string             `json:"streamingUri"`
 	LocalRandomKeyURI   string             `json:"localRandomKeyUri,omitempty"`
 	UUID                string             `json:"uuid"`
+	TimeSynchronization string             `json:"timeSynchronization,omitempty"`
 	DDocs               struct {
 		URI string `json:"uri"`
 	} `json:"ddocs,omitempty"`
