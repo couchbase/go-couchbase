@@ -31,6 +31,7 @@ import (
 	"time"
 
 	"github.com/couchbase/go-couchbase"
+	"github.com/couchbase/go-couchbase/trace"
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
 )
@@ -156,6 +157,13 @@ type BucketDataSourceOptions struct {
 	// Optional function to connect to a couchbase data manager node.
 	// Defaults to memcached.Connect().
 	Connect func(protocol, dest string) (*memcached.Client, error)
+
+	// Optional function for logging diagnostic messages.
+	Logf func(fmt string, v ...interface{})
+
+	// When true, message trace information will be captured and
+	// reported via the Logf() callback.
+	TraceCapacity int `json:"-"`
 }
 
 // AllServerURLsConnectBucketError is the error type passed to
@@ -206,6 +214,8 @@ var DefaultBucketDataSourceOptions = &BucketDataSourceOptions{
 
 	FeedBufferSizeBytes:    20000000, // ~20MB; see UPR_CONTROL/connection_buffer_size.
 	FeedBufferAckThreshold: 0.2,
+
+	TraceCapacity: 200,
 }
 
 // BucketDataSourceStats is filled by the BucketDataSource.Stats()
@@ -873,6 +883,35 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 	go func() { // Receiver goroutine.
 		defer close(recvEndCh)
 
+		traceCapacity := d.options.TraceCapacity
+		if traceCapacity == 0 {
+			traceCapacity = DefaultBucketDataSourceOptions.TraceCapacity
+		}
+		if traceCapacity < 0 {
+			traceCapacity = 0
+		}
+
+		trs := map[uint16]*trace.RingBuffer{} // Keyed by vbucket.
+
+		if d.options.Logf != nil {
+			d.options.Logf("cbdatasource: receiver tracing,"+
+				" server: %s, name: %s, capacity: %d",
+				server, uprOpenName, traceCapacity)
+
+			defer func() {
+				for i := 0; i < 1024; i++ {
+					tr := trs[uint16(i)]
+					if tr == nil {
+						continue
+					}
+
+					d.options.Logf("cbdatasource: receiver closed,"+
+						" server: %s, name: %s, vb: %d, trace: %s",
+						server, uprOpenName, i, trace.MsgsToString(tr.Msgs(), "  "))
+				}
+			}()
+		}
+
 		atomic.AddUint64(&d.stats.TotWorkerReceiveStart, 1)
 
 		var hdr [gomemcached.HDR_LEN]byte
@@ -895,9 +934,17 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 			}
 			atomic.AddUint64(&d.stats.TotWorkerReceiveOk, 1)
 
+			tr := trs[pkt.VBucket]
+			if tr == nil {
+				tr = trace.NewRingBuffer(traceCapacity, trace.ConsolidateByTitle)
+				trs[pkt.VBucket] = tr
+			}
+
 			if pkt.Opcode == gomemcached.UPR_MUTATION ||
 				pkt.Opcode == gomemcached.UPR_DELETION ||
 				pkt.Opcode == gomemcached.UPR_EXPIRATION {
+				tr.Add("md", nil)
+
 				atomic.AddUint64(&d.stats.TotUPRDataChange, 1)
 
 				vbucketID := pkt.VBucket
@@ -973,6 +1020,8 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 
 				atomic.AddUint64(&d.stats.TotUPRDataChangeOk, 1)
 			} else {
+				tr.Add(fmt.Sprintf("%d", pkt.Opcode), nil)
+
 				res.Opcode = pkt.Opcode
 				res.Opaque = pkt.Opaque
 				res.Status = gomemcached.Status(pkt.VBucket)
