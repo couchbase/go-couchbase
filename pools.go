@@ -244,6 +244,11 @@ func (b *Bucket) GetVBmap(addrs []string) (map[string][]uint16, error) {
 		m[addr] = make([]uint16, 0)
 	}
 	for vbno, idxs := range vbmap.VBucketMap {
+                if len(idxs) == 0 {
+			return nil, fmt.Errorf("vbmap: No KV node no for vb %d", vbno)
+		} else if idxs[0] < 0 || idxs[0] >= len(servers) {
+			return nil, fmt.Errorf("vbmap: Invalid KV node no %d for vb %d", idxs[0], vbno)
+		}
 		addr := servers[idxs[0]]
 		if _, ok := m[addr]; ok {
 			m[addr] = append(m[addr], uint16(vbno))
