@@ -12,7 +12,6 @@
 package platform
 
 import (
-	_ "net/http/pprof"
 	"os"
 	"os/signal"
 	"runtime/pprof"
