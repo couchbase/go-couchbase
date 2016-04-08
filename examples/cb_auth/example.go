@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"github.com/couchbase/cbauth"
 	"github.com/couchbase/go-couchbase"
 	"log"
@@ -25,15 +26,11 @@ func main() {
 	/*
 	   NOTE. This example requires the following environment variables to be set.
 
-	   NS_SERVER_CBAUTH_URL
-	   NS_SERVER_CBAUTH_USER
-	   NS_SERVER_CBAUTH_PWD
+	   CBAUTH_REVRPC_URL
 
 	   e.g
 
-	   NS_SERVER_CBAUTH_URL="http://localhost:9000/_cbauth"
-	   NS_SERVER_CBAUTH_USER="Administrator"
-	   NS_SERVER_CBAUTH_PWD="asdasd"
+	   CBAUTH_REVRPC_URL="http://Administrator:asdasd@127.0.0.1:9000/_cbauth"
 
 	*/
 
@@ -94,26 +91,13 @@ func main() {
 			return
 		}
 
-		canAccess, err := creds.CanAccessBucket(*bucketName)
+		permission := fmt.Sprintf("cluster.bucket[%s].data!read", *bucketName)
+		canAccess, err := creds.IsAllowed(permission)
 		if err != nil {
-			log.Printf(" can't access bucket %v", err)
+			log.Printf(" error %v checking permission %v", err, permission)
+		} else {
+			log.Printf(" result of checking permission %v : %v", permission, canAccess)
 		}
-
-		log.Printf(" results canaccess %v bucket %v", canAccess, *bucketName)
-
-		canRead, err := creds.CanReadBucket(*bucketName)
-		if err != nil {
-			log.Printf(" can't read bucket %v", err)
-		}
-
-		log.Printf(" results canread %v bucket %v", canRead, *bucketName)
-
-		canDDL, err := creds.CanDDLBucket(*bucketName)
-		if err != nil {
-			log.Printf(" can't DDL bucket %v", err)
-		}
-
-		log.Printf(" results canDDL %v bucket %v", canDDL, *bucketName)
 	}
 
 }
