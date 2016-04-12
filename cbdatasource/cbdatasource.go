@@ -256,6 +256,8 @@ type BucketDataSourceStats struct {
 	TotRefreshWorkersAddWorker       uint64
 	TotRefreshWorkersKickWorker      uint64
 	TotRefreshWorkersCloseWorker     uint64
+	TotRefreshWorkersLoop            uint64
+	TotRefreshWorkersLoopDone        uint64
 	TotRefreshWorkersDone            uint64
 
 	TotWorkerStart      uint64
@@ -272,6 +274,9 @@ type BucketDataSourceStats struct {
 	TotWorkerUPROpenErr uint64
 	TotWorkerUPROpenOk  uint64
 
+	TotWorkerClientClose     uint64
+	TotWorkerClientCloseDone uint64
+
 	TotWorkerTransmitStart uint64
 	TotWorkerTransmit      uint64
 	TotWorkerTransmitErr   uint64
@@ -282,6 +287,7 @@ type BucketDataSourceStats struct {
 	TotWorkerReceive      uint64
 	TotWorkerReceiveErr   uint64
 	TotWorkerReceiveOk    uint64
+	TotWorkerReceiveDone  uint64
 
 	TotWorkerSendEndCh uint64
 	TotWorkerRecvEndCh uint64
@@ -715,7 +721,11 @@ OUTER_LOOP:
 
 			atomic.AddUint64(&d.stats.TotRefreshWorkersKickWorker, 1)
 		}
+
+		atomic.AddUint64(&d.stats.TotRefreshWorkersLoop, 1)
 	}
+
+	atomic.AddUint64(&d.stats.TotRefreshWorkersLoopDone, 1)
 
 	// We reach here when we need to shutdown.
 	for _, workerCh := range workers {
@@ -786,8 +796,13 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 			server, err))
 		return 0
 	}
-	defer client.Close()
 	atomic.AddUint64(&d.stats.TotWorkerConnectOk, 1)
+
+	defer func() {
+		atomic.AddUint64(&d.stats.TotWorkerClientClose, 1)
+		client.Close()
+		atomic.AddUint64(&d.stats.TotWorkerClientCloseDone, 1)
+	}()
 
 	if d.auth != nil {
 		var user, pswd string
@@ -864,7 +879,10 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 	currVBucketsMutex := sync.Mutex{} // Protects currVBuckets.
 
 	go func() { // Sender goroutine.
-		defer close(sendEndCh)
+		defer func() {
+			close(sendEndCh)
+			atomic.AddUint64(&d.stats.TotWorkerTransmitDone, 1)
+		}()
 
 		atomic.AddUint64(&d.stats.TotWorkerTransmitStart, 1)
 		for msg := range sendCh {
@@ -877,11 +895,13 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 			}
 			atomic.AddUint64(&d.stats.TotWorkerTransmitOk, 1)
 		}
-		atomic.AddUint64(&d.stats.TotWorkerTransmitDone, 1)
 	}()
 
 	go func() { // Receiver goroutine.
-		defer close(recvEndCh)
+		defer func() {
+			close(recvEndCh)
+			atomic.AddUint64(&d.stats.TotWorkerReceiveDone, 1)
+		}()
 
 		traceCapacity := d.options.TraceCapacity
 		if traceCapacity == 0 {
