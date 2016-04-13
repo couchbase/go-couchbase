@@ -276,6 +276,10 @@ type BucketDataSourceStats struct {
 	TotWorkerUPROpenErr uint64
 	TotWorkerUPROpenOk  uint64
 
+	TotWorkerAuthenticateMemcachedConn    uint64
+	TotWorkerAuthenticateMemcachedConnErr uint64
+	TotWorkerAuthenticateMemcachedConnOk  uint64
+
 	TotWorkerClientClose     uint64
 	TotWorkerClientCloseDone uint64
 
@@ -810,13 +814,16 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		var user, pswd string
 
 		if auth, ok := d.auth.(couchbase.GenericMcdAuthHandler); ok {
+			atomic.AddUint64(&d.stats.TotWorkerAuthenticateMemcachedConn, 1)
 			err = auth.AuthenticateMemcachedConn(server, client)
 			if err != nil {
+				atomic.AddUint64(&d.stats.TotWorkerAuthenticateMemcachedConnErr, 1)
 				d.receiver.OnError(fmt.Errorf("worker auth,"+
 					" AuthenticateMemcachedConn, server: %s, err: %v",
 					server, err))
 				return 0
 			}
+			atomic.AddUint64(&d.stats.TotWorkerAuthenticateMemcachedConnOk, 1)
 		} else if auth, ok := d.auth.(couchbase.AuthWithSaslHandler); ok {
 			user, pswd = auth.GetSaslCredentials()
 		} else {
