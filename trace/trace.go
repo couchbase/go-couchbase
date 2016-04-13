@@ -162,8 +162,10 @@ func (trb *RingBuffer) Msgs() []Msg {
 }
 
 // MsgsToString formats a []Msg into a pretty string.
-func MsgsToString(msgs []Msg, prefix string) string {
-	nlPrefix := "\n" + prefix
+// lineSep is usually something like "\n".
+// linePrefix is usually something like "  ".
+func MsgsToString(msgs []Msg, lineSep, linePrefix string) string {
+	linePrefixRest := lineSep + linePrefix
 
 	var buf bytes.Buffer
 
@@ -177,17 +179,17 @@ func MsgsToString(msgs []Msg, prefix string) string {
 			bodySep = " "
 		}
 
-		linePrefix := ""
+		linePrefixCur := ""
 		if i > 0 {
-			linePrefix = nlPrefix
+			linePrefixCur = linePrefixRest
 		}
 
 		if msg.Repeats > 1 {
-			fmt.Fprintf(&buf, "%s%s (%d times)%s%s",
-				linePrefix, msg.Title, msg.Repeats, bodySep, body)
+			fmt.Fprintf(&buf, "%s%s (%dx)%s%s",
+				linePrefixCur, msg.Title, msg.Repeats, bodySep, body)
 		} else {
 			fmt.Fprintf(&buf, "%s%s%s%s",
-				linePrefix, msg.Title, bodySep, body)
+				linePrefixCur, msg.Title, bodySep, body)
 		}
 	}
 

@@ -71,13 +71,13 @@ func TestTrace(t *testing.T) {
 		t.Errorf("expected last to be buh")
 	}
 
-	s := MsgsToString(r.Msgs(), "")
+	s := MsgsToString(r.Msgs(), "\n", "")
 	exps := "buh\nbuh"
 	if s != exps {
 		t.Errorf("expected string %q, got %q", exps, s)
 	}
 
-	s = MsgsToString(r.Msgs(), "foo")
+	s = MsgsToString(r.Msgs(), "\n", "foo")
 	exps = "buh\nfoobuh"
 	if s != exps {
 		t.Errorf("expected string %q, got %q", exps, s)
@@ -167,13 +167,13 @@ func TestTraceConsolidateByTitle(t *testing.T) {
 		t.Errorf("expected last to be buh")
 	}
 
-	s := MsgsToString(r.Msgs(), "")
+	s := MsgsToString(r.Msgs(), "\n", "")
 	exps := "bye (2 times)\nbuh (2 times)"
 	if s != exps {
 		t.Errorf("expected string %q, got %q", exps, s)
 	}
 
-	s = MsgsToString(r.Msgs(), "prefix")
+	s = MsgsToString(r.Msgs(), "\n", "prefix")
 	exps = "bye (2 times)\nprefixbuh (2 times)"
 	if s != exps {
 		t.Errorf("expected string %q, got %q", exps, s)

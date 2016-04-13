@@ -20,11 +20,13 @@
 package cbdatasource
 
 import (
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"math/rand"
 	"reflect"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -919,16 +921,26 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 				server, uprOpenName, traceCapacity)
 
 			defer func() {
-				for i := 0; i < 1024; i++ {
-					tr := trs[uint16(i)]
-					if tr == nil {
-						continue
+				vbids := make(sort.IntSlice, 0, len(trs))
+				for vbid, tr := range trs {
+					if tr != nil {
+						vbids = append(vbids, int(vbid))
 					}
-
-					d.options.Logf("cbdatasource: receiver closed,"+
-						" server: %s, name: %s, vb: %d, trace: %s",
-						server, uprOpenName, i, trace.MsgsToString(tr.Msgs(), "  "))
 				}
+				sort.Sort(vbids)
+
+				var buf bytes.Buffer
+				for _, vbid := range vbids {
+					tr := trs[uint16(vbid)]
+					if tr != nil {
+						fmt.Fprintf(&buf, " vb: %d => %s;", vbid,
+							trace.MsgsToString(tr.Msgs(), ",", " "))
+					}
+				}
+
+				d.options.Logf("cbdatasource: receiver closed,"+
+					" server: %s, name: %s, traces:%s",
+					server, uprOpenName, buf.String())
 			}()
 		}
 
