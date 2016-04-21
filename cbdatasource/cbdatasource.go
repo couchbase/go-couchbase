@@ -166,6 +166,12 @@ type BucketDataSourceOptions struct {
 	// When true, message trace information will be captured and
 	// reported via the Logf() callback.
 	TraceCapacity int `json:"-"`
+
+	// When there's been no send/receive activity for this many
+	// milliseconds, then transmit a NOOP to the DCP source.  When 0,
+	// the DefaultBucketDataSourceOptions.PingTimeoutMS is used.  Of
+	// note, the NOOP itself counts as send/receive activity.
+	PingTimeoutMS int
 }
 
 // AllServerURLsConnectBucketError is the error type passed to
@@ -218,6 +224,8 @@ var DefaultBucketDataSourceOptions = &BucketDataSourceOptions{
 	FeedBufferAckThreshold: 0.2,
 
 	TraceCapacity: 200,
+
+	PingTimeoutMS: 30000,
 }
 
 // BucketDataSourceStats is filled by the BucketDataSource.Stats()
@@ -362,6 +370,10 @@ type BucketDataSourceStats struct {
 	TotSetVBucketMetaDataMarshalErr uint64
 	TotSetVBucketMetaDataErr        uint64
 	TotSetVBucketMetaDataOk         uint64
+
+	TotPingTimeout uint64
+	TotPingReq     uint64
+	TotPingReqDone uint64
 }
 
 // --------------------------------------------------------
@@ -1098,6 +1110,13 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 	atomic.AddUint64(&d.stats.TotWorkerBodyKick, 1)
 	d.Kick("new-worker")
 
+	pingTimeoutMS := d.options.PingTimeoutMS
+	if pingTimeoutMS <= 0 {
+		pingTimeoutMS = DefaultBucketDataSourceOptions.PingTimeoutMS
+	}
+
+	var prevActivity uint64
+
 	for {
 		currVBucketsMutex.Lock()
 		d.logVBucketStates(server, uprOpenName, "worker, looping beg",
@@ -1137,6 +1156,19 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 			}
 
 			atomic.AddUint64(&d.stats.TotRefreshWorkerOk, 1)
+
+		case <-time.After(time.Duration(pingTimeoutMS) * time.Millisecond):
+			atomic.AddUint64(&d.stats.TotPingTimeout, 1)
+
+			currActivity := atomic.LoadUint64(&d.stats.TotWorkerTransmit) +
+				atomic.LoadUint64(&d.stats.TotWorkerReceive)
+			if currActivity == prevActivity { // If no activity, then ping.
+				atomic.AddUint64(&d.stats.TotPingReq, 1)
+				sendCh <- &gomemcached.MCRequest{Opcode: gomemcached.NOOP}
+				atomic.AddUint64(&d.stats.TotPingReqDone, 1)
+			}
+
+			prevActivity = currActivity
 		}
 	}
 
@@ -1396,6 +1428,10 @@ func (d *bucketDataSource) handleRecv(sendCh chan *gomemcached.MCRequest,
 	case gomemcached.UPR_MUTATION, gomemcached.UPR_DELETION, gomemcached.UPR_EXPIRATION:
 		// This should have been handled already in receiver goroutine.
 		return fmt.Errorf("unexpected data change, res: %#v", res)
+
+	case gomemcached.NOOP:
+		// We use NOOP for "keep alive" ping messages.
+		return nil
 
 	default:
 		return fmt.Errorf("unknown opcode, res: %#v", res)
