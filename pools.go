@@ -45,6 +45,14 @@ var EnableMutationToken = false
 // TCP keepalive interval in seconds. Default 30 minutes
 var TCPKeepaliveInterval = 30 * 60
 
+// Used to decide whether to skip verification of certificates when
+// connecting to an ssl port.
+var skipVerify = true
+
+func SetSkipVerify(skip bool) {
+	skipVerify = skip
+}
+
 // Allow applications to speciify the Poolsize and Overflow
 func SetConnectionPoolParams(size, overflow int) {
 
@@ -244,7 +252,7 @@ func (b *Bucket) GetVBmap(addrs []string) (map[string][]uint16, error) {
 		m[addr] = make([]uint16, 0)
 	}
 	for vbno, idxs := range vbmap.VBucketMap {
-                if len(idxs) == 0 {
+		if len(idxs) == 0 {
 			return nil, fmt.Errorf("vbmap: No KV node no for vb %d", vbno)
 		} else if idxs[0] < 0 || idxs[0] >= len(servers) {
 			return nil, fmt.Errorf("vbmap: Invalid KV node no %d for vb %d", idxs[0], vbno)
@@ -477,12 +485,17 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 	var err error
 	var res *http.Response
 
+	tr := &http.Transport{}
+
 	// we need a client that ignores certificate errors, since we self-sign
 	// our certs
 	if client == nil {
-		tr := &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+		if skipVerify {
+			tr = &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
 		}
+
 		client = &http.Client{Transport: tr}
 	}
 
