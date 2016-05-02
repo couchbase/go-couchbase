@@ -137,16 +137,20 @@ type GatheredStats struct {
 func getStatsParallel(sn string, b *Bucket, offset int, which string,
 	ch chan<- GatheredStats) {
 	pool := b.getConnPool(offset)
+	var gatheredStats GatheredStats
 
 	conn, err := pool.Get()
-	defer pool.Return(conn)
-	if err != nil {
-		ch <- GatheredStats{Server: sn, Err: err}
-		return
-	}
+	defer func() {
+		pool.Return(conn)
+		ch <- gatheredStats
+	}()
 
-	sm, err := conn.StatsMap(which)
-	ch <- GatheredStats{Server: sn, Stats: sm, Err: err}
+	if err != nil {
+		gatheredStats = GatheredStats{Server: sn, Err: err}
+	} else {
+		sm, err := conn.StatsMap(which)
+		gatheredStats = GatheredStats{Server: sn, Stats: sm, Err: err}
+	}
 }
 
 // GetStats gets a set of stats from all servers.
