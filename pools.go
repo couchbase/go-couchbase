@@ -489,14 +489,15 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 
 	// we need a client that ignores certificate errors, since we self-sign
 	// our certs
-	if client == nil {
+	if client == nil && req.URL.Scheme == "https" {
 		if skipVerify {
 			tr = &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}
 		}
-
 		client = &http.Client{Transport: tr}
+	} else if client == nil {
+		client = HTTPClient
 	}
 
 	for i := 0; i < HTTP_MAX_RETRY; i++ {
