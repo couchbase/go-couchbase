@@ -206,13 +206,12 @@ func isConnError(err error) bool {
 }
 
 func (b *Bucket) doBulkGet(vb uint16, keys []string,
-	ch chan<- map[string][]*gomemcached.MCResponse, ech chan<- error) {
+	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to doBulkGet(%d, %d keys)", vb, len(keys))
 	}
 
-	rv := map[string][]*gomemcached.MCResponse{}
-
+	rv := _STRING_MCRESPONSE_POOL.Get()
 	attempts := 0
 	done := false
 	for attempts < MaxBulkRetries && !done {
@@ -255,7 +254,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 				return nil
 			}
 
-			m, err := conn.GetBulkAll(vb, keys)
+			err = conn.GetBulk(vb, keys, rv)
 			pool.Return(conn)
 
 			switch err.(type) {
@@ -283,18 +282,6 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 				return nil
 			}
 
-			if m != nil {
-				if len(rv) == 0 {
-					rv = m
-				} else {
-					for k, av := range m {
-						rv[k] = make([]*gomemcached.MCResponse, 0, len(av))
-						for _, v := range av {
-							rv[k] = append(rv[k], v)
-						}
-					}
-				}
-			}
 			done = true
 			return nil
 		}()
@@ -312,7 +299,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 }
 
 func (b *Bucket) processBulkGet(kdm map[uint16][]string,
-	ch chan<- map[string][]*gomemcached.MCResponse, ech chan<- error) {
+	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
 	wch := make(chan uint16)
 	defer close(ch)
 	defer close(ech)
@@ -325,8 +312,7 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 		}
 	}
 
-	// runtime.NumCPU() uses double the CPU and same throughput
-	n := 4
+	n := runtime.NumCPU()
 	if len(kdm) < n {
 		n = len(kdm)
 	}
@@ -370,95 +356,83 @@ func errorCollector(ech <-chan error, eout chan<- error) {
 	}
 }
 
-// GetBulkDistinct fetches multiple keys concurrently.
-//
-// Unlike more convenient GETs, the entire response is returned in the
-// map for each key.  Keys that were not found will not be included in
-// the map.  Returns one document for duplicate keys
-func (b *Bucket) GetBulkDistinct(keys []string) (map[string]*gomemcached.MCResponse, error) {
-
-	ch, eout := b.getBulkAll(keys)
-
-	rv := make(map[string]*gomemcached.MCResponse, len(keys))
-	for m := range ch {
-		for k, av := range m {
-			for _, v := range av {
-				rv[k] = v
-			}
-		}
-	}
-
-	return rv, <-eout
-}
-
 // Fetches multiple keys concurrently, with []byte values
 //
-// This is a wrapper around GetBulkAll which converts all values returned
+// This is a wrapper around GetBulk which converts all values returned
 // by GetBulk from raw memcached responses into []byte slices.
 // Returns one document for duplicate keys
 func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
 
-	ch, eout := b.getBulkAll(keys)
+	resp, keyCount, eout := b.getBulk(keys)
 
 	rv := make(map[string][]byte, len(keys))
-	for m := range ch {
-		for k, av := range m {
-			for _, mcResponse := range av {
-				rv[k] = mcResponse.Body
-			}
-		}
+	for k, av := range resp {
+		rv[k] = av.Body
 	}
 
-	return rv, <-eout
+	b.ReleaseGetBulkPools(keyCount, resp)
+	return rv, eout
 
 }
 
-// GetBulkAll fetches multiple keys concurrently.
+// GetBulk fetches multiple keys concurrently.
 //
 // Unlike more convenient GETs, the entire response is returned in the
 // map array for each key.  Keys that were not found will not be included in
-// the map. Returns separate document for duplicate keys
-func (b *Bucket) GetBulkAll(keys []string) (map[string][]*gomemcached.MCResponse, error) {
+// the map.
 
-	ch, eout := b.getBulkAll(keys)
-
-	rv := make(map[string][]*gomemcached.MCResponse, len(keys))
-	for m := range ch {
-		for k, av := range m {
-			for _, v := range av {
-				rv[k] = append(rv[k], v)
-			}
-		}
-	}
-
-	return rv, <-eout
+func (b *Bucket) GetBulk(keys []string) (map[string]*gomemcached.MCResponse, map[string]int, error) {
+	return b.getBulk(keys)
 }
 
-func (b *Bucket) getBulkAll(keys []string) (<-chan map[string][]*gomemcached.MCResponse, <-chan error) {
+func (b *Bucket) ReleaseGetBulkPools(keyCount map[string]int, rv map[string]*gomemcached.MCResponse) {
+	_STRING_KEYCOUNT_POOL.Put(keyCount)
+	_STRING_MCRESPONSE_POOL.Put(rv)
+}
 
-	// Organize by vbucket
-	kdm := map[uint16][]string{}
+func (b *Bucket) getBulk(keys []string) (map[string]*gomemcached.MCResponse, map[string]int, error) {
+	kdm := _VB_STRING_POOL.Get()
+	defer _VB_STRING_POOL.Put(kdm)
+	keyCount := _STRING_KEYCOUNT_POOL.Get()
 	for _, k := range keys {
-		vb := uint16(b.VBHash(k))
-		a, ok := kdm[vb]
+		v, ok := keyCount[k]
 		if !ok {
-			a = []string{}
+			vb := uint16(b.VBHash(k))
+			a, ok1 := kdm[vb]
+			if !ok1 {
+				a = _STRING_POOL.Get()
+			}
+			kdm[vb] = append(a, k)
+			v = 0
 		}
-		kdm[vb] = append(a, k)
+		keyCount[k] = v + 1
 	}
 
 	eout := make(chan error, 2)
 
 	// processBulkGet will own both of these channels and
 	// guarantee they're closed before it returns.
-	ch := make(chan map[string][]*gomemcached.MCResponse)
+	ch := make(chan map[string]*gomemcached.MCResponse)
 	ech := make(chan error)
-	go b.processBulkGet(kdm, ch, ech)
 
 	go errorCollector(ech, eout)
+	go b.processBulkGet(kdm, ch, ech)
 
-	return ch, eout
+	var rv map[string]*gomemcached.MCResponse
 
+	for m := range ch {
+		if rv == nil {
+			rv = m
+			continue
+		}
+
+		for k, v := range m {
+			rv[k] = v
+		}
+		_STRING_MCRESPONSE_POOL.Put(m)
+	}
+
+	return rv, keyCount, <-eout
 }
 
 // WriteOptions is the set of option flags availble for the Write
@@ -1053,3 +1027,111 @@ func (b *Bucket) WaitForPersistence(k string, cas uint64, deletion bool) error {
 		}
 	}
 }
+
+var _STRING_MCRESPONSE_POOL = gomemcached.NewStringMCResponsePool(16)
+
+type stringPool struct {
+	pool *sync.Pool
+	size int
+}
+
+func newStringPool(size int) *stringPool {
+	rv := &stringPool{
+		pool: &sync.Pool{
+			New: func() interface{} {
+				return make([]string, 0, size)
+			},
+		},
+		size: size,
+	}
+
+	return rv
+}
+
+func (this *stringPool) Get() []string {
+	return this.pool.Get().([]string)
+}
+
+func (this *stringPool) Put(s []string) {
+	if s == nil || cap(s) < this.size || cap(s) > 2*this.size {
+		return
+	}
+
+	this.pool.Put(s[0:0])
+}
+
+var _STRING_POOL = newStringPool(16)
+
+type vbStringPool struct {
+	pool    *sync.Pool
+	strPool *stringPool
+}
+
+func newVBStringPool(size int, sp *stringPool) *vbStringPool {
+	rv := &vbStringPool{
+		pool: &sync.Pool{
+			New: func() interface{} {
+				return make(map[uint16][]string, size)
+			},
+		},
+		strPool: sp,
+	}
+
+	return rv
+}
+
+func (this *vbStringPool) Get() map[uint16][]string {
+	return this.pool.Get().(map[uint16][]string)
+}
+
+func (this *vbStringPool) Put(s map[uint16][]string) {
+	if s == nil {
+		return
+	}
+
+	for k, v := range s {
+		delete(s, k)
+		this.strPool.Put(v)
+	}
+
+	this.pool.Put(s)
+}
+
+var _VB_STRING_POOL = newVBStringPool(16, _STRING_POOL)
+
+type stringIntPool struct {
+	pool *sync.Pool
+	size int
+}
+
+func newStringIntPool(size int) *stringIntPool {
+	rv := &stringIntPool{
+		pool: &sync.Pool{
+			New: func() interface{} {
+				return make(map[string]int, size)
+			},
+		},
+		size: size,
+	}
+
+	return rv
+}
+
+func (this *stringIntPool) Get() map[string]int {
+	return this.pool.Get().(map[string]int)
+}
+
+func (this *stringIntPool) Put(s map[string]int) {
+	if s == nil || len(s) > 2*this.size {
+		return
+	}
+
+	for k, _ := range s {
+		s[k] = 0
+		delete(s, k)
+	}
+
+	this.pool.Put(s)
+}
+
+var _STRING_KEYCOUNT_POOL = newStringIntPool(1024)
