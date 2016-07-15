@@ -298,34 +298,79 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 	ch <- rv
 }
 
+type vbBulkGet struct {
+	b    *Bucket
+	ch   chan<- map[string]*gomemcached.MCResponse
+	ech  chan<- error
+	k    uint16
+	keys []string
+	wg   *sync.WaitGroup
+}
+
+var _NUM_WORKERS = runtime.NumCPU()
+
+// Buffer 4k requests per worker
+var _VB_BULK_GET_CHANNEL = make(chan *vbBulkGet, 4*1024*_NUM_WORKERS)
+
+func init() {
+	for i := 0; i < _NUM_WORKERS; i++ {
+		go vbBulkGetWorker()
+	}
+}
+
+func vbBulkGetWorker() {
+	defer func() {
+		// Workers cannot panic and die
+		recover()
+		go vbBulkGetWorker()
+	}()
+
+	for vbg := range _VB_BULK_GET_CHANNEL {
+		vbDoBulkGet(vbg)
+	}
+}
+
+func vbDoBulkGet(vbg *vbBulkGet) {
+	defer vbg.wg.Done()
+	defer func() {
+		// Workers cannot panic and die
+		recover()
+	}()
+	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.ch, vbg.ech)
+}
+
+var _ERR_CHAN_FULL = fmt.Errorf("Data request queue full, aborting query.")
+
 func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
-	wch := make(chan uint16)
 	defer close(ch)
 	defer close(ech)
 
 	wg := &sync.WaitGroup{}
-	worker := func() {
-		defer wg.Done()
-		for k := range wch {
-			b.doBulkGet(k, kdm[k], ch, ech)
+
+	for k, keys := range kdm {
+		vbg := &vbBulkGet{
+			b:    b,
+			ch:   ch,
+			ech:  ech,
+			k:    k,
+			keys: keys,
+			wg:   wg,
+		}
+
+		wg.Add(1)
+
+		select {
+		case _VB_BULK_GET_CHANNEL <- vbg:
+			// No-op
+		default:
+			// Buffer full, abandon the bulk get
+			ech <- _ERR_CHAN_FULL
+			wg.Add(-1)
 		}
 	}
 
-	n := runtime.NumCPU()
-	if len(kdm) < n {
-		n = len(kdm)
-	}
-
-	for i := 0; i < n; i++ {
-		wg.Add(1)
-		go worker()
-	}
-
-	for k := range kdm {
-		wch <- k
-	}
-	close(wch)
+	// Wait for my vb bulk gets
 	wg.Wait()
 }
 
