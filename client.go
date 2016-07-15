@@ -319,6 +319,12 @@ func init() {
 }
 
 func vbBulkGetWorker() {
+	defer func() {
+		// Workers cannot panic and die
+		recover()
+		go vbBulkGetWorker()
+	}()
+
 	for vbg := range _VB_BULK_GET_CHANNEL {
 		vbDoBulkGet(vbg)
 	}
@@ -326,6 +332,10 @@ func vbBulkGetWorker() {
 
 func vbDoBulkGet(vbg *vbBulkGet) {
 	defer vbg.wg.Done()
+	defer func() {
+		// Workers cannot panic and die
+		recover()
+	}()
 	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.ch, vbg.ech)
 }
 
@@ -356,7 +366,7 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 		default:
 			// Buffer full, abandon the bulk get
 			ech <- _ERR_CHAN_FULL
-			return
+			wg.Add(-1)
 		}
 	}
 
