@@ -33,6 +33,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
@@ -307,12 +308,18 @@ type vbBulkGet struct {
 	wg   *sync.WaitGroup
 }
 
-var _NUM_WORKERS = runtime.NumCPU()
+var _NUM_WORKERS = 4 * runtime.NumCPU()
 
 // Buffer 4k requests per worker
-var _VB_BULK_GET_CHANNEL = make(chan *vbBulkGet, 4*1024*_NUM_WORKERS)
+var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
 
 func init() {
+	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, 16)
+
+	for i := 0; i < 16; i++ {
+		_VB_BULK_GET_CHANNELS[i] = make(chan *vbBulkGet, 256*_NUM_WORKERS)
+	}
+
 	for i := 0; i < _NUM_WORKERS; i++ {
 		go vbBulkGetWorker()
 	}
@@ -325,8 +332,41 @@ func vbBulkGetWorker() {
 		go vbBulkGetWorker()
 	}()
 
-	for vbg := range _VB_BULK_GET_CHANNEL {
-		vbDoBulkGet(vbg)
+	for {
+		select {
+		case vbg := <-_VB_BULK_GET_CHANNELS[0]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[1]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[2]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[3]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[4]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[5]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[6]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[7]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[8]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[9]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[10]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[11]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[12]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[13]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[14]:
+			vbDoBulkGet(vbg)
+		case vbg := <-_VB_BULK_GET_CHANNELS[15]:
+			vbDoBulkGet(vbg)
+		}
 	}
 }
 
@@ -360,8 +400,11 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 
 		wg.Add(1)
 
+		// Random int
+		c := int(uintptr(unsafe.Pointer(wg))) % 16
+
 		select {
-		case _VB_BULK_GET_CHANNEL <- vbg:
+		case _VB_BULK_GET_CHANNELS[c] <- vbg:
 			// No-op
 		default:
 			// Buffer full, abandon the bulk get
