@@ -308,7 +308,7 @@ type vbBulkGet struct {
 	wg   *sync.WaitGroup
 }
 
-const _NUM_CHANNELS = 16
+const _NUM_CHANNELS = 5
 
 var _NUM_CHANNEL_WORKERS = runtime.NumCPU()
 
