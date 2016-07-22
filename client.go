@@ -401,7 +401,7 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 		wg.Add(1)
 
 		// Random int
-		c := int(uintptr(unsafe.Pointer(wg))) % 16
+		c := int(uintptr(unsafe.Pointer(vbg))) % 16
 
 		select {
 		case _VB_BULK_GET_CHANNELS[c] <- vbg:
