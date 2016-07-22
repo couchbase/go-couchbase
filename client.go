@@ -308,65 +308,35 @@ type vbBulkGet struct {
 	wg   *sync.WaitGroup
 }
 
-var _NUM_WORKERS = 4 * runtime.NumCPU()
+const _NUM_CHANNELS = 16
+
+var _NUM_CHANNEL_WORKERS = runtime.NumCPU()
 
 // Buffer 4k requests per worker
 var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
 
 func init() {
-	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, 16)
+	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
 
-	for i := 0; i < 16; i++ {
-		_VB_BULK_GET_CHANNELS[i] = make(chan *vbBulkGet, 256*_NUM_WORKERS)
-	}
+	for i := 0; i < _NUM_CHANNELS; i++ {
+		channel := make(chan *vbBulkGet, 256*_NUM_CHANNEL_WORKERS)
+		_VB_BULK_GET_CHANNELS[i] = channel
 
-	for i := 0; i < _NUM_WORKERS; i++ {
-		go vbBulkGetWorker()
+		for j := 0; j < _NUM_CHANNEL_WORKERS; j++ {
+			go vbBulkGetWorker(channel)
+		}
 	}
 }
 
-func vbBulkGetWorker() {
+func vbBulkGetWorker(ch chan *vbBulkGet) {
 	defer func() {
 		// Workers cannot panic and die
 		recover()
-		go vbBulkGetWorker()
+		go vbBulkGetWorker(ch)
 	}()
 
-	for {
-		select {
-		case vbg := <-_VB_BULK_GET_CHANNELS[0]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[1]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[2]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[3]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[4]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[5]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[6]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[7]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[8]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[9]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[10]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[11]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[12]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[13]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[14]:
-			vbDoBulkGet(vbg)
-		case vbg := <-_VB_BULK_GET_CHANNELS[15]:
-			vbDoBulkGet(vbg)
-		}
+	for vbg := range ch {
+		vbDoBulkGet(vbg)
 	}
 }
 
@@ -401,8 +371,8 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 		wg.Add(1)
 
 		// Random int
-		// Right shift to avoid 8-byte alignment, and take low 4 bits
-		c := (uintptr(unsafe.Pointer(vbg)) >> 3) & 0x0F
+		// Right shift to avoid 8-byte alignment, and take low bits
+		c := (uintptr(unsafe.Pointer(vbg)) >> 3) % _NUM_CHANNELS
 
 		select {
 		case _VB_BULK_GET_CHANNELS[c] <- vbg:
