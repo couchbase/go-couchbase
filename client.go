@@ -310,7 +310,7 @@ type vbBulkGet struct {
 
 const _NUM_CHANNELS = 5
 
-var _NUM_CHANNEL_WORKERS = runtime.NumCPU()
+var _NUM_CHANNEL_WORKERS = (runtime.NumCPU() + 1) / 2
 
 // Buffer 4k requests per worker
 var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
