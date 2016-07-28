@@ -33,6 +33,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
@@ -307,25 +308,34 @@ type vbBulkGet struct {
 	wg   *sync.WaitGroup
 }
 
-var _NUM_WORKERS = runtime.NumCPU()
+const _NUM_CHANNELS = 5
+
+var _NUM_CHANNEL_WORKERS = (runtime.NumCPU() + 1) / 2
 
 // Buffer 4k requests per worker
-var _VB_BULK_GET_CHANNEL = make(chan *vbBulkGet, 4*1024*_NUM_WORKERS)
+var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
 
 func init() {
-	for i := 0; i < _NUM_WORKERS; i++ {
-		go vbBulkGetWorker()
+	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
+
+	for i := 0; i < _NUM_CHANNELS; i++ {
+		channel := make(chan *vbBulkGet, 256*_NUM_CHANNEL_WORKERS)
+		_VB_BULK_GET_CHANNELS[i] = channel
+
+		for j := 0; j < _NUM_CHANNEL_WORKERS; j++ {
+			go vbBulkGetWorker(channel)
+		}
 	}
 }
 
-func vbBulkGetWorker() {
+func vbBulkGetWorker(ch chan *vbBulkGet) {
 	defer func() {
 		// Workers cannot panic and die
 		recover()
-		go vbBulkGetWorker()
+		go vbBulkGetWorker(ch)
 	}()
 
-	for vbg := range _VB_BULK_GET_CHANNEL {
+	for vbg := range ch {
 		vbDoBulkGet(vbg)
 	}
 }
@@ -360,8 +370,12 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 
 		wg.Add(1)
 
+		// Random int
+		// Right shift to avoid 8-byte alignment, and take low bits
+		c := (uintptr(unsafe.Pointer(vbg)) >> 3) % _NUM_CHANNELS
+
 		select {
-		case _VB_BULK_GET_CHANNEL <- vbg:
+		case _VB_BULK_GET_CHANNELS[c] <- vbg:
 			// No-op
 		default:
 			// Buffer full, abandon the bulk get
