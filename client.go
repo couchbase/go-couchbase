@@ -315,7 +315,7 @@ var _NUM_CHANNEL_WORKERS = (runtime.NumCPU() + 1) / 2
 // Buffer 4k requests per worker
 var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
 
-func init() {
+func InitBulkGet() {
 	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
 
 	for i := 0; i < _NUM_CHANNELS; i++ {
