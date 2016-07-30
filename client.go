@@ -319,7 +319,7 @@ func InitBulkGet() {
 	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
 
 	for i := 0; i < _NUM_CHANNELS; i++ {
-		channel := make(chan *vbBulkGet, 256*_NUM_CHANNEL_WORKERS)
+		channel := make(chan *vbBulkGet, 1024*_NUM_CHANNEL_WORKERS)
 		_VB_BULK_GET_CHANNELS[i] = channel
 
 		for j := 0; j < _NUM_CHANNEL_WORKERS; j++ {
@@ -372,7 +372,7 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 
 		// Random int
 		// Right shift to avoid 8-byte alignment, and take low bits
-		c := (uintptr(unsafe.Pointer(vbg)) >> 3) % _NUM_CHANNELS
+		c := (uintptr(unsafe.Pointer(vbg)) >> 4) % _NUM_CHANNELS
 
 		select {
 		case _VB_BULK_GET_CHANNELS[c] <- vbg:
