@@ -1,10 +1,10 @@
 package couchbase
 
 import (
-	"github.com/couchbase/goutils/logging"
-	"time"
-
 	"github.com/couchbase/gomemcached/client"
+	"github.com/couchbase/goutils/logging"
+	"sync"
+	"time"
 )
 
 const initialRetryInterval = 1 * time.Second
@@ -22,6 +22,7 @@ type TapFeed struct {
 	args      *memcached.TapArguments
 	nodeFeeds []*memcached.TapFeed    // The TAP feeds of the individual nodes
 	output    chan memcached.TapEvent // Same as C but writeably-typed
+	wg        sync.WaitGroup
 	quit      chan bool
 }
 
@@ -94,12 +95,14 @@ func (feed *TapFeed) connectToNodes() (killSwitch chan bool, err error) {
 		}
 		feed.nodeFeeds = append(feed.nodeFeeds, singleFeed)
 		go feed.forwardTapEvents(singleFeed, killSwitch, serverConn.host)
+		feed.wg.Add(1)
 	}
 	return
 }
 
 // Goroutine that forwards Tap events from a single node's feed to the aggregate feed.
 func (feed *TapFeed) forwardTapEvents(singleFeed *memcached.TapFeed, killSwitch chan bool, host string) {
+	defer feed.wg.Done()
 	for {
 		select {
 		case event, ok := <-singleFeed.C:
@@ -134,6 +137,7 @@ func (feed *TapFeed) Close() error {
 
 	feed.closeNodeFeeds()
 	close(feed.quit)
+	feed.wg.Wait()
 	close(feed.output)
 	return nil
 }
