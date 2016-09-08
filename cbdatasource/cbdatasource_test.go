@@ -421,10 +421,11 @@ func TestImmediateStartCloseMAXPROCS1(t *testing.T) {
 		t.Errorf("expected no err on Stats()")
 	}
 	if !reflect.DeepEqual(bdss, &BucketDataSourceStats{
-		TotStart:              2,
-		TotRefreshCluster:     1,
-		TotRefreshClusterDone: 1,
-		TotRefreshWorkersDone: 1,
+		TotStart:                  2,
+		TotRefreshCluster:         1,
+		TotRefreshClusterDone:     1,
+		TotRefreshWorkersDone:     1,
+		TotRefreshWorkersLoopDone: 1,
 	}) {
 		t.Errorf("expected same stats, got: %#v", bdss)
 	}

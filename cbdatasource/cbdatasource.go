@@ -688,11 +688,11 @@ OUTER_LOOP:
 				continue
 			}
 			masterIdx := serverIdxs[0]
-			if int(masterIdx) >= len(vbm.ServerList) {
+			if masterIdx < 0 || int(masterIdx) >= len(vbm.ServerList) {
 				atomic.AddUint64(&d.stats.TotRefreshWorkersMasterIdxErr, 1)
 				d.receiver.OnError(fmt.Errorf("refreshWorkers"+
-					" no masterIdx for vbucketID: %d, vbm: %#v",
-					vbucketID, vbm))
+					" bad masterIdx: %d, vbucketID: %d, vbm: %#v",
+					masterIdx, vbucketID, vbm))
 				continue
 			}
 			masterServer := vbm.ServerList[masterIdx]
