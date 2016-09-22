@@ -71,7 +71,7 @@ func (b *Bucket) GetFailoverLogs(vBuckets []uint16) (FailoverLog, error) {
 	}
 
 	failoverLogMap := make(FailoverLog)
-	for _, serverConn := range b.getConnPools() {
+	for _, serverConn := range b.getConnPools(false /* not already locked */) {
 
 		vbList := vbHostList[serverConn.host]
 		if vbList == nil {
@@ -268,7 +268,7 @@ func (feed *UprFeed) run() {
 
 func (feed *UprFeed) connectToNodes() (err error) {
 	nodeCount := 0
-	for _, serverConn := range feed.bucket.getConnPools() {
+	for _, serverConn := range feed.bucket.getConnPools(false /* not already locked */) {
 
 		// this maybe a reconnection, so check if the connection to the node
 		// already exists. Connect only if the node is not found in the list

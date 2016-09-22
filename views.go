@@ -47,12 +47,18 @@ func (b *Bucket) randomBaseURL() (*url.URL, error) {
 	}
 	nodeNo := rand.Intn(len(nodes))
 	node := nodes[nodeNo]
+
+	b.RLock()
+	name := b.Name
+	pool := b.pool
+	b.RUnlock()
+
 	u, err := ParseURL(node.CouchAPIBase)
 	if err != nil {
 		return nil, fmt.Errorf("config error: Bucket %q node #%d CouchAPIBase=%q: %v",
-			b.Name, nodeNo, node.CouchAPIBase, err)
-	} else if b.pool != nil {
-		u.User = b.pool.client.BaseURL.User
+			name, nodeNo, node.CouchAPIBase, err)
+	} else if pool != nil {
+		u.User = pool.client.BaseURL.User
 	}
 	return u, err
 }
@@ -74,13 +80,18 @@ func (b *Bucket) randomNextURL(lastNode int) (*url.URL, int, error) {
 		nodeNo = (lastNode + 1) % len(nodes)
 	}
 
+	b.RLock()
+	name := b.Name
+	pool := b.pool
+	b.RUnlock()
+
 	node := nodes[nodeNo]
 	u, err := ParseURL(node.CouchAPIBase)
 	if err != nil {
 		return nil, -1, fmt.Errorf("config error: Bucket %q node #%d CouchAPIBase=%q: %v",
-			b.Name, nodeNo, node.CouchAPIBase, err)
-	} else if b.pool != nil {
-		u.User = b.pool.client.BaseURL.User
+			name, nodeNo, node.CouchAPIBase, err)
+	} else if pool != nil {
+		u.User = pool.client.BaseURL.User
 	}
 	return u, nodeNo, err
 }
@@ -129,9 +140,9 @@ func (b *Bucket) ViewURL(ddoc, name string,
 	}
 
 	if ddoc == "" && name == "_all_docs" {
-		u.Path = fmt.Sprintf("/%s/_all_docs", b.Name)
+		u.Path = fmt.Sprintf("/%s/_all_docs", b.GetName())
 	} else {
-		u.Path = fmt.Sprintf("/%s/_design/%s/_view/%s", b.Name, ddoc, name)
+		u.Path = fmt.Sprintf("/%s/_design/%s/_view/%s", b.GetName(), ddoc, name)
 	}
 	u.RawQuery = values.Encode()
 
@@ -164,7 +175,9 @@ func (b *Bucket) ViewCustom(ddoc, name string, params map[string]interface{},
 	if err != nil {
 		return err
 	}
-	maybeAddAuth(req, b.authHandler())
+
+	ah := b.authHandler(false /* bucket not yet locked */)
+	maybeAddAuth(req, ah)
 
 	res, err := doHTTPRequest(req)
 	if err != nil {

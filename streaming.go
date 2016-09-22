@@ -11,8 +11,6 @@ import (
 	"net/http"
 	"time"
 	"unsafe"
-
-	atomic "github.com/couchbase/go-couchbase/platform"
 )
 
 // Bucket auto-updater gets the latest version of the bucket config from
@@ -61,28 +59,28 @@ func (b *Bucket) RunBucketUpdater(notify NotifyFn) {
 		err := b.UpdateBucket()
 		if err != nil {
 			if notify != nil {
-				notify(b.Name, err)
+				notify(b.GetName(), err)
 			}
 			logging.Errorf(" Bucket Updater exited with err %v", err)
 		}
 	}()
 }
 
-// this version of replaceConnPools will not close the pools that are being reused
-func (b *Bucket) replaceConnPools2(with []*connectionPool) {
-	for {
-		old := atomic.LoadPointer(&b.connPools)
-		if atomic.CompareAndSwapPointer(&b.connPools, old, unsafe.Pointer(&with)) {
-			if old != nil {
-				for _, pool := range *(*[]*connectionPool)(old) {
-					if pool != nil && pool.inUse == false {
-						pool.Close()
-					}
-				}
+func (b *Bucket) replaceConnPools2(with []*connectionPool, bucketLocked bool) {
+	if !bucketLocked {
+		b.Lock()
+		defer b.Unlock()
+	}
+	old := b.connPools
+	b.connPools = unsafe.Pointer(&with)
+	if old != nil {
+		for _, pool := range *(*[]*connectionPool)(old) {
+			if pool != nil && pool.inUse == false {
+				pool.Close()
 			}
-			return
 		}
 	}
+	return
 }
 
 func (b *Bucket) UpdateBucket() error {
@@ -105,14 +103,17 @@ func (b *Bucket) UpdateBucket() error {
 		startNode := rand.Intn(len(nodes))
 		node := nodes[(startNode)%len(nodes)]
 
-		streamUrl := fmt.Sprintf("http://%s/pools/default/bucketsStreaming/%s", node.Hostname, b.Name)
+		streamUrl := fmt.Sprintf("http://%s/pools/default/bucketsStreaming/%s", node.Hostname, b.GetName())
 		logging.Infof(" Trying with %s", streamUrl)
 		req, err := http.NewRequest("GET", streamUrl, nil)
 		if err != nil {
 			return err
 		}
 
+		// Lock here to avoid having pool closed under us.
+		b.RLock()
 		err = maybeAddAuth(req, b.pool.client.ah)
+		b.RUnlock()
 		if err != nil {
 			return err
 		}
@@ -149,7 +150,7 @@ func (b *Bucket) UpdateBucket() error {
 			b.Lock()
 
 			// mark all the old connection pools for deletion
-			pools := b.getConnPools()
+			pools := b.getConnPools(true /* already locked */)
 			for _, pool := range pools {
 				if pool != nil {
 					pool.inUse = false
@@ -159,7 +160,7 @@ func (b *Bucket) UpdateBucket() error {
 			newcps := make([]*connectionPool, len(tmpb.VBSMJson.ServerList))
 			for i := range newcps {
 				// get the old connection pool and check if it is still valid
-				pool := b.getConnPoolByHost(tmpb.VBSMJson.ServerList[i])
+				pool := b.getConnPoolByHost(tmpb.VBSMJson.ServerList[i], true /* bucket already locked */)
 				if pool != nil && pool.inUse == false {
 					// if the hostname and index is unchanged then reuse this pool
 					newcps[i] = pool
@@ -175,18 +176,18 @@ func (b *Bucket) UpdateBucket() error {
 				} else {
 					newcps[i] = newConnectionPool(
 						tmpb.VBSMJson.ServerList[i],
-						b.authHandler(), PoolSize, PoolOverflow)
+						b.authHandler(true /* bucket already locked */), PoolSize, PoolOverflow)
 				}
 			}
 
-			b.replaceConnPools2(newcps)
+			b.replaceConnPools2(newcps, true /* bucket already locked */)
 
 			tmpb.ah = b.ah
-			atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&tmpb.VBSMJson))
-			atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJSON))
+			b.vBucketServerMap = unsafe.Pointer(&tmpb.VBSMJson)
+			b.nodeList = unsafe.Pointer(&tmpb.NodesJSON)
 			b.Unlock()
 
-			logging.Infof("Got new configuration for bucket %s", b.Name)
+			logging.Infof("Got new configuration for bucket %s", b.GetName())
 
 		}
 		// we are here because of an error
