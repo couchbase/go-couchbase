@@ -35,8 +35,12 @@ type DDocsResult struct {
 // GetDDocs lists all design documents
 func (b *Bucket) GetDDocs() (DDocsResult, error) {
 	var ddocsResult DDocsResult
+	b.RLock()
+	pool := b.pool
+	uri := b.DDocs.URI
+	b.RUnlock()
 
-	err := b.pool.client.parseURLResponse(b.DDocs.URI, &ddocsResult)
+	err := pool.client.parseURLResponse(uri, &ddocsResult)
 	if err != nil {
 		return DDocsResult{}, err
 	}
@@ -44,8 +48,7 @@ func (b *Bucket) GetDDocs() (DDocsResult, error) {
 }
 
 func (b *Bucket) GetDDocWithRetry(docname string, into interface{}) error {
-
-	ddocURI := fmt.Sprintf("/%s/_design/%s", b.Name, docname)
+	ddocURI := fmt.Sprintf("/%s/_design/%s", b.GetName(), docname)
 	err := b.parseAPIResponse(ddocURI, &into)
 	if err != nil {
 		return err
@@ -55,8 +58,11 @@ func (b *Bucket) GetDDocWithRetry(docname string, into interface{}) error {
 
 func (b *Bucket) GetDDocsWithRetry() (DDocsResult, error) {
 	var ddocsResult DDocsResult
+	b.RLock()
+	uri := b.DDocs.URI
+	b.RUnlock()
 
-	err := b.parseURLResponse(b.DDocs.URI, &ddocsResult)
+	err := b.parseURLResponse(uri, &ddocsResult)
 	if err != nil {
 		return DDocsResult{}, err
 	}
@@ -68,7 +74,7 @@ func (b *Bucket) ddocURL(docname string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	u.Path = fmt.Sprintf("/%s/_design/%s", b.Name, docname)
+	u.Path = fmt.Sprintf("/%s/_design/%s", b.GetName(), docname)
 	return u.String(), nil
 }
 
@@ -77,7 +83,7 @@ func (b *Bucket) ddocURLNext(nodeId int, docname string) (string, int, error) {
 	if err != nil {
 		return "", -1, err
 	}
-	u.Path = fmt.Sprintf("/%s/_design/%s", b.Name, docname)
+	u.Path = fmt.Sprintf("/%s/_design/%s", b.GetName(), docname)
 	return u.String(), selected, nil
 }
 
@@ -135,7 +141,7 @@ func (b *Bucket) PutDDoc(docname string, value interface{}) error {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		err = maybeAddAuth(req, b.authHandler())
+		err = maybeAddAuth(req, b.authHandler(false /* bucket not yet locked */))
 		if err != nil {
 			return err
 		}
@@ -189,7 +195,7 @@ func (b *Bucket) GetDDoc(docname string, into interface{}) error {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		err = maybeAddAuth(req, b.authHandler())
+		err = maybeAddAuth(req, b.authHandler(false /* bucket not yet locked */))
 		if err != nil {
 			return err
 		}
@@ -247,7 +253,7 @@ func (b *Bucket) DeleteDDoc(docname string) error {
 			return err
 		}
 		req.Header.Set("Content-Type", "application/json")
-		err = maybeAddAuth(req, b.authHandler())
+		err = maybeAddAuth(req, b.authHandler(false /* bucket not already locked */))
 		if err != nil {
 			return err
 		}

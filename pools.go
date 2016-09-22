@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	atomic "github.com/couchbase/go-couchbase/platform"
 	"github.com/couchbase/goutils/logging"
 	"io"
 	"io/ioutil"
@@ -163,8 +162,14 @@ type DurablitySettings struct {
 }
 
 // Bucket is the primary entry point for most data operations.
+// Bucket is a locked data structure. All access to its fields should be done using read or write locking,
+// as appropriate.
+//
+// Some access methods require locking, but rely on the caller to do so. These are appropriate
+// for calls from methods that have already locked the structure. Methods like this
+// take a boolean parameter "bucketLocked".
 type Bucket struct {
-	sync.Mutex
+	sync.RWMutex
 	AuthType            string             `json:"authType"`
 	Capabilities        []string           `json:"bucketCapabilities"`
 	CapabilitiesVersion string             `json:"bucketCapabilitiesVer"`
@@ -237,7 +242,10 @@ func (ba *BucketAuth) GetCredentials() (string, string, string) {
 
 // VBServerMap returns the current VBucketServerMap.
 func (b *Bucket) VBServerMap() *VBucketServerMap {
-	return (*VBucketServerMap)(atomic.LoadPointer(&(b.vBucketServerMap)))
+	b.RLock()
+	defer b.RUnlock()
+	ret := (*VBucketServerMap)(b.vBucketServerMap)
+	return ret
 }
 
 func (b *Bucket) GetVBmap(addrs []string) (map[string][]uint16, error) {
@@ -265,13 +273,23 @@ func (b *Bucket) GetVBmap(addrs []string) (map[string][]uint16, error) {
 	return m, nil
 }
 
+func (b *Bucket) GetName() string {
+	b.RLock()
+	defer b.RUnlock()
+	ret := b.Name
+	return ret
+}
+
 // Nodes returns teh current list of nodes servicing this bucket.
-func (b Bucket) Nodes() []Node {
-	return *(*[]Node)(atomic.LoadPointer(&b.nodeList))
+func (b *Bucket) Nodes() []Node {
+	b.RLock()
+	defer b.RUnlock()
+	ret := *(*[]Node)(b.nodeList)
+	return ret
 }
 
 // return the list of healthy nodes
-func (b Bucket) HealthyNodes() []Node {
+func (b *Bucket) HealthyNodes() []Node {
 	nodes := []Node{}
 
 	for _, n := range b.Nodes() {
@@ -287,37 +305,41 @@ func (b Bucket) HealthyNodes() []Node {
 	return nodes
 }
 
-func (b Bucket) getConnPools() []*connectionPool {
+func (b *Bucket) getConnPools(bucketLocked bool) []*connectionPool {
+	if !bucketLocked {
+		b.RLock()
+		defer b.RUnlock()
+	}
 	if b.connPools != nil {
-		return *(*[]*connectionPool)(atomic.LoadPointer(&b.connPools))
+		return *(*[]*connectionPool)(b.connPools)
 	} else {
 		return nil
 	}
 }
 
 func (b *Bucket) replaceConnPools(with []*connectionPool) {
-	for {
-		old := atomic.LoadPointer(&b.connPools)
-		if atomic.CompareAndSwapPointer(&b.connPools, old, unsafe.Pointer(&with)) {
-			if old != nil {
-				for _, pool := range *(*[]*connectionPool)(old) {
-					if pool != nil {
-						pool.Close()
-					}
-				}
+	b.Lock()
+	defer b.Unlock()
+
+	old := b.connPools
+	b.connPools = unsafe.Pointer(&with)
+	if old != nil {
+		for _, pool := range *(*[]*connectionPool)(old) {
+			if pool != nil {
+				pool.Close()
 			}
-			return
 		}
 	}
+	return
 }
 
-func (b Bucket) getConnPool(i int) *connectionPool {
+func (b *Bucket) getConnPool(i int) *connectionPool {
 
 	if i < 0 {
 		return nil
 	}
 
-	p := b.getConnPools()
+	p := b.getConnPools(false /* not already locked */)
 	if len(p) > i {
 		return p[i]
 	}
@@ -325,9 +347,8 @@ func (b Bucket) getConnPool(i int) *connectionPool {
 	return nil
 }
 
-func (b Bucket) getConnPoolByHost(host string) *connectionPool {
-
-	pools := b.getConnPools()
+func (b *Bucket) getConnPoolByHost(host string, bucketLocked bool) *connectionPool {
+	pools := b.getConnPools(bucketLocked)
 	for _, p := range pools {
 		if p != nil && p.host == host {
 			return p
@@ -339,7 +360,7 @@ func (b Bucket) getConnPoolByHost(host string) *connectionPool {
 
 // Given a vbucket number, returns a memcached connection to it.
 // The connection must be returned to its pool after use.
-func (b Bucket) getConnectionToVBucket(vb uint32) (*memcached.Client, *connectionPool, error) {
+func (b *Bucket) getConnectionToVBucket(vb uint32) (*memcached.Client, *connectionPool, error) {
 	for {
 		vbm := b.VBServerMap()
 		if len(vbm.VBucketMap) < int(vb) {
@@ -362,10 +383,10 @@ func (b Bucket) getConnectionToVBucket(vb uint32) (*memcached.Client, *connectio
 // To get random documents, we need to cover all the nodes, so select
 // a connection at random.
 
-func (b Bucket) getRandomConnection() (*memcached.Client, *connectionPool, error) {
+func (b *Bucket) getRandomConnection() (*memcached.Client, *connectionPool, error) {
 	for {
 		var currentPool = 0
-		pools := b.getConnPools()
+		pools := b.getConnPools(false /* not already locked */)
 		if len(pools) == 0 {
 			return nil, nil, fmt.Errorf("No connection pool found")
 		} else if len(pools) > 1 { // choose a random connection
@@ -389,7 +410,7 @@ func (b Bucket) getRandomConnection() (*memcached.Client, *connectionPool, error
 // Client.GetRandomDoc() call to get a random document from that node.
 //
 
-func (b Bucket) GetRandomDoc() (*gomemcached.MCResponse, error) {
+func (b *Bucket) GetRandomDoc() (*gomemcached.MCResponse, error) {
 	// get a connection from the pool
 	conn, pool, err := b.getRandomConnection()
 
@@ -404,30 +425,37 @@ func (b Bucket) GetRandomDoc() (*gomemcached.MCResponse, error) {
 	return doc, err
 }
 
-func (b Bucket) getMasterNode(i int) string {
-	p := b.getConnPools()
+func (b *Bucket) getMasterNode(i int) string {
+	p := b.getConnPools(false /* not already locked */)
 	if len(p) > i {
 		return p[i].host
 	}
 	return ""
 }
 
-func (b Bucket) authHandler() (ah AuthHandler) {
-	if b.pool != nil {
-		ah = b.pool.client.ah
+func (b *Bucket) authHandler(bucketLocked bool) (ah AuthHandler) {
+	if !bucketLocked {
+		b.RLock()
+		defer b.RUnlock()
+	}
+	pool := b.pool
+	name := b.Name
+
+	if pool != nil {
+		ah = pool.client.ah
 	}
 	if mbah, ok := ah.(MultiBucketAuthHandler); ok {
-		return mbah.ForBucket(b.Name)
+		return mbah.ForBucket(name)
 	}
 	if ah == nil {
-		ah = &basicAuth{b.Name, ""}
+		ah = &basicAuth{name, ""}
 	}
 	return
 }
 
 // NodeAddresses gets the (sorted) list of memcached node addresses
 // (hostname:port).
-func (b Bucket) NodeAddresses() []string {
+func (b *Bucket) NodeAddresses() []string {
 	vsm := b.VBServerMap()
 	rv := make([]string, len(vsm.ServerList))
 	copy(rv, vsm.ServerList)
@@ -437,7 +465,7 @@ func (b Bucket) NodeAddresses() []string {
 
 // CommonAddressSuffix finds the longest common suffix of all
 // host:port strings in the node list.
-func (b Bucket) CommonAddressSuffix() string {
+func (b *Bucket) CommonAddressSuffix() string {
 	input := []string{}
 	for _, n := range b.Nodes() {
 		input = append(input, n.Hostname)
@@ -637,7 +665,10 @@ func (b *Bucket) parseURLResponse(path string, out interface{}) error {
 			Scheme: "http",
 		}
 
+		// Lock here to avoid having pool closed under us.
+		b.RLock()
 		err := queryRestAPI(url, path, b.pool.client.ah, out)
+		b.RUnlock()
 		if err == nil {
 			return err
 		}
@@ -665,7 +696,10 @@ func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
 		}
 
 		u, err = ParseURL(node.CouchAPIBase)
+		// Lock here so pool does not get closed under us.
+		b.RLock()
 		if err != nil {
+			b.RUnlock()
 			return fmt.Errorf("config error: Bucket %q node #%d CouchAPIBase=%q: %v",
 				b.Name, i, node.CouchAPIBase, err)
 		} else if b.pool != nil {
@@ -678,6 +712,7 @@ func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
 		requestPath := strings.Split(u.String(), u.Host)[1]
 
 		err = queryRestAPI(u, requestPath, b.pool.client.ah, out)
+		b.RUnlock()
 		if err == nil {
 			return err
 		}
@@ -786,14 +821,18 @@ func SetViewUpdateParams(baseU string, params map[string]interface{}) (viewOpts 
 }
 
 func (b *Bucket) Refresh() error {
+	b.RLock()
 	pool := b.pool
+	uri := b.URI
+	b.RUnlock()
+
 	tmpb := &Bucket{}
-	err := pool.client.parseURLResponse(b.URI, tmpb)
+	err := pool.client.parseURLResponse(uri, tmpb)
 	if err != nil {
 		return err
 	}
 
-	pools := b.getConnPools()
+	pools := b.getConnPools(false /* bucket not already locked */)
 
 	// We need this lock to ensure that bucket refreshes happening because
 	// of NMVb errors received during bulkGet do not end up over-writing
@@ -809,7 +848,7 @@ func (b *Bucket) Refresh() error {
 	newcps := make([]*connectionPool, len(tmpb.VBSMJson.ServerList))
 	for i := range newcps {
 
-		pool := b.getConnPoolByHost(tmpb.VBSMJson.ServerList[i])
+		pool := b.getConnPoolByHost(tmpb.VBSMJson.ServerList[i], true /* bucket already locked */)
 		if pool != nil && pool.inUse == false {
 			// if the hostname and index is unchanged then reuse this pool
 			newcps[i] = pool
@@ -825,13 +864,13 @@ func (b *Bucket) Refresh() error {
 		} else {
 			newcps[i] = newConnectionPool(
 				tmpb.VBSMJson.ServerList[i],
-				b.authHandler(), PoolSize, PoolOverflow)
+				b.authHandler(true /* bucket already locked */), PoolSize, PoolOverflow)
 		}
 	}
-	b.replaceConnPools2(newcps)
+	b.replaceConnPools2(newcps, true /* bucket already locked */)
 	tmpb.ah = b.ah
-	atomic.StorePointer(&b.vBucketServerMap, unsafe.Pointer(&tmpb.VBSMJson))
-	atomic.StorePointer(&b.nodeList, unsafe.Pointer(&tmpb.NodesJSON))
+	b.vBucketServerMap = unsafe.Pointer(&tmpb.VBSMJson)
+	b.nodeList = unsafe.Pointer(&tmpb.NodesJSON)
 
 	b.Unlock()
 	return nil
@@ -898,8 +937,10 @@ func (c *Client) GetPoolServices(name string) (ps PoolServices, err error) {
 // Close marks this bucket as no longer needed, closing connections it
 // may have open.
 func (b *Bucket) Close() {
+	b.Lock()
+	defer b.Unlock()
 	if b.connPools != nil {
-		for _, c := range b.getConnPools() {
+		for _, c := range b.getConnPools(true /* already locked */) {
 			if c != nil {
 				c.Close()
 			}
@@ -945,7 +986,10 @@ func (p *Pool) GetBucketWithAuth(bucket, username, password string) (*Bucket, er
 
 // GetPool gets the pool to which this bucket belongs.
 func (b *Bucket) GetPool() *Pool {
-	return b.pool
+	b.RLock()
+	defer b.RUnlock()
+	ret := b.pool
+	return ret
 }
 
 // GetClient gets the client from which we got this pool.

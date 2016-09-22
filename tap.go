@@ -85,7 +85,7 @@ func (feed *TapFeed) run() {
 
 func (feed *TapFeed) connectToNodes() (killSwitch chan bool, err error) {
 	killSwitch = make(chan bool)
-	for _, serverConn := range feed.bucket.getConnPools() {
+	for _, serverConn := range feed.bucket.getConnPools(false /* not already locked */) {
 		var singleFeed *memcached.TapFeed
 		singleFeed, err = serverConn.StartTapFeed(feed.args)
 		if err != nil {

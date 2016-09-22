@@ -88,8 +88,11 @@ func (b *Bucket) SetObserveAndPersist(nPersist PersistTo, nObserve ObserveTo) (e
 }
 
 func (b *Bucket) ObserveAndPersistPoll(vb uint16, vbuuid uint64, seqNo uint64) (err error, failover bool) {
+	b.RLock()
+	ds := b.ds
+	b.RUnlock()
 
-	if b.ds == nil {
+	if ds == nil {
 		return
 	}
 
@@ -98,15 +101,15 @@ func (b *Bucket) ObserveAndPersistPoll(vb uint16, vbuuid uint64, seqNo uint64) (
 	errChan := make(chan *OPErrResponse, 10)
 
 	nodes := b.GetNodeList(vb)
-	if int(b.ds.Observe) > len(nodes) || int(b.ds.Persist) > len(nodes) {
+	if int(ds.Observe) > len(nodes) || int(ds.Persist) > len(nodes) {
 		return fmt.Errorf("Not enough healthy nodes in the cluster"), false
 	}
 
 	logging.Infof("Node list %v", nodes)
 
-	if b.ds.Observe >= ObserveReplicateOne {
+	if ds.Observe >= ObserveReplicateOne {
 		// create a job for each host
-		for i := ObserveReplicateOne; i < b.ds.Observe+1; i++ {
+		for i := ObserveReplicateOne; i < ds.Observe+1; i++ {
 			opJob := ObservePersistPool.Get()
 			opJob.vb = vb
 			opJob.vbuuid = vbuuid
@@ -121,8 +124,8 @@ func (b *Bucket) ObserveAndPersistPoll(vb uint16, vbuuid uint64, seqNo uint64) (
 		}
 	}
 
-	if b.ds.Persist >= PersistMaster {
-		for i := PersistMaster; i < b.ds.Persist+1; i++ {
+	if ds.Persist >= PersistMaster {
+		for i := PersistMaster; i < ds.Persist+1; i++ {
 			opJob := ObservePersistPool.Get()
 			opJob.vb = vb
 			opJob.vbuuid = vbuuid
@@ -199,7 +202,7 @@ func (b *Bucket) OPJobPoll() {
 	for ok == true {
 		select {
 		case job := <-OPJobChan:
-			pool := b.getConnPoolByHost(job.hostname)
+			pool := b.getConnPoolByHost(job.hostname, false /* bucket not already locked */)
 			if pool == nil {
 				errRes := &OPErrResponse{vb: job.vb, vbuuid: job.vbuuid}
 				errRes.err = fmt.Errorf("Pool not found for host %v", job.hostname)
