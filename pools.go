@@ -170,21 +170,21 @@ type DurablitySettings struct {
 // take a boolean parameter "bucketLocked".
 type Bucket struct {
 	sync.RWMutex
-	AuthType            string             `json:"authType"`
-	Capabilities        []string           `json:"bucketCapabilities"`
-	CapabilitiesVersion string             `json:"bucketCapabilitiesVer"`
-	Type                string             `json:"bucketType"`
-	Name                string             `json:"name"`
-	NodeLocator         string             `json:"nodeLocator"`
-	Quota               map[string]float64 `json:"quota,omitempty"`
-	Replicas            int                `json:"replicaNumber"`
-	Password            string             `json:"saslPassword"`
-	URI                 string             `json:"uri"`
-	StreamingURI        string             `json:"streamingUri"`
-	LocalRandomKeyURI   string             `json:"localRandomKeyUri,omitempty"`
-	UUID                string             `json:"uuid"`
-	TimeSynchronization string             `json:"timeSynchronization,omitempty"`
-	DDocs               struct {
+	AuthType               string             `json:"authType"`
+	Capabilities           []string           `json:"bucketCapabilities"`
+	CapabilitiesVersion    string             `json:"bucketCapabilitiesVer"`
+	Type                   string             `json:"bucketType"`
+	Name                   string             `json:"name"`
+	NodeLocator            string             `json:"nodeLocator"`
+	Quota                  map[string]float64 `json:"quota,omitempty"`
+	Replicas               int                `json:"replicaNumber"`
+	Password               string             `json:"saslPassword"`
+	URI                    string             `json:"uri"`
+	StreamingURI           string             `json:"streamingUri"`
+	LocalRandomKeyURI      string             `json:"localRandomKeyUri,omitempty"`
+	UUID                   string             `json:"uuid"`
+	ConflictResolutionType string             `json:"conflictResolutionType,omitempty"`
+	DDocs                  struct {
 		URI string `json:"uri"`
 	} `json:"ddocs,omitempty"`
 	BasicStats  map[string]interface{} `json:"basicStats,omitempty"`
