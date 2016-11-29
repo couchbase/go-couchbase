@@ -119,6 +119,7 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 		}()
 
 		if retry {
+			time.Sleep(time.Second)
 			b.Refresh()
 		} else {
 			return err
