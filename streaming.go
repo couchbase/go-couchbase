@@ -139,7 +139,6 @@ func (b *Bucket) UpdateBucket() error {
 
 			err := dec.Decode(&tmpb)
 			if err != nil {
-				logging.Errorf(" Unable to decode response %v", err)
 				returnErr = err
 				res.Body.Close()
 				break

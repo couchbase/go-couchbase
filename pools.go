@@ -543,7 +543,16 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 	return res, err
 }
 
-func doPostAPI(
+func doPutAPI(baseURL *url.URL, path string, params map[string]interface{}, authHandler AuthHandler, out interface{}) error {
+	return doOutputAPI("PUT", baseURL, path, params, authHandler, out)
+}
+
+func doPostAPI(baseURL *url.URL, path string, params map[string]interface{}, authHandler AuthHandler, out interface{}) error {
+	return doOutputAPI("POST", baseURL, path, params, authHandler, out)
+}
+
+func doOutputAPI(
+	httpVerb string,
 	baseURL *url.URL,
 	path string,
 	params map[string]interface{},
@@ -563,7 +572,7 @@ func doPostAPI(
 		postData.Set(k, fmt.Sprintf("%v", v))
 	}
 
-	req, err := http.NewRequest("POST", requestUrl, bytes.NewBufferString(postData.Encode()))
+	req, err := http.NewRequest(httpVerb, requestUrl, bytes.NewBufferString(postData.Encode()))
 	if err != nil {
 		return err
 	}
@@ -643,6 +652,10 @@ func (c *Client) parseURLResponse(path string, out interface{}) error {
 
 func (c *Client) parsePostURLResponse(path string, params map[string]interface{}, out interface{}) error {
 	return doPostAPI(c.BaseURL, path, params, c.ah, out)
+}
+
+func (c *Client) parsePutURLResponse(path string, params map[string]interface{}, out interface{}) error {
+	return doPutAPI(c.BaseURL, path, params, c.ah, out)
 }
 
 func (b *Bucket) parseURLResponse(path string, out interface{}) error {
