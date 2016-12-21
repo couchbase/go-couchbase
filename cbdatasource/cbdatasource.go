@@ -833,6 +833,11 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 				d.receiver.OnError(fmt.Errorf("worker auth,"+
 					" AuthenticateMemcachedConn, server: %s, err: %v",
 					server, err))
+
+				// If we can't authenticate, then maybe a node was rebalanced out,
+				// so ask for a cluster refresh just in case.
+				d.Kick("worker-auth-AuthenticateMemcachedConn")
+
 				return 0
 			}
 			atomic.AddUint64(&d.stats.TotWorkerAuthenticateMemcachedConnOk, 1)
