@@ -319,7 +319,7 @@ func InitBulkGet() {
 	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
 
 	for i := 0; i < _NUM_CHANNELS; i++ {
-		channel := make(chan *vbBulkGet, 1024*_NUM_CHANNEL_WORKERS)
+		channel := make(chan *vbBulkGet, 16*1024*_NUM_CHANNEL_WORKERS)
 		_VB_BULK_GET_CHANNELS[i] = channel
 
 		for j := 0; j < _NUM_CHANNEL_WORKERS; j++ {
