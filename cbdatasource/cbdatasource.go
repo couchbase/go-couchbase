@@ -822,6 +822,22 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		atomic.AddUint64(&d.stats.TotWorkerClientCloseDone, 1)
 	}()
 
+	emptyWorkerCh := func() {
+		for {
+			select {
+			case _, ok := <-workerCh:
+				if !ok {
+					return
+				}
+
+				// Else, keep looping to consume workerCh.
+
+			default:
+				return // Stop loop when workerCh is empty.
+			}
+		}
+	}
+
 	if d.auth != nil {
 		var user, pswd string
 
@@ -834,8 +850,12 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 					" AuthenticateMemcachedConn, server: %s, err: %v",
 					server, err))
 
-				// If we can't authenticate, then maybe a node was rebalanced out,
-				// so ask for a cluster refresh just in case.
+				// If we can't authenticate, then maybe a node was
+				// rebalanced out, so consume the workerCh so that the
+				// refresh-cluster goroutine will be unblocked and can
+				// receive our kick.
+				emptyWorkerCh()
+
 				d.Kick("worker-auth-AuthenticateMemcachedConn")
 
 				return 0
