@@ -132,6 +132,7 @@ type Node struct {
 	MemoryTotal          float64            `json:"memoryTotal"`
 	OS                   string             `json:"os"`
 	Ports                map[string]int     `json:"ports"`
+	Services	     []string		`json:"services"`
 	Status               string             `json:"status"`
 	Uptime               int                `json:"uptime,string"`
 	Version              string             `json:"version"`
