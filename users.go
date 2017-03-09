@@ -1,10 +1,14 @@
 package couchbase
 
-import "bytes"
+import (
+	"bytes"
+	"fmt"
+)
 
 type User struct {
 	Name  string
 	Id    string
+	Type  string
 	Roles []Role
 }
 
@@ -56,7 +60,16 @@ func (c *Client) PutUserInfo(u *User) error {
 		"name":  u.Name,
 		"roles": rolesToParamFormat(u.Roles),
 	}
-	ret := make([]User, 0, 16) // PUT returns the set value. We ignore it.
-	err := c.parsePutURLResponse("/settings/rbac/users/"+u.Id, params, &ret)
+	var target string
+	switch u.Type {
+	case "saslauthd":
+		target = "/settings/rbac/users/" + u.Id
+	case "builtin":
+		target = "/settings/rbac/users/builtin/" + u.Id
+	default:
+		return fmt.Errorf("Unknown user type: %s", u.Type)
+	}
+	var ret string // PUT returns an empty string. We ignore it.
+	err := c.parsePutURLResponse(target, params, &ret)
 	return err
 }
