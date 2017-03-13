@@ -17,6 +17,17 @@ type Role struct {
 	BucketName string `json:"bucket_name"`
 }
 
+// Sample:
+// {"role":"admin","name":"Admin","desc":"Can manage ALL cluster features including security.","ce":true}
+// {"role":"query_select","bucket_name":"*","name":"Query Select","desc":"Can execute SELECT statement on bucket to retrieve data"}
+type RoleDescription struct {
+	Role       string
+	Name       string
+	Desc       string
+	Ce         bool
+	BucketName string `json:"bucket_name"`
+}
+
 // Return user-role data, as parsed JSON.
 // Sample:
 //   [{"id":"ivanivanov","name":"Ivan Ivanov","roles":[{"role":"cluster_admin"},{"bucket_name":"default","role":"bucket_admin"}]},
@@ -72,4 +83,13 @@ func (c *Client) PutUserInfo(u *User) error {
 	var ret string // PUT returns an empty string. We ignore it.
 	err := c.parsePutURLResponse(target, params, &ret)
 	return err
+}
+
+func (c *Client) GetRolesAll() ([]RoleDescription, error) {
+	ret := make([]RoleDescription, 0, 32)
+	err := c.parseURLResponse("/settings/rbac/roles", &ret)
+	if err != nil {
+		return nil, err
+	}
+	return ret, nil
 }

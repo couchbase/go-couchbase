@@ -6,6 +6,37 @@ import (
 	"testing"
 )
 
+func TestGetRolesAll(t *testing.T) {
+	client, err := ConnectWithAuthCreds("http://localhost:8091", "Administrator", "password")
+	if err != nil {
+		t.Fatalf("Unable to connect: %v", err)
+	}
+	roles, err := client.GetRolesAll()
+	if err != nil {
+		t.Fatalf("Unable to get roles: %v", err)
+	}
+
+	cases := make(map[string]RoleDescription, 2)
+	cases["admin"] = RoleDescription{Role: "admin", Name: "Admin", Desc: "Can manage ALL cluster features including security.", Ce: true}
+	cases["query_select"] = RoleDescription{Role: "query_select", BucketName: "*", Name: "Query Select",
+		Desc: "Can execute SELECT statement on bucket to retrieve data"}
+	for roleName, expectedValue := range cases {
+		foundThisRole := false
+		for _, foundValue := range roles {
+			if foundValue.Role == roleName {
+				foundThisRole = true
+				if expectedValue == foundValue {
+					break // OK for this role
+				}
+				t.Fatalf("Unexpected value for role %s. Expected %+v, got %+v", roleName, expectedValue, foundValue)
+			}
+		}
+		if !foundThisRole {
+			t.Fatalf("Could not find role %s", roleName)
+		}
+	}
+}
+
 func TestUserUnmarshal(t *testing.T) {
 	text := `[{"id":"ivanivanov","name":"Ivan Ivanov","roles":[{"role":"cluster_admin"},{"bucket_name":"default","role":"bucket_admin"}]},
 			{"id":"petrpetrov","name":"Petr Petrov","roles":[{"role":"replication_admin"}]}]`
