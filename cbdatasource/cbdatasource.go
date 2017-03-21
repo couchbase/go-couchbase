@@ -38,6 +38,12 @@ import (
 	"github.com/couchbase/gomemcached/client"
 )
 
+const FlagOpenProducer = uint32(1)
+const FlagOpenIncludeXattrs = uint32(4)
+const FeatureEnabledXAttrs = uint16(0x06)
+
+var ErrXAttrsNotSupported = fmt.Errorf("xattrs not supported by server")
+
 // BucketDataSource is the main control interface returned by
 // NewBucketDataSource().
 type BucketDataSource interface {
@@ -172,6 +178,12 @@ type BucketDataSourceOptions struct {
 	// the DefaultBucketDataSourceOptions.PingTimeoutMS is used.  Of
 	// note, the NOOP itself counts as send/receive activity.
 	PingTimeoutMS int
+
+	// IncludeXAttrs is an optional flag which specifies whether
+	// the clients are interested in the X Attributes values
+	// during DCP connection set up.
+	// Defaulted to false to keep it backward compatible.
+	IncludeXAttrs bool
 }
 
 // AllServerURLsConnectBucketError is the error type passed to
@@ -226,6 +238,8 @@ var DefaultBucketDataSourceOptions = &BucketDataSourceOptions{
 	TraceCapacity: 200,
 
 	PingTimeoutMS: 30000,
+
+	IncludeXAttrs: false,
 }
 
 // BucketDataSourceStats is filled by the BucketDataSource.Stats()
@@ -890,7 +904,7 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		uprOpenName = fmt.Sprintf("cbdatasource-%x", rand.Int63())
 	}
 
-	err = UPROpen(client, uprOpenName, d.options.FeedBufferSizeBytes)
+	err = UPROpen(client, uprOpenName, d.options)
 	if err != nil {
 		atomic.AddUint64(&d.stats.TotWorkerUPROpenErr, 1)
 		d.receiver.OnError(err)
@@ -1726,22 +1740,59 @@ func ConnectBucket(serverURL, poolName, bucketName string,
 	return &bucketWrapper{b: bucket}, nil
 }
 
+func xAttrsSupported(mc *memcached.Client) (bool, error) {
+	payload := make([]byte, 2)
+	binary.BigEndian.PutUint16(payload, FeatureEnabledXAttrs)
+
+	res, err := mc.Send(&gomemcached.MCRequest{
+		Opcode: gomemcached.HELLO,
+		Key:    []byte("GoMemcached"),
+		Body:   payload,
+	})
+	if err != nil {
+		return false, err
+	}
+	// Parse the response data from the body:
+	if len(res.Body) < 2 {
+		return false, ErrXAttrsNotSupported
+	}
+	xattrs := binary.BigEndian.Uint16(res.Body[0:2])
+	if xattrs == FeatureEnabledXAttrs {
+		return true, nil
+	}
+	return false, nil
+}
+
 // UPROpen starts a UPR_OPEN stream on a memcached client connection.
 // It is exposed for testability.
-func UPROpen(mc *memcached.Client, name string, bufSize uint32) error {
+func UPROpen(mc *memcached.Client, name string, option *BucketDataSourceOptions) error {
 	rq := &gomemcached.MCRequest{
 		Opcode: gomemcached.UPR_OPEN,
 		Key:    []byte(name),
 		Opaque: 0xf00d1234,
 		Extras: make([]byte, 8),
 	}
+	bufSize := option.FeedBufferSizeBytes
 	binary.BigEndian.PutUint32(rq.Extras[:4], 0) // First 4 bytes are reserved.
-	flags := uint32(1)                           // NOTE: 1 for producer, 0 for consumer.
+	flags := FlagOpenProducer                    // NOTE: 1 for producer, 0 for consumer.
+	if option.IncludeXAttrs {
+		// if the server supports xattrs,
+		// then include the xattrs flag in open dcp request.
+		xattrsEnabled, err := xAttrsSupported(mc)
+		if xattrsEnabled && err == nil {
+			flags |= FlagOpenIncludeXattrs
+		} else if err != nil && err != ErrXAttrsNotSupported {
+			return fmt.Errorf("UPROpen xAttrsSupported, err: %v", err)
+		} else if option.Logf != nil {
+			option.Logf("cbdatasource: xAttrsSupported, err: %v", err)
+		}
+	}
 	binary.BigEndian.PutUint32(rq.Extras[4:], flags)
 
 	if err := mc.Transmit(rq); err != nil {
 		return fmt.Errorf("UPROpen transmit, err: %v", err)
 	}
+
 	res, err := mc.Receive()
 	if err != nil {
 		return fmt.Errorf("UPROpen receive, err: %v", err)
