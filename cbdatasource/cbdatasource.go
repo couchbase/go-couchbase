@@ -40,6 +40,7 @@ import (
 
 const FlagOpenProducer = uint32(1)
 const FlagOpenIncludeXattrs = uint32(4)
+const FeatureEnabledDataType = uint16(0x01)
 const FeatureEnabledXAttrs = uint16(0x06)
 
 var ErrXAttrsNotSupported = fmt.Errorf("xattrs not supported by server")
@@ -1741,9 +1742,9 @@ func ConnectBucket(serverURL, poolName, bucketName string,
 }
 
 func xAttrsSupported(mc *memcached.Client) (bool, error) {
-	payload := make([]byte, 2)
-	binary.BigEndian.PutUint16(payload, FeatureEnabledXAttrs)
-
+	payload := make([]byte, 4)
+	binary.BigEndian.PutUint16(payload[0:2], FeatureEnabledDataType)
+	binary.BigEndian.PutUint16(payload[2:4], FeatureEnabledXAttrs)
 	res, err := mc.Send(&gomemcached.MCRequest{
 		Opcode: gomemcached.HELLO,
 		Key:    []byte("GoMemcached"),
