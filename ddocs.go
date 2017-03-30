@@ -40,6 +40,11 @@ func (b *Bucket) GetDDocs() (DDocsResult, error) {
 	uri := b.DDocs.URI
 	b.RUnlock()
 
+	// MB-23555 ephemeral buckets have no ddocs
+	if uri == "" {
+		return DDocsResult{}, nil
+	}
+
 	err := pool.client.parseURLResponse(uri, &ddocsResult)
 	if err != nil {
 		return DDocsResult{}, err
@@ -61,6 +66,11 @@ func (b *Bucket) GetDDocsWithRetry() (DDocsResult, error) {
 	b.RLock()
 	uri := b.DDocs.URI
 	b.RUnlock()
+
+	// MB-23555 ephemeral buckets have no ddocs
+	if uri == "" {
+		return DDocsResult{}, nil
+	}
 
 	err := b.parseURLResponse(uri, &ddocsResult)
 	if err != nil {
