@@ -8,7 +8,7 @@ import (
 type User struct {
 	Name  string
 	Id    string
-	Type  string
+	Domain  string
 	Roles []Role
 }
 
@@ -72,13 +72,13 @@ func (c *Client) PutUserInfo(u *User) error {
 		"roles": rolesToParamFormat(u.Roles),
 	}
 	var target string
-	switch u.Type {
-	case "saslauthd":
+	switch u.Domain {
+	case "external":
 		target = "/settings/rbac/users/" + u.Id
-	case "builtin":
-		target = "/settings/rbac/users/builtin/" + u.Id
+	case "local":
+		target = "/settings/rbac/users/local/" + u.Id
 	default:
-		return fmt.Errorf("Unknown user type: %s", u.Type)
+		return fmt.Errorf("Unknown user type: %s", u.Domain)
 	}
 	var ret string // PUT returns an empty string. We ignore it.
 	err := c.parsePutURLResponse(target, params, &ret)
