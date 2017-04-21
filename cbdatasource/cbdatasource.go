@@ -121,6 +121,19 @@ type Receiver interface {
 	Rollback(vbucketID uint16, rollbackSeq uint64) error
 }
 
+// A ReceiverEx interface is implemented by the application, or the
+// receiver of data.  Calls to methods on this interface will be made
+// by the BucketDataSource using multiple, concurrent goroutines, so
+// the application should implement its own Receiver-side
+// synchronizations if needed.
+type ReceiverEx interface {
+	Receiver
+	// Invoked by the BucketDataSource when the datasource signals a
+	// rollback during stream initialization.  Note that both data and
+	// metadata should be rolled back.
+	RollbackEx(vbucketID uint16, vbucketUUID uint64, rollbackSeq uint64) error
+}
+
 // BucketDataSourceOptions allows the application to provide
 // configuration settings to NewBucketDataSource().
 type BucketDataSourceOptions struct {
@@ -1318,6 +1331,7 @@ func (d *bucketDataSource) handleRecv(sendCh chan *gomemcached.MCRequest,
 			if res.Status == gomemcached.ROLLBACK ||
 				res.Status == gomemcached.ERANGE {
 				rollbackSeq := uint64(0)
+				vbucketUUID := uint64(0)
 
 				if res.Status == gomemcached.ROLLBACK {
 					atomic.AddUint64(&d.stats.TotUPRStreamReqResRollback, 1)
@@ -1327,6 +1341,7 @@ func (d *bucketDataSource) handleRecv(sendCh chan *gomemcached.MCRequest,
 					}
 
 					rollbackSeq = binary.BigEndian.Uint64(res.Body)
+					vbucketUUID = binary.BigEndian.Uint64(res.Extras[24:32])
 				} else {
 					// NOTE: Not sure what else to do here on ERANGE
 					// error response besides rollback to zero.
@@ -1334,7 +1349,13 @@ func (d *bucketDataSource) handleRecv(sendCh chan *gomemcached.MCRequest,
 				}
 
 				atomic.AddUint64(&d.stats.TotUPRStreamReqResRollbackStart, 1)
-				err := d.receiver.Rollback(vbucketID, rollbackSeq)
+				var err error
+				if receiverEx, ok := d.receiver.(ReceiverEx); ok {
+					err = receiverEx.RollbackEx(vbucketID, vbucketUUID, rollbackSeq)
+				} else {
+					err = d.receiver.Rollback(vbucketID, rollbackSeq)
+				}
+
 				if err != nil {
 					atomic.AddUint64(&d.stats.TotUPRStreamReqResRollbackErr, 1)
 					return err
