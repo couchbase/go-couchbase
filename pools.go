@@ -731,7 +731,13 @@ func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
 			return err
 		}
 	}
-	return errors.New("All nodes failed to respond or returned error or no healthy nodes for bucket found. Error " + err.Error())
+
+	var errStr string
+	if err != nil {
+		errStr = "Error " + err.Error()
+	}
+
+	return errors.New("All nodes failed to respond or returned error or no healthy nodes for bucket found." + errStr)
 }
 
 type basicAuth struct {
