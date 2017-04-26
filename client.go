@@ -542,6 +542,9 @@ func (w WriteOptions) String() string {
 // Error returned from Write with AddOnly flag, when key already exists in the bucket.
 var ErrKeyExists = errors.New("key exists")
 
+// Error returned from Get, when key does not exist in the bucket.
+var ErrKeyNotFound = errors.New("key not found")
+
 // General-purpose value setter.
 //
 // The Set, Add and Delete methods are just wrappers around this.  The
@@ -829,6 +832,11 @@ func (b *Bucket) GetsRaw(k string) (data []byte, flags int,
 		data = res.Body
 		return nil
 	})
+
+	if gomemcached.IsNotFound(err) {
+		err = ErrKeyNotFound
+	}
+
 	return
 }
 
