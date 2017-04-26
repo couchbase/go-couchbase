@@ -20,7 +20,7 @@ func main() {
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr,
-			"%v [flags] http://user:pass@host:8091/\n\nFlags:\n",
+			"%v http://user:pass@host:8091/\n\n",
 			os.Args[0])
 		flag.PrintDefaults()
 		os.Exit(64)
@@ -36,7 +36,7 @@ func main() {
 	mf(err, "parse")
 
 	bucketInfo, err := couchbase.GetBucketList(u.String())
-	fmt.Printf("List of buckets and password %v", bucketInfo)
+	fmt.Printf("List of buckets and password %v\n", bucketInfo)
 
 	//connect to a gamesim-sample
 	client, err := couchbase.Connect(u.String())

@@ -560,13 +560,15 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 	}
 
 	var data []byte
-	if opt&Raw == 0 {
-		data, err = json.Marshal(v)
-		if err != nil {
-			return err
+	if v != nil {
+		if opt&Raw == 0 {
+			data, err = json.Marshal(v)
+			if err != nil {
+				return err
+			}
+		} else {
+			data = v.([]byte)
 		}
-	} else if v != nil {
-		data = v.([]byte)
 	}
 
 	var res *gomemcached.MCResponse
