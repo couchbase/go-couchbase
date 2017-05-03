@@ -1796,30 +1796,30 @@ func serverHandShake(mc *memcached.Client, d *bucketDataSource) (uint32, error) 
 	if d.options.IncludeXAttrs {
 		// if the server supports xattrs,
 		// then need to include the xattrs flag in open dcp request.
-		err := xAttrsSupported(sendHelo(mc, true))
+		err := xAttrsSupported(sendHelo(mc, d))
 		if err != nil {
 			return 0, err
 		}
 		return FlagOpenIncludeXattrs, nil
 	}
-	_, err := sendHelo(mc, false)
+	_, err := sendHelo(mc, d)
 	return 0, err
 }
 
-func sendHelo(mc *memcached.Client, xattrs bool) (*gomemcached.MCResponse, error) {
+func sendHelo(mc *memcached.Client, d *bucketDataSource) (*gomemcached.MCResponse, error) {
 	size := 4
-	if xattrs {
+	if d.options.IncludeXAttrs {
 		size = 6
 	}
 	payload := make([]byte, size)
 	binary.BigEndian.PutUint16(payload[0:2], FeatureEnabledDataType)
 	binary.BigEndian.PutUint16(payload[2:4], FeatureEnabledXError)
-	if xattrs {
+	if d.options.IncludeXAttrs {
 		binary.BigEndian.PutUint16(payload[4:6], FeatureEnabledXAttrs)
 	}
 	return mc.Send(&gomemcached.MCRequest{
 		Opcode: gomemcached.HELLO,
-		Key:    []byte("GoMemcached"),
+		Key:    []byte(fmt.Sprintf("cbdatasource-%s", d.options.Name)),
 		Body:   payload,
 	})
 }
