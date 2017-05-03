@@ -869,8 +869,8 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		}
 	}
 
+	var user, pswd string
 	if d.auth != nil {
-		var user, pswd string
 
 		if auth, ok := d.auth.(couchbase.GenericMcdAuthHandler); ok {
 			atomic.AddUint64(&d.stats.TotWorkerAuthenticateMemcachedConn, 1)
@@ -933,11 +933,13 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		}
 	}
 	// select the bucket for this connection
-	err = selectBucket(client, d.bucketName)
-	if err != nil {
-		atomic.AddUint64(&d.stats.TotSelectBucketErr, 1)
-		d.receiver.OnError(err)
-		return 0
+	if user != d.bucketName {
+		err = selectBucket(client, d.bucketName)
+		if err != nil {
+			atomic.AddUint64(&d.stats.TotSelectBucketErr, 1)
+			d.receiver.OnError(err)
+			return 0
+		}
 	}
 	err = UPROpen(client, uprOpenName, d.options, openUprFlags)
 	if err != nil {
