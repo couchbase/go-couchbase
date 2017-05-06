@@ -1343,7 +1343,9 @@ func (d *bucketDataSource) handleRecv(sendCh chan *gomemcached.MCRequest,
 					}
 
 					rollbackSeq = binary.BigEndian.Uint64(res.Body)
-					vbucketUUID = binary.BigEndian.Uint64(res.Extras[24:32])
+					if len(res.Extras) >= 32 {
+						vbucketUUID = binary.BigEndian.Uint64(res.Extras[24:32])
+					}
 				} else {
 					// NOTE: Not sure what else to do here on ERANGE
 					// error response besides rollback to zero.
