@@ -6,10 +6,10 @@ import (
 )
 
 type User struct {
-	Name  string
-	Id    string
-	Domain  string
-	Roles []Role
+	Name   string
+	Id     string
+	Domain string
+	Roles  []Role
 }
 
 type Role struct {
@@ -38,6 +38,29 @@ func (c *Client) GetUserRoles() ([]interface{}, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	// Get the configured administrator.
+	// Expected result: {"port":8091,"username":"Administrator"}
+	adminInfo := make(map[string]interface{}, 2)
+	err = c.parseURLResponse("/settings/web", &adminInfo)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a special entry for the configured administrator.
+	adminResult := map[string]interface{}{
+		"name": adminInfo["username"],
+		"id":   adminInfo["username"],
+		"roles": []interface{}{
+			map[string]interface{}{
+				"role": "admin",
+			},
+		},
+	}
+
+	// Add the configured administrator to the list of results.
+	ret = append(ret, adminResult)
+
 	return ret, nil
 }
 
