@@ -255,7 +255,17 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 				return nil
 			}
 
+			duration := baseReadTimeOut + perDocReadTimeOut*time.Duration(len(keys))
+			if duration > baseReadTimeOut {
+				conn.SetReadDeadline(time.Now().Add(duration))
+			}
+
 			err = conn.GetBulk(vb, keys, rv)
+
+			if duration > baseReadTimeOut {
+				conn.SetReadDeadline(time.Time{})
+			}
+
 			pool.Return(conn)
 
 			switch err.(type) {
@@ -315,7 +325,17 @@ var _NUM_CHANNEL_WORKERS = (runtime.NumCPU() + 1) / 2
 // Buffer 4k requests per worker
 var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
 
+var baseReadTimeOut time.Duration = 0
+var perDocReadTimeOut time.Duration = 0
+
+func SetReadTimeOut(base, perDoc time.Duration) {
+	baseReadTimeOut = base
+	perDocReadTimeOut = perDoc
+}
+
 func InitBulkGet() {
+	SetReadTimeOut(2500*time.Millisecond, 50*time.Millisecond) // 2500 Milliseconds same as SDK
+
 	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
 
 	for i := 0; i < _NUM_CHANNELS; i++ {
