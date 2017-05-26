@@ -194,6 +194,10 @@ func isAuthError(err error) bool {
 	return strings.Contains(estr, "Auth failure")
 }
 
+func IsReadTimeOutError(err error) bool {
+	return strings.ContainsAny(err.Error(), "read tcp & i/o timeout")
+}
+
 // Errors that are not considered fatal for our fetch loop
 func isConnError(err error) bool {
 	if err == io.EOF {
