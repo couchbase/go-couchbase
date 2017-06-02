@@ -338,7 +338,7 @@ func SetReadTimeOut(base, perDoc time.Duration) {
 }
 
 func InitBulkGet() {
-	SetReadTimeOut(2500*time.Millisecond, 50*time.Millisecond) // 2500 Milliseconds same as SDK
+	// SetReadTimeOut(2500*time.Millisecond, 50*time.Millisecond) // 2500 Milliseconds same as SDK
 
 	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
 
