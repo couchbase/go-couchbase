@@ -51,6 +51,7 @@ func (c *Client) GetUserRoles() ([]interface{}, error) {
 	adminResult := map[string]interface{}{
 		"name": adminInfo["username"],
 		"id":   adminInfo["username"],
+		"domain" : "ns_server",
 		"roles": []interface{}{
 			map[string]interface{}{
 				"role": "admin",
