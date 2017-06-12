@@ -705,8 +705,8 @@ OUTER_LOOP:
 			if int(vbucketID) >= len(vbm.VBucketMap) {
 				atomic.AddUint64(&d.stats.TotRefreshWorkersVBucketIDErr, 1)
 				d.receiver.OnError(fmt.Errorf("refreshWorkers"+
-					" saw bad vbucketID: %d, vbm: %#v",
-					vbucketID, vbm))
+					" saw bad vbucketID: %d",
+					vbucketID))
 				d.Kick("bad-vbm")
 				continue
 			}
@@ -714,24 +714,24 @@ OUTER_LOOP:
 			if serverIdxs == nil || len(serverIdxs) <= 0 {
 				atomic.AddUint64(&d.stats.TotRefreshWorkersServerIdxsErr, 1)
 				d.receiver.OnError(fmt.Errorf("refreshWorkers"+
-					" no serverIdxs for vbucketID: %d, vbm: %#v",
-					vbucketID, vbm))
+					" no serverIdxs for vbucketID: %d",
+					vbucketID))
 				continue
 			}
 			masterIdx := serverIdxs[0]
 			if masterIdx < 0 || int(masterIdx) >= len(vbm.ServerList) {
 				atomic.AddUint64(&d.stats.TotRefreshWorkersMasterIdxErr, 1)
 				d.receiver.OnError(fmt.Errorf("refreshWorkers"+
-					" bad masterIdx: %d, vbucketID: %d, vbm: %#v",
-					masterIdx, vbucketID, vbm))
+					" bad masterIdx: %d, vbucketID: %d",
+					masterIdx, vbucketID))
 				continue
 			}
 			masterServer := vbm.ServerList[masterIdx]
 			if masterServer == "" {
 				atomic.AddUint64(&d.stats.TotRefreshWorkersMasterServerErr, 1)
 				d.receiver.OnError(fmt.Errorf("refreshWorkers"+
-					" no masterServer for vbucketID: %d, vbm: %#v",
-					vbucketID, vbm))
+					" no masterServer for vbucketID: %d",
+					vbucketID))
 				continue
 			}
 			v, exists := vbucketIDsByServer[masterServer]
