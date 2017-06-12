@@ -210,6 +210,11 @@ func isConnError(err error) bool {
 		strings.Contains(estr, "connection pool is closed")
 }
 
+func isOutOfBoundsError(err error) bool {
+	return strings.Contains(err.Error(), "Out of Bounds error")
+
+}
+
 func (b *Bucket) doBulkGet(vb uint16, keys []string,
 	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
 	if SlowServerCallWarningThreshold > 0 {
@@ -282,19 +287,18 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 				}
 				return err
 			case error:
-				if !isConnError(err) {
-					ech <- err
-					ch <- rv
-					return err
-				} else if strings.EqualFold(err.Error(), "Bounds") {
+				if isOutOfBoundsError(err) {
 					// We got an out of bound error, retry the operation
 					return nil
+				} else if isConnError(err) {
+					logging.Errorf("Connection Error: %s. Refreshing bucket", err.Error())
+					b.Refresh()
+					// retry
+					return nil
 				}
-
-				logging.Errorf("Connection Error: %s. Refreshing bucket", err.Error())
-				b.Refresh()
-				// retry
-				return nil
+				ech <- err
+				ch <- rv
+				return err
 			}
 
 			done = true
