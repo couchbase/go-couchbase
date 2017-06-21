@@ -215,7 +215,7 @@ func isOutOfBoundsError(err error) bool {
 
 }
 
-func (b *Bucket) doBulkGet(vb uint16, keys []string,
+func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to doBulkGet(%d, %d keys)", vb, len(keys))
@@ -264,16 +264,9 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 				return nil
 			}
 
-			duration := baseReadTimeOut + perDocReadTimeOut*time.Duration(len(keys))
-			if duration > baseReadTimeOut {
-				conn.SetReadDeadline(time.Now().Add(duration))
-			}
-
+			conn.SetReadDeadline(reqDeadline)
 			err = conn.GetBulk(vb, keys, rv)
-
-			if duration > baseReadTimeOut {
-				conn.SetReadDeadline(time.Time{})
-			}
+			conn.SetReadDeadline(time.Time{})
 
 			pool.Return(conn)
 
@@ -318,12 +311,13 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string,
 }
 
 type vbBulkGet struct {
-	b    *Bucket
-	ch   chan<- map[string]*gomemcached.MCResponse
-	ech  chan<- error
-	k    uint16
-	keys []string
-	wg   *sync.WaitGroup
+	b           *Bucket
+	ch          chan<- map[string]*gomemcached.MCResponse
+	ech         chan<- error
+	k           uint16
+	keys        []string
+	reqDeadline time.Time
+	wg          *sync.WaitGroup
 }
 
 const _NUM_CHANNELS = 5
@@ -333,16 +327,7 @@ var _NUM_CHANNEL_WORKERS = (runtime.NumCPU() + 1) / 2
 // Buffer 4k requests per worker
 var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
 
-var baseReadTimeOut time.Duration = 0
-var perDocReadTimeOut time.Duration = 0
-
-func SetReadTimeOut(base, perDoc time.Duration) {
-	baseReadTimeOut = base
-	perDocReadTimeOut = perDoc
-}
-
 func InitBulkGet() {
-	// SetReadTimeOut(2500*time.Millisecond, 50*time.Millisecond) // 2500 Milliseconds same as SDK
 
 	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
 
@@ -374,12 +359,12 @@ func vbDoBulkGet(vbg *vbBulkGet) {
 		// Workers cannot panic and die
 		recover()
 	}()
-	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.ch, vbg.ech)
+	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.reqDeadline, vbg.ch, vbg.ech)
 }
 
 var _ERR_CHAN_FULL = fmt.Errorf("Data request queue full, aborting query.")
 
-func (b *Bucket) processBulkGet(kdm map[uint16][]string,
+func (b *Bucket) processBulkGet(kdm map[uint16][]string, reqDeadline time.Time,
 	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
 	defer close(ch)
 	defer close(ech)
@@ -388,12 +373,13 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string,
 
 	for k, keys := range kdm {
 		vbg := &vbBulkGet{
-			b:    b,
-			ch:   ch,
-			ech:  ech,
-			k:    k,
-			keys: keys,
-			wg:   wg,
+			b:           b,
+			ch:          ch,
+			ech:         ech,
+			k:           k,
+			keys:        keys,
+			reqDeadline: reqDeadline,
+			wg:          wg,
 		}
 
 		wg.Add(1)
@@ -450,7 +436,7 @@ func errorCollector(ech <-chan error, eout chan<- error) {
 // Returns one document for duplicate keys
 func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
 
-	resp, keyCount, eout := b.getBulk(keys)
+	resp, keyCount, eout := b.getBulk(keys, time.Time{})
 
 	rv := make(map[string][]byte, len(keys))
 	for k, av := range resp {
@@ -468,8 +454,8 @@ func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
 // map array for each key.  Keys that were not found will not be included in
 // the map.
 
-func (b *Bucket) GetBulk(keys []string) (map[string]*gomemcached.MCResponse, map[string]int, error) {
-	return b.getBulk(keys)
+func (b *Bucket) GetBulk(keys []string, reqDeadline time.Time) (map[string]*gomemcached.MCResponse, map[string]int, error) {
+	return b.getBulk(keys, reqDeadline)
 }
 
 func (b *Bucket) ReleaseGetBulkPools(keyCount map[string]int, rv map[string]*gomemcached.MCResponse) {
@@ -477,7 +463,7 @@ func (b *Bucket) ReleaseGetBulkPools(keyCount map[string]int, rv map[string]*gom
 	_STRING_MCRESPONSE_POOL.Put(rv)
 }
 
-func (b *Bucket) getBulk(keys []string) (map[string]*gomemcached.MCResponse, map[string]int, error) {
+func (b *Bucket) getBulk(keys []string, reqDeadline time.Time) (map[string]*gomemcached.MCResponse, map[string]int, error) {
 	kdm := _VB_STRING_POOL.Get()
 	defer _VB_STRING_POOL.Put(kdm)
 	keyCount := _STRING_KEYCOUNT_POOL.Get()
@@ -503,7 +489,7 @@ func (b *Bucket) getBulk(keys []string) (map[string]*gomemcached.MCResponse, map
 	ech := make(chan error)
 
 	go errorCollector(ech, eout)
-	go b.processBulkGet(kdm, ch, ech)
+	go b.processBulkGet(kdm, reqDeadline, ch, ech)
 
 	var rv map[string]*gomemcached.MCResponse
 
