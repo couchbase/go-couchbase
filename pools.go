@@ -840,6 +840,41 @@ func SetViewUpdateParams(baseU string, params map[string]interface{}) (viewOpts 
 	return viewOpts, err
 }
 
+// This API lets the caller know, if the list of nodes a bucket is
+// connected to has gone through an edit (a rebalance operation)
+// since the last update to the bucket, in which case a Refresh is
+// advised.
+func (b *Bucket) NodeListChanged() bool {
+	b.RLock()
+	pool := b.pool
+	uri := b.URI
+	b.RUnlock()
+
+	tmpb := &Bucket{}
+	err := pool.client.parseURLResponse(uri, tmpb)
+	if err != nil {
+		return true
+	}
+
+	bNodes := *(*[]Node)(b.nodeList)
+	if len(bNodes) != len(tmpb.NodesJSON) {
+		return true
+	}
+
+	bucketHostnames := map[string]bool{}
+	for _, node := range bNodes {
+		bucketHostnames[node.Hostname] = true
+	}
+
+	for _, node := range tmpb.NodesJSON {
+		if _, found := bucketHostnames[node.Hostname]; !found {
+			return true
+		}
+	}
+
+	return false
+}
+
 func (b *Bucket) Refresh() error {
 	b.RLock()
 	pool := b.pool
