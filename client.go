@@ -758,6 +758,10 @@ func (b *Bucket) WriteCasWithMT(k string, flags, exp int, cas uint64, v interfac
 		return err
 	})
 
+	if err != nil {
+		return 0, nil, err
+	}
+
 	// check for extras
 	if len(res.Extras) >= 16 {
 		vbuuid := uint64(binary.BigEndian.Uint64(res.Extras[0:8]))
