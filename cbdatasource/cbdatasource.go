@@ -168,6 +168,10 @@ type BucketDataSourceOptions struct {
 	// percentage of FeedBufferSizeBytes is reached.
 	FeedBufferAckThreshold float32
 
+	// Time interval in seconds of NO-OP messages for UPR flow control,
+	// needs to be set to a non-zero value to enable no-ops.
+	NoopTimeIntervalSecs uint32
+
 	// Used for applications like backup which wish to control the
 	// last sequence number provided.  Key is vbucketID, value is seqEnd.
 	SeqEnd map[uint16]uint64
@@ -249,6 +253,8 @@ var DefaultBucketDataSourceOptions = &BucketDataSourceOptions{
 
 	FeedBufferSizeBytes:    20000000, // ~20MB; see UPR_CONTROL/connection_buffer_size.
 	FeedBufferAckThreshold: 0.2,
+
+	NoopTimeIntervalSecs: 1, // 1 second; see UPR_CONTROL/set_noop_interval
 
 	TraceCapacity: 200,
 
@@ -1863,6 +1869,8 @@ func UPROpen(mc *memcached.Client, name string,
 		Extras: make([]byte, 8),
 	}
 	bufSize := option.FeedBufferSizeBytes
+	noopInterval := option.NoopTimeIntervalSecs
+
 	binary.BigEndian.PutUint32(rq.Extras[:4], 0) // First 4 bytes are reserved.
 	flags := FlagOpenProducer | openFlags        // NOTE: 1 for producer, 0 for consumer.
 	binary.BigEndian.PutUint32(rq.Extras[4:], flags)
@@ -1891,7 +1899,19 @@ func UPROpen(mc *memcached.Client, name string,
 			Body:   []byte(strconv.Itoa(int(bufSize))),
 		}
 		if err = mc.Transmit(rq); err != nil {
-			return fmt.Errorf("UPROpen transmit UPR_CONTROL, err: %v", err)
+			return fmt.Errorf("UPROpen transmit UPR_CONTROL"+
+				" (connection_buffer_size), err: %v", err)
+		}
+	}
+	if noopInterval > 0 {
+		rq := &gomemcached.MCRequest{
+			Opcode: gomemcached.UPR_CONTROL,
+			Key:    []byte("set_noop_interval"),
+			Body:   []byte(strconv.Itoa(int(noopInterval))),
+		}
+		if err = mc.Transmit(rq); err != nil {
+			return fmt.Errorf("UPROpen transmit UPR_CONTROL"+
+				" (set_noop_interval), err: %v", err)
 		}
 	}
 	return nil
