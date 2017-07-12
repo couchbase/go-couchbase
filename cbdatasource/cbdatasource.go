@@ -1906,6 +1906,16 @@ func UPROpen(mc *memcached.Client, name string,
 	if noopInterval > 0 {
 		rq := &gomemcached.MCRequest{
 			Opcode: gomemcached.UPR_CONTROL,
+			Key:    []byte("enable_noop"),
+			Body:   []byte("true"),
+		}
+		if err = mc.Transmit(rq); err != nil {
+			return fmt.Errorf("UPROpen transmit UPR_CONTROL"+
+				" (enable_noop), err: %v", err)
+		}
+
+		rq = &gomemcached.MCRequest{
+			Opcode: gomemcached.UPR_CONTROL,
 			Key:    []byte("set_noop_interval"),
 			Body:   []byte(strconv.Itoa(int(noopInterval))),
 		}
