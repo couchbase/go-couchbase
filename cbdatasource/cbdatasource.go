@@ -254,7 +254,7 @@ var DefaultBucketDataSourceOptions = &BucketDataSourceOptions{
 	FeedBufferSizeBytes:    20000000, // ~20MB; see UPR_CONTROL/connection_buffer_size.
 	FeedBufferAckThreshold: 0.2,
 
-	NoopTimeIntervalSecs: 1, // 1 second; see UPR_CONTROL/set_noop_interval
+	NoopTimeIntervalSecs: 120, // 120 seconds; see UPR_CONTROL/set_noop_interval
 
 	TraceCapacity: 200,
 
