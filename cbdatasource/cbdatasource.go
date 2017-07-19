@@ -958,7 +958,7 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 	ackBytes :=
 		uint32(d.options.FeedBufferAckThreshold * float32(d.options.FeedBufferSizeBytes))
 
-	sendCh := make(chan *gomemcached.MCRequest, 1)
+	sendCh := make(chan interface{}, 1)
 	sendEndCh := make(chan struct{})
 	recvEndCh := make(chan struct{})
 
@@ -990,11 +990,30 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		atomic.AddUint64(&d.stats.TotWorkerTransmitStart, 1)
 		for msg := range sendCh {
 			atomic.AddUint64(&d.stats.TotWorkerTransmit, 1)
-			err := client.Transmit(msg)
-			if err != nil {
-				atomic.AddUint64(&d.stats.TotWorkerTransmitErr, 1)
-				d.receiver.OnError(fmt.Errorf("client.Transmit, err: %v", err))
-				return
+			mcPkt, ok := msg.(*gomemcached.MCRequest)
+			if ok {
+				// Transmit a request
+				err := client.Transmit(mcPkt)
+				if err != nil {
+					atomic.AddUint64(&d.stats.TotWorkerTransmitErr, 1)
+					d.receiver.OnError(fmt.Errorf("client.Transmit, err: %v", err))
+					return
+				}
+			} else {
+				mcPkt, ok := msg.(*gomemcached.MCResponse)
+				if ok {
+					// Transmit a response
+					err := client.TransmitResponse(mcPkt)
+					if err != nil {
+						atomic.AddUint64(&d.stats.TotWorkerTransmitErr, 1)
+						d.receiver.OnError(fmt.Errorf("client.TransmitResponse, err: %v", err))
+						return
+					}
+				} else {
+					// Unknown packet
+					d.receiver.OnError(fmt.Errorf("Unidentified packet to transmit!"))
+					return
+				}
 			}
 			atomic.AddUint64(&d.stats.TotWorkerTransmitOk, 1)
 		}
@@ -1257,7 +1276,7 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 	return cleanup(-1, nil) // Unreached.
 }
 
-func (d *bucketDataSource) refreshWorker(sendCh chan *gomemcached.MCRequest,
+func (d *bucketDataSource) refreshWorker(sendCh chan interface{},
 	currVBuckets map[uint16]*VBucketState, wantVBucketIDsArr []uint16) error {
 	// Convert to map for faster lookup.
 	wantVBucketIDs := map[uint16]bool{}
@@ -1308,12 +1327,12 @@ func (d *bucketDataSource) refreshWorker(sendCh chan *gomemcached.MCRequest,
 	return nil
 }
 
-func (d *bucketDataSource) handleRecv(sendCh chan *gomemcached.MCRequest,
+func (d *bucketDataSource) handleRecv(sendCh chan interface{},
 	currVBuckets map[uint16]*VBucketState, res *gomemcached.MCResponse) error {
 	switch res.Opcode {
 	case gomemcached.UPR_NOOP:
 		atomic.AddUint64(&d.stats.TotUPRNoop, 1)
-		sendCh <- &gomemcached.MCRequest{
+		sendCh <- &gomemcached.MCResponse{
 			Opcode: gomemcached.UPR_NOOP,
 			Opaque: res.Opaque,
 		}
@@ -1574,7 +1593,7 @@ func (d *bucketDataSource) setVBucketMetaData(vbucketID uint16,
 	return nil
 }
 
-func (d *bucketDataSource) sendStreamReq(sendCh chan *gomemcached.MCRequest,
+func (d *bucketDataSource) sendStreamReq(sendCh chan interface{},
 	vbucketID uint16) error {
 	vbucketMetaData, lastSeq, err := d.getVBucketMetaData(vbucketID)
 	if err != nil {
