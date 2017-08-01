@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/couchbase/goutils/logging"
 	"io"
 	"io/ioutil"
 	"math/rand"
@@ -18,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"unsafe"
+
+	"github.com/couchbase/goutils/logging"
 
 	"github.com/couchbase/gomemcached"        // package name is 'gomemcached'
 	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
@@ -1057,6 +1058,23 @@ func (p *Pool) GetClient() *Client {
 func GetBucket(endpoint, poolname, bucketname string) (*Bucket, error) {
 	var err error
 	client, err := Connect(endpoint)
+	if err != nil {
+		return nil, err
+	}
+
+	pool, err := client.GetPool(poolname)
+	if err != nil {
+		return nil, err
+	}
+
+	return pool.GetBucket(bucketname)
+}
+
+// ConnectWithAuthAndGetBucket is a convenience function for
+// getting a named bucket from a given URL and an auth callback
+func ConnectWithAuthAndGetBucket(endpoint, poolname, bucketname string,
+	ah AuthHandler) (*Bucket, error) {
+	client, err := ConnectWithAuth(endpoint, ah)
 	if err != nil {
 		return nil, err
 	}
