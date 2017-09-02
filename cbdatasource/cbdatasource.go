@@ -844,21 +844,6 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		connect = memcached.Connect
 	}
 
-	client, err := connect("tcp", server)
-	if err != nil {
-		atomic.AddUint64(&d.stats.TotWorkerConnectErr, 1)
-		d.receiver.OnError(fmt.Errorf("worker connect, server: %s, err: %v",
-			server, err))
-		return 0
-	}
-	atomic.AddUint64(&d.stats.TotWorkerConnectOk, 1)
-
-	defer func() {
-		atomic.AddUint64(&d.stats.TotWorkerClientClose, 1)
-		client.Close()
-		atomic.AddUint64(&d.stats.TotWorkerClientCloseDone, 1)
-	}()
-
 	emptyWorkerCh := func() {
 		for {
 			select {
@@ -875,9 +860,33 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		}
 	}
 
-	var user, pswd string
-	if d.auth != nil {
+	client, err := connect("tcp", server)
+	if err != nil {
+		atomic.AddUint64(&d.stats.TotWorkerConnectErr, 1)
+		d.receiver.OnError(fmt.Errorf("worker connect, server: %s, err: %v",
+			server, err))
 
+		// If we can't connect, then maybe a node was rebalanced out
+		// or failed-over, so consume the workerCh so that the
+		// refresh-cluster goroutine will be unblocked and can receive
+		// our kick.
+		emptyWorkerCh()
+
+		d.Kick("worker-connect-err")
+
+		return 0
+	}
+	atomic.AddUint64(&d.stats.TotWorkerConnectOk, 1)
+
+	defer func() {
+		atomic.AddUint64(&d.stats.TotWorkerClientClose, 1)
+		client.Close()
+		atomic.AddUint64(&d.stats.TotWorkerClientCloseDone, 1)
+	}()
+
+	var user, pswd string
+
+	if d.auth != nil {
 		if auth, ok := d.auth.(couchbase.GenericMcdAuthHandler); ok {
 			atomic.AddUint64(&d.stats.TotWorkerAuthenticateMemcachedConn, 1)
 			err = auth.AuthenticateMemcachedConn(server, client)
@@ -938,6 +947,7 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 			d.options.Logf("cbdatasource: serverHandShake, err: %v", err)
 		}
 	}
+
 	// select the bucket for this connection
 	if user != d.bucketName {
 		err = selectBucket(client, d.bucketName)
@@ -947,6 +957,7 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 			return 0
 		}
 	}
+
 	err = UPROpen(client, uprOpenName, d.options, openUprFlags)
 	if err != nil {
 		atomic.AddUint64(&d.stats.TotWorkerUPROpenErr, 1)
