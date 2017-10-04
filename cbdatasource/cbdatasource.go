@@ -121,13 +121,15 @@ type Receiver interface {
 	Rollback(vbucketID uint16, rollbackSeq uint64) error
 }
 
-// A ReceiverEx interface is implemented by the application, or the
-// receiver of data.  Calls to methods on this interface will be made
-// by the BucketDataSource using multiple, concurrent goroutines, so
-// the application should implement its own Receiver-side
-// synchronizations if needed.
+// A ReceiverEx interface is an advanced Receiver interface that's
+// optionally implemented by the application, or the receiver of data.
+// Calls to methods on this interface will be made by the
+// BucketDataSource using multiple, concurrent goroutines, so the
+// application should implement its own Receiver-side synchronizations
+// if needed.
 type ReceiverEx interface {
 	Receiver
+
 	// Invoked by the BucketDataSource when the datasource signals a
 	// rollback during stream initialization.  Note that both data and
 	// metadata should be rolled back.
@@ -415,8 +417,8 @@ type BucketDataSourceStats struct {
 
 // --------------------------------------------------------
 
-// VBucketMetaData is an internal struct is exposed to enable json
-// marshaling.
+// VBucketMetaData is an internal struct that is exposed to enable
+// json marshaling.
 type VBucketMetaData struct {
 	SeqStart    uint64     `json:"seqStart"`
 	SeqEnd      uint64     `json:"seqEnd"`
@@ -431,11 +433,11 @@ type bucketDataSource struct {
 	bucketName string
 	bucketUUID string
 	vbucketIDs []uint16
-	auth       couchbase.AuthHandler // auth for couchbase
+	auth       couchbase.AuthHandler // Auth for couchbase.
 	receiver   Receiver
 	options    *BucketDataSourceOptions
 
-	refreshClusterM       sync.Mutex // Protects the refreshClusteReasons field.
+	refreshClusterM       sync.Mutex // Protects the refreshClusterReasons field.
 	refreshClusterReasons map[string]uint64
 
 	// When refreshClusterReasons transitions from empty to non-empty,
@@ -807,7 +809,7 @@ func (d *bucketDataSource) workerStart(server string, workerCh chan []uint16) {
 		sleepMaxMS = DefaultBucketDataSourceOptions.DataManagerSleepMaxMS
 	}
 
-	// Use exponential backoff loop to handle reconnect retries to the server.
+	// Use exponential backoff loop to handle connect retries to the server.
 	go func() {
 		atomic.AddUint64(&d.stats.TotWorkerStart, 1)
 
@@ -936,19 +938,19 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		uprOpenName = fmt.Sprintf("cbdatasource-%x", rand.Int63())
 	}
 
-	// server handshakes
+	// Server handshakes.
 	var openUprFlags uint32
 	openUprFlags, err = serverHandShake(client, d)
 	if err != nil {
-		// just bump the stats and continue with errors logged
-		// since even at feature mismatch the openConn can proceed
+		// Just bump the stats and continue with errors logged
+		// since even at feature mismatch the openConn can proceed.
 		atomic.AddUint64(&d.stats.TotHandShakeErr, 1)
 		if d.options.Logf != nil {
 			d.options.Logf("cbdatasource: serverHandShake, err: %v", err)
 		}
 	}
 
-	// select the bucket for this connection
+	// Select the bucket for this connection.
 	if user != d.bucketName {
 		err = selectBucket(client, d.bucketName)
 		if err != nil {
@@ -1003,7 +1005,7 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 			atomic.AddUint64(&d.stats.TotWorkerTransmit, 1)
 			mcPkt, ok := msg.(*gomemcached.MCRequest)
 			if ok {
-				// Transmit a request
+				// Transmit a request.
 				err := client.Transmit(mcPkt)
 				if err != nil {
 					atomic.AddUint64(&d.stats.TotWorkerTransmitErr, 1)
@@ -1013,7 +1015,7 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 			} else {
 				mcPkt, ok := msg.(*gomemcached.MCResponse)
 				if ok {
-					// Transmit a response
+					// Transmit a response.
 					err := client.TransmitResponse(mcPkt)
 					if err != nil {
 						atomic.AddUint64(&d.stats.TotWorkerTransmitErr, 1)
@@ -1021,7 +1023,7 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 						return
 					}
 				} else {
-					// Unknown packet
+					// Unknown packet.
 					d.receiver.OnError(fmt.Errorf("Unidentified packet to transmit!"))
 					return
 				}
@@ -1823,7 +1825,7 @@ func ConnectBucket(serverURL, poolName, bucketName string,
 	return &bucketWrapper{b: bucket}, nil
 }
 
-// select bucket for this connection.
+// Select bucket for this connection.
 func selectBucket(mc *memcached.Client, bucketName string) error {
 	_, err := mc.Send(&gomemcached.MCRequest{
 		Opcode: gomemcached.SELECT_BUCKET,
@@ -1834,8 +1836,8 @@ func selectBucket(mc *memcached.Client, bucketName string) error {
 
 func serverHandShake(mc *memcached.Client, d *bucketDataSource) (uint32, error) {
 	if d.options.IncludeXAttrs {
-		// if the server supports xattrs,
-		// then need to include the xattrs flag in open dcp request.
+		// If the server supports xattrs, then need to include the
+		// xattrs flag in open dcp request.
 		err := xAttrsSupported(sendHelo(mc, d))
 		if err != nil {
 			return 0, err
@@ -1868,9 +1870,8 @@ func xAttrsSupported(res *gomemcached.MCResponse, err error) error {
 	if err != nil {
 		return err
 	}
-	// can't assume any ordering of reponse bytes
-	// since we may be connecting to an older server
-	// with partial feature support
+	// Can't assume any ordering of response bytes since we may be
+	// connecting to an older server with partial feature support.
 	if len(res.Body) < 2 {
 		return ErrXAttrsNotSupported
 	}
@@ -1922,6 +1923,7 @@ func UPROpen(mc *memcached.Client, name string,
 	if res.Status != gomemcached.SUCCESS {
 		return fmt.Errorf("UPROpen failed, status: %v, %#v", res.Status, res)
 	}
+
 	if bufSize > 0 {
 		rq := &gomemcached.MCRequest{
 			Opcode: gomemcached.UPR_CONTROL,
@@ -1933,6 +1935,7 @@ func UPROpen(mc *memcached.Client, name string,
 				" (connection_buffer_size), err: %v", err)
 		}
 	}
+
 	if noopInterval > 0 {
 		rq := &gomemcached.MCRequest{
 			Opcode: gomemcached.UPR_CONTROL,
@@ -1954,6 +1957,7 @@ func UPROpen(mc *memcached.Client, name string,
 				" (set_noop_interval), err: %v", err)
 		}
 	}
+
 	return nil
 }
 
@@ -2005,14 +2009,14 @@ func (s *BucketDataSourceStats) AtomicCopyTo(r *BucketDataSourceStats,
 
 // --------------------------------------------------------------
 
-// ExponentialBackoffLoop invokes f() in a loop, sleeping in an
-// exponential number of milliseconds in between invocations if
-// needed.  The provided f() function should return < 0 to stop the
+// ExponentialBackoffLoop invokes f() in a loop, sleeping an
+// exponentially growing number of milliseconds in between invocations
+// if needed.  The provided f() function should return < 0 to stop the
 // loop; >= 0 to continue the loop, where > 0 means there was progress
 // which allows an immediate retry of f() with no sleeping.  A return
 // of < 0 is useful when f() will never make any future progress.
-// Repeated attempts with no progress will have exponential backoff
-// sleep times.
+// Repeated attempts with no progress will have exponentially growing
+// backoff sleep times.
 func ExponentialBackoffLoop(name string,
 	f func() int,
 	startSleepMS int,
