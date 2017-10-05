@@ -826,6 +826,29 @@ func (b *Bucket) Append(k string, data []byte) error {
 	return b.Write(k, 0, 0, data, Append|Raw)
 }
 
+func (b *Bucket) GetsMC(key string, reqDeadline time.Time) (*gomemcached.MCResponse, error) {
+	var err error
+	var response *gomemcached.MCResponse
+
+	if ClientOpCallback != nil {
+		defer func(t time.Time) { ClientOpCallback("GetsRaw", key, t, err) }(time.Now())
+	}
+
+	err = b.Do(key, func(mc *memcached.Client, vb uint16) error {
+		var err1 error
+
+		mc.SetReadDeadline(reqDeadline)
+		response, err1 = mc.Get(vb, key)
+		mc.SetReadDeadline(time.Time{})
+		if err1 != nil {
+			return err1
+		}
+		return nil
+	})
+	return response, err
+}
+
+
 // GetsRaw gets a raw value from this bucket including its CAS
 // counter and flags.
 func (b *Bucket) GetsRaw(k string) (data []byte, flags int,
