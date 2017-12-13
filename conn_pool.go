@@ -53,6 +53,8 @@ func newConnectionPool(host string, ah AuthHandler, poolSize, poolOverflow int) 
 var ConnPoolCallback func(host string, source string, start time.Time, err error)
 
 func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
+	var features memcached.Features
+
 	conn, err := memcached.Connect("tcp", host)
 	if err != nil {
 		return nil, err
@@ -63,9 +65,15 @@ func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 	}
 
 	if EnableMutationToken == true {
-		res, err := conn.EnableMutationToken()
+		features = append(features, memcached.FeatureMutationToken)
+	}
+	if EnableDataType == true {
+		features = append(features, memcached.FeatureDataType)
+	}
+	if len(features) > 0 {
+		res, err := conn.EnableFeatures(features)
 		if err != nil || res.Status != gomemcached.SUCCESS {
-			logging.Warnf("Unable to enable mutation token %v", err)
+			logging.Warnf("Unable to enable features %v", err)
 		}
 	}
 

@@ -42,6 +42,9 @@ var TCPKeepalive = false
 // Enable MutationToken
 var EnableMutationToken = false
 
+// Enable Data Type response
+var EnableDataType = false
+
 // TCP keepalive interval in seconds. Default 30 minutes
 var TCPKeepaliveInterval = 30 * 60
 
