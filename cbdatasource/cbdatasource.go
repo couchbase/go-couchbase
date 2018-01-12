@@ -1578,7 +1578,8 @@ func (d *bucketDataSource) getVBucketMetaData(vbucketID uint16) (
 	if len(buf) > 0 {
 		if err = json.Unmarshal(buf, vbucketMetaData); err != nil {
 			atomic.AddUint64(&d.stats.TotGetVBucketMetaDataUnmarshalErr, 1)
-			return nil, 0, err
+			return nil, 0, fmt.Errorf("could not parse vbucketMetaData,"+
+				" buf: %q, err: %v", buf, err)
 		}
 	}
 
