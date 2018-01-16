@@ -70,6 +70,11 @@ func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 	if EnableDataType == true {
 		features = append(features, memcached.FeatureDataType)
 	}
+
+	if EnableXattr == true {
+		features = append(features, memcached.FeatureXattr)
+	}
+
 	if len(features) > 0 {
 		res, err := conn.EnableFeatures(features)
 		if err != nil || res.Status != gomemcached.SUCCESS {

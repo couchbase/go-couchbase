@@ -216,7 +216,7 @@ func isOutOfBoundsError(err error) bool {
 }
 
 func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
-	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
+	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error, subPaths []string) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to doBulkGet(%d, %d keys)", vb, len(keys))
 	}
@@ -265,7 +265,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 			}
 
 			conn.SetReadDeadline(reqDeadline)
-			err = conn.GetBulk(vb, keys, rv)
+			err = conn.GetBulk(vb, keys, rv, subPaths)
 			conn.SetReadDeadline(time.Time{})
 
 			pool.Return(conn)
@@ -318,6 +318,7 @@ type vbBulkGet struct {
 	keys        []string
 	reqDeadline time.Time
 	wg          *sync.WaitGroup
+	subPaths    []string
 }
 
 const _NUM_CHANNELS = 5
@@ -359,13 +360,13 @@ func vbDoBulkGet(vbg *vbBulkGet) {
 		// Workers cannot panic and die
 		recover()
 	}()
-	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.reqDeadline, vbg.ch, vbg.ech)
+	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.reqDeadline, vbg.ch, vbg.ech, vbg.subPaths)
 }
 
 var _ERR_CHAN_FULL = fmt.Errorf("Data request queue full, aborting query.")
 
 func (b *Bucket) processBulkGet(kdm map[uint16][]string, reqDeadline time.Time,
-	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
+	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error, subPaths []string) {
 	defer close(ch)
 	defer close(ech)
 
@@ -380,6 +381,7 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string, reqDeadline time.Time,
 			keys:        keys,
 			reqDeadline: reqDeadline,
 			wg:          wg,
+			subPaths:    subPaths,
 		}
 
 		wg.Add(1)
@@ -436,7 +438,7 @@ func errorCollector(ech <-chan error, eout chan<- error) {
 // Returns one document for duplicate keys
 func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
 
-	resp, keyCount, eout := b.getBulk(keys, time.Time{})
+	resp, keyCount, eout := b.getBulk(keys, time.Time{}, nil)
 
 	rv := make(map[string][]byte, len(keys))
 	for k, av := range resp {
@@ -454,8 +456,8 @@ func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
 // map array for each key.  Keys that were not found will not be included in
 // the map.
 
-func (b *Bucket) GetBulk(keys []string, reqDeadline time.Time) (map[string]*gomemcached.MCResponse, map[string]int, error) {
-	return b.getBulk(keys, reqDeadline)
+func (b *Bucket) GetBulk(keys []string, reqDeadline time.Time, subPaths []string) (map[string]*gomemcached.MCResponse, map[string]int, error) {
+	return b.getBulk(keys, reqDeadline, subPaths)
 }
 
 func (b *Bucket) ReleaseGetBulkPools(keyCount map[string]int, rv map[string]*gomemcached.MCResponse) {
@@ -463,7 +465,7 @@ func (b *Bucket) ReleaseGetBulkPools(keyCount map[string]int, rv map[string]*gom
 	_STRING_MCRESPONSE_POOL.Put(rv)
 }
 
-func (b *Bucket) getBulk(keys []string, reqDeadline time.Time) (map[string]*gomemcached.MCResponse, map[string]int, error) {
+func (b *Bucket) getBulk(keys []string, reqDeadline time.Time, subPaths []string) (map[string]*gomemcached.MCResponse, map[string]int, error) {
 	kdm := _VB_STRING_POOL.Get()
 	defer _VB_STRING_POOL.Put(kdm)
 	keyCount := _STRING_KEYCOUNT_POOL.Get()
@@ -489,7 +491,7 @@ func (b *Bucket) getBulk(keys []string, reqDeadline time.Time) (map[string]*gome
 	ech := make(chan error)
 
 	go errorCollector(ech, eout)
-	go b.processBulkGet(kdm, reqDeadline, ch, ech)
+	go b.processBulkGet(kdm, reqDeadline, ch, ech, subPaths)
 
 	var rv map[string]*gomemcached.MCResponse
 
@@ -826,7 +828,7 @@ func (b *Bucket) Append(k string, data []byte) error {
 	return b.Write(k, 0, 0, data, Append|Raw)
 }
 
-func (b *Bucket) GetsMC(key string, reqDeadline time.Time) (*gomemcached.MCResponse, error) {
+func (b *Bucket) GetsMC(key string, reqDeadline time.Time, subPaths []string) (*gomemcached.MCResponse, error) {
 	var err error
 	var response *gomemcached.MCResponse
 
@@ -838,16 +840,22 @@ func (b *Bucket) GetsMC(key string, reqDeadline time.Time) (*gomemcached.MCRespo
 		var err1 error
 
 		mc.SetReadDeadline(reqDeadline)
-		response, err1 = mc.Get(vb, key)
+		if len(subPaths) > 0 {
+			response, err1 = mc.GetSubdoc(vb, key, subPaths)
+		} else {
+			response, err1 = mc.Get(vb, key)
+		}
 		mc.SetReadDeadline(time.Time{})
-		if err1 != nil {
+		if err1 != nil &&
+			response.Status != gomemcached.SUBDOC_BAD_MULTI &&
+			response.Status != gomemcached.SUBDOC_PATH_NOT_FOUND &&
+			response.Status != gomemcached.SUBDOC_MULTI_PATH_FAILURE_DELETED {
 			return err1
 		}
 		return nil
 	})
 	return response, err
 }
-
 
 // GetsRaw gets a raw value from this bucket including its CAS
 // counter and flags.
