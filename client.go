@@ -275,9 +275,10 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 				if st == gomemcached.NOT_MY_VBUCKET {
 					b.Refresh()
 					return nil // retry
-				} else if st == gomemcached.ENOMEM {
+				} else if st == gomemcached.ENOMEM || st == gomemcached.EBUSY ||
+					st == gomemcached.TMPFAIL || st == gomemcached.LOCKED {
 					if (attempts % (MaxBulkRetries / 2)) == 0 {
-						logging.Infof("Retrying Memcached error (%v)", err.Error())
+						logging.Infof("Retrying Memcached error (%v) FOR %v(vbid:%d)", err.Error(), b.GetName(), vb)
 					}
 					return nil // retry
 				}
