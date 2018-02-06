@@ -224,7 +224,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 	rv := _STRING_MCRESPONSE_POOL.Get()
 	attempts := 0
 	done := false
-	for attempts < MaxBulkRetries && !done {
+	for ; attempts < MaxBulkRetries && !done; attempts++ {
 
 		if len(b.VBServerMap().VBucketMap) < int(vb) {
 			//fatal
@@ -235,7 +235,6 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 		}
 
 		masterID := b.VBServerMap().VBucketMap[vb][0]
-		attempts++
 
 		if masterID < 0 {
 			// fatal
@@ -275,9 +274,14 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 				st := err.(*gomemcached.MCResponse).Status
 				if st == gomemcached.NOT_MY_VBUCKET {
 					b.Refresh()
-					// retry
-					err = nil
+					return nil // retry
+				} else if st == gomemcached.ENOMEM {
+					if (attempts % (MaxBulkRetries / 2)) == 0 {
+						logging.Infof("Retrying Memcached error (%v)", err.Error())
+					}
+					return nil // retry
 				}
+				ech <- err
 				return err
 			case error:
 				if isOutOfBoundsError(err) {
