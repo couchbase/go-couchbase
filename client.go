@@ -49,6 +49,7 @@ type MutationToken struct {
 
 // Maximum number of times to retry a chunk of a bulk get on error.
 var MaxBulkRetries = 5000
+var retryAfter time.Duration = 50 * time.Millisecond
 
 // If this is set to a nonzero duration, Do() and ViewCustom() will log a warning if the call
 // takes longer than that.
@@ -277,8 +278,11 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 					return nil // retry
 				} else if st == gomemcached.ENOMEM || st == gomemcached.EBUSY ||
 					st == gomemcached.TMPFAIL || st == gomemcached.LOCKED {
-					if (attempts % (MaxBulkRetries / 2)) == 0 {
-						logging.Infof("Retrying Memcached error (%v) FOR %v(vbid:%d)", err.Error(), b.GetName(), vb)
+					if st == gomemcached.ENOMEM {
+						time.Sleep(retryAfter)
+					}
+					if (attempts % (MaxBulkRetries / 100)) == 0 {
+						logging.Infof("Retrying Memcached error (%v) FOR %v(vbid:%d)", err.Error(), b.Name, vb)
 					}
 					return nil // retry
 				}
