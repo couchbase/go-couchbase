@@ -1,6 +1,7 @@
 package couchbase
 
 import (
+	"bufio"
 	"bytes"
 	"crypto/tls"
 	"encoding/base64"
@@ -652,6 +653,65 @@ func queryRestAPI(
 		return err
 	}
 	return nil
+}
+
+func (c *Client) ProcessStream(path string, callb func(interface{}) error, data interface{}) error {
+	return c.processStream(c.BaseURL, path, c.ah, callb, data)
+}
+
+// Based on code in http://src.couchbase.org/source/xref/trunk/goproj/src/github.com/couchbase/indexing/secondary/dcp/pools.go#309
+func (c *Client) processStream(baseURL *url.URL, path string, authHandler AuthHandler, callb func(interface{}) error, data interface{}) error {
+	var requestUrl string
+
+	if q := strings.Index(path, "?"); q > 0 {
+		requestUrl = baseURL.Scheme + "://" + baseURL.Host + path[:q] + "?" + path[q+1:]
+	} else {
+		requestUrl = baseURL.Scheme + "://" + baseURL.Host + path
+	}
+
+	req, err := http.NewRequest("GET", requestUrl, nil)
+	if err != nil {
+		return err
+	}
+
+	err = maybeAddAuth(req, authHandler)
+	if err != nil {
+		return err
+	}
+
+	res, err := doHTTPRequest(req)
+	if err != nil {
+		return err
+	}
+
+	defer res.Body.Close()
+	if res.StatusCode != 200 {
+		bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
+		return fmt.Errorf("HTTP error %v getting %q: %s",
+			res.Status, requestUrl, bod)
+	}
+
+	reader := bufio.NewReader(res.Body)
+	for {
+		bs, err := reader.ReadBytes('\n')
+		if err != nil {
+			return err
+		}
+		if len(bs) == 1 && bs[0] == '\n' {
+			continue
+		}
+
+		err = json.Unmarshal(bs, data)
+		if err != nil {
+			return err
+		}
+		err = callb(data)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+
 }
 
 func (c *Client) parseURLResponse(path string, out interface{}) error {
