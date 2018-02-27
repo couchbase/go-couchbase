@@ -35,7 +35,7 @@ var PoolSize = 64
 
 // PoolOverflow is the number of overflow connections allowed in a
 // pool.
-var PoolOverflow = 16
+var PoolOverflow = 32
 
 // TCP KeepAlive enabled/disabled
 var TCPKeepalive = false

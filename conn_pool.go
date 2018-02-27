@@ -214,9 +214,23 @@ func (cp *connectionPool) Return(c *memcached.Client) {
 		select {
 		case cp.connections <- c:
 		default:
-			// Overflow connection.
-			<-cp.createsem
-			c.Close()
+
+			// MB-27415 don't be too hasty with closing overflow
+			// connections. If it can be pushed within 1ms, why not?
+			go func() {
+			        t := time.NewTimer(ConnPoolAvailWaitTime)
+			        defer t.Stop()
+				select {
+
+				// connections in high demand!
+				case cp.connections <- c:
+
+				// did not work out, overflow it
+				case <-t.C:
+					<-cp.createsem
+					c.Close()
+				}
+			}()
 		}
 	} else {
 		<-cp.createsem
