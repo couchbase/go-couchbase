@@ -170,12 +170,13 @@ func (b *Bucket) UpdateBucket() error {
 				if b.ah != nil {
 					newcps[i] = newConnectionPool(
 						tmpb.VBSMJson.ServerList[i],
-						b.ah, PoolSize, PoolOverflow)
+						b.ah, false, PoolSize, PoolOverflow)
 
 				} else {
 					newcps[i] = newConnectionPool(
 						tmpb.VBSMJson.ServerList[i],
-						b.authHandler(true /* bucket already locked */), PoolSize, PoolOverflow)
+						b.authHandler(true /* bucket already locked */),
+						false, PoolSize, PoolOverflow)
 				}
 			}
 

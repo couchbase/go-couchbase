@@ -2,11 +2,12 @@ package couchbase
 
 import (
 	"errors"
-	"github.com/couchbase/goutils/logging"
+	"sync/atomic"
 	"time"
 
 	"github.com/couchbase/gomemcached"
 	"github.com/couchbase/gomemcached/client"
+	"github.com/couchbase/goutils/logging"
 )
 
 // GenericMcdAuthHandler is a kind of AuthHandler that performs
@@ -25,6 +26,9 @@ var errNoPool = errors.New("no connection pool")
 // Default timeout for retrieving a connection from the pool.
 var ConnPoolTimeout = time.Hour * 24 * 30
 
+// overflow connection closer cycle time
+var ConnCloserInterval = time.Second * 30
+
 // ConnPoolAvailWaitTime is the amount of time to wait for an existing
 // connection from the pool before considering the creation of a new
 // one.
@@ -36,17 +40,29 @@ type connectionPool struct {
 	auth        AuthHandler
 	connections chan *memcached.Client
 	createsem   chan bool
+	poolSize    int
+	connCount   uint64
 	inUse       bool
 }
 
-func newConnectionPool(host string, ah AuthHandler, poolSize, poolOverflow int) *connectionPool {
-	return &connectionPool{
+func newConnectionPool(host string, ah AuthHandler, closer bool, poolSize, poolOverflow int) *connectionPool {
+	connSize := poolSize
+	if closer {
+		connSize += poolOverflow
+	}
+	rv := &connectionPool{
 		host:        host,
-		connections: make(chan *memcached.Client, poolSize),
+		connections: make(chan *memcached.Client, connSize),
 		createsem:   make(chan bool, poolSize+poolOverflow),
 		mkConn:      defaultMkConn,
 		auth:        ah,
+		poolSize:    poolSize,
+		inUse:       true,
 	}
+	if closer {
+		go rv.connCloser()
+	}
+	return rv
 }
 
 // ConnPoolTimeout is notified whenever connections are acquired from a pool.
@@ -116,6 +132,7 @@ func (cp *connectionPool) Close() (err error) {
 			err = errors.New("connectionPool.Close error")
 		}
 	}()
+	cp.inUse = false
 	close(cp.connections)
 	for c := range cp.connections {
 		c.Close()
@@ -144,6 +161,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 		if !isopen {
 			return nil, errClosedPool
 		}
+		atomic.AddUint64(&cp.connCount, 1)
 		return rv, nil
 	default:
 	}
@@ -158,6 +176,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 		if !isopen {
 			return nil, errClosedPool
 		}
+		atomic.AddUint64(&cp.connCount, 1)
 		return rv, nil
 	case <-t.C:
 		// No connection came around in time, let's see
@@ -169,6 +188,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 			if !isopen {
 				return nil, errClosedPool
 			}
+			atomic.AddUint64(&cp.connCount, 1)
 			return rv, nil
 		case cp.createsem <- true:
 			path = "create"
@@ -179,6 +199,8 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 			if err != nil {
 				// On error, release our create hold
 				<-cp.createsem
+			} else {
+				atomic.AddUint64(&cp.connCount, 1)
 			}
 			return rv, err
 		case <-t.C:
@@ -214,27 +236,50 @@ func (cp *connectionPool) Return(c *memcached.Client) {
 		select {
 		case cp.connections <- c:
 		default:
-
-			// MB-27415 don't be too hasty with closing overflow
-			// connections. If it can be pushed within 1ms, why not?
-			go func() {
-			        t := time.NewTimer(ConnPoolAvailWaitTime)
-			        defer t.Stop()
-				select {
-
-				// connections in high demand!
-				case cp.connections <- c:
-
-				// did not work out, overflow it
-				case <-t.C:
-					<-cp.createsem
-					c.Close()
-				}
-			}()
+			<-cp.createsem
+			c.Close()
 		}
 	} else {
 		<-cp.createsem
 		c.Close()
+	}
+}
+
+// asynchronous connection closer
+func (cp *connectionPool) connCloser() {
+	defer func() {
+
+		// Just in case the pool has been closed
+		// and we're still cleaning
+		recover()
+	}()
+	var connCount uint64
+
+	for {
+		connCount = cp.connCount
+		time.Sleep(ConnCloserInterval)
+
+		// we don't exist anymore! bail out!
+		if !cp.inUse {
+			return
+		}
+
+		// no overflow connections open or connections requested at a lower rate
+		// than our stipulated availability time out.
+		// nothing to do until the next cycle
+		if len(cp.connections) <= cp.poolSize ||
+			ConnCloserInterval/time.Duration(cp.connCount-connCount) > ConnPoolAvailWaitTime {
+			continue
+		}
+
+		// close overflow connections now that they are not needed
+		for c := range cp.connections {
+			c.Close()
+			<-cp.createsem
+			if len(cp.connections) <= cp.poolSize {
+				break
+			}
+		}
 	}
 }
 

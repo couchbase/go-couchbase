@@ -35,7 +35,10 @@ var PoolSize = 64
 
 // PoolOverflow is the number of overflow connections allowed in a
 // pool.
-var PoolOverflow = 32
+var PoolOverflow = 16
+
+// AsynchronousCloser turns on asynchronous closing for overflow connections
+var AsynchronousCloser = false
 
 // TCP KeepAlive enabled/disabled
 var TCPKeepalive = false
@@ -70,6 +73,16 @@ func SetConnectionPoolParams(size, overflow int) {
 	if overflow > 0 {
 		PoolOverflow = overflow
 	}
+}
+
+// Turn off overflow connections
+func DisableOverflowConnections() {
+	PoolOverflow = 0
+}
+
+// Toggle asynchronous overflow closer
+func EnableAsynchronousCloser(closer bool) {
+	AsynchronousCloser = closer
 }
 
 // Allow TCP keepalive parameters to be set by the application
@@ -981,12 +994,13 @@ func (b *Bucket) Refresh() error {
 		if b.ah != nil {
 			newcps[i] = newConnectionPool(
 				tmpb.VBSMJson.ServerList[i],
-				b.ah, PoolSize, PoolOverflow)
+				b.ah, AsynchronousCloser, PoolSize, PoolOverflow)
 
 		} else {
 			newcps[i] = newConnectionPool(
 				tmpb.VBSMJson.ServerList[i],
-				b.authHandler(true /* bucket already locked */), PoolSize, PoolOverflow)
+				b.authHandler(true /* bucket already locked */),
+				AsynchronousCloser, PoolSize, PoolOverflow)
 		}
 	}
 	b.replaceConnPools2(newcps, true /* bucket already locked */)
