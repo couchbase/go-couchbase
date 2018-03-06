@@ -40,6 +40,7 @@ type connectionPool struct {
 	auth        AuthHandler
 	connections chan *memcached.Client
 	createsem   chan bool
+	bailOut     chan bool
 	poolSize    int
 	connCount   uint64
 	inUse       bool
@@ -57,9 +58,9 @@ func newConnectionPool(host string, ah AuthHandler, closer bool, poolSize, poolO
 		mkConn:      defaultMkConn,
 		auth:        ah,
 		poolSize:    poolSize,
-		inUse:       true,
 	}
 	if closer {
+		rv.bailOut = make(chan bool, 1)
 		go rv.connCloser()
 	}
 	return rv
@@ -132,7 +133,14 @@ func (cp *connectionPool) Close() (err error) {
 			err = errors.New("connectionPool.Close error")
 		}
 	}()
-	cp.inUse = false
+	if cp.bailOut != nil {
+
+		// defensively, we won't wait if the channel is full
+		select {
+		case cp.bailOut <- false:
+		default:
+		}
+	}
 	close(cp.connections)
 	for c := range cp.connections {
 		c.Close()
@@ -247,22 +255,21 @@ func (cp *connectionPool) Return(c *memcached.Client) {
 
 // asynchronous connection closer
 func (cp *connectionPool) connCloser() {
-	defer func() {
-
-		// Just in case the pool has been closed
-		// and we're still cleaning
-		recover()
-	}()
 	var connCount uint64
+
+	t := time.NewTimer(ConnCloserInterval)
+	defer t.Stop()
 
 	for {
 		connCount = cp.connCount
-		time.Sleep(ConnCloserInterval)
 
 		// we don't exist anymore! bail out!
-		if !cp.inUse {
+		select {
+		case <-cp.bailOut:
 			return
+		case <-t.C:
 		}
+		t.Reset(ConnCloserInterval)
 
 		// no overflow connections open or connections requested at a lower rate
 		// than our stipulated availability time out.
@@ -274,13 +281,38 @@ func (cp *connectionPool) connCloser() {
 
 		// close overflow connections now that they are not needed
 		for c := range cp.connections {
-			c.Close()
-			<-cp.createsem
+			select {
+			case <-cp.bailOut:
+				return
+			default:
+			}
+
+			// bail out if close did not work out
+			if !cp.connCleanup(c) {
+				return
+			}
 			if len(cp.connections) <= cp.poolSize {
 				break
 			}
 		}
 	}
+}
+
+// close connection with recovery on error
+func (cp *connectionPool) connCleanup(c *memcached.Client) (rv bool) {
+
+	// just in case we are closing a connection after
+	// bailOut has been sent but we haven't yet read it
+	defer func() {
+		if recover() != nil {
+			rv = false
+		}
+	}()
+	rv = true
+
+	c.Close()
+	<-cp.createsem
+	return
 }
 
 func (cp *connectionPool) StartTapFeed(args *memcached.TapArguments) (*memcached.TapFeed, error) {
