@@ -271,11 +271,10 @@ func (cp *connectionPool) connCloser() {
 		}
 		t.Reset(ConnCloserInterval)
 
-		// no overflow connections open or connections requested at a lower rate
-		// than our stipulated availability time out.
+		// no overflow connections open or sustained requests for connections
 		// nothing to do until the next cycle
 		if len(cp.connections) <= cp.poolSize ||
-			ConnCloserInterval/time.Duration(cp.connCount-connCount) > ConnPoolAvailWaitTime {
+		   ConnCloserInterval / ConnPoolAvailWaitTime < time.Duration(cp.connCount-connCount) {
 			continue
 		}
 
