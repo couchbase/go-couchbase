@@ -447,14 +447,14 @@ func errorCollector(ech <-chan error, eout chan<- error) {
 // Returns one document for duplicate keys
 func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
 
-	resp, keyCount, eout := b.getBulk(keys, time.Time{}, nil)
+	resp, eout := b.getBulk(keys, time.Time{}, nil)
 
 	rv := make(map[string][]byte, len(keys))
 	for k, av := range resp {
 		rv[k] = av.Body
 	}
 
-	b.ReleaseGetBulkPools(keyCount, resp)
+	b.ReleaseGetBulkPools(resp)
 	return rv, eout
 
 }
@@ -465,31 +465,24 @@ func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
 // map array for each key.  Keys that were not found will not be included in
 // the map.
 
-func (b *Bucket) GetBulk(keys []string, reqDeadline time.Time, subPaths []string) (map[string]*gomemcached.MCResponse, map[string]int, error) {
+func (b *Bucket) GetBulk(keys []string, reqDeadline time.Time, subPaths []string) (map[string]*gomemcached.MCResponse, error) {
 	return b.getBulk(keys, reqDeadline, subPaths)
 }
 
-func (b *Bucket) ReleaseGetBulkPools(keyCount map[string]int, rv map[string]*gomemcached.MCResponse) {
-	_STRING_KEYCOUNT_POOL.Put(keyCount)
+func (b *Bucket) ReleaseGetBulkPools(rv map[string]*gomemcached.MCResponse) {
 	_STRING_MCRESPONSE_POOL.Put(rv)
 }
 
-func (b *Bucket) getBulk(keys []string, reqDeadline time.Time, subPaths []string) (map[string]*gomemcached.MCResponse, map[string]int, error) {
+func (b *Bucket) getBulk(keys []string, reqDeadline time.Time, subPaths []string) (map[string]*gomemcached.MCResponse, error) {
 	kdm := _VB_STRING_POOL.Get()
 	defer _VB_STRING_POOL.Put(kdm)
-	keyCount := _STRING_KEYCOUNT_POOL.Get()
 	for _, k := range keys {
-		v, ok := keyCount[k]
-		if !ok {
-			vb := uint16(b.VBHash(k))
-			a, ok1 := kdm[vb]
-			if !ok1 {
-				a = _STRING_POOL.Get()
-			}
-			kdm[vb] = append(a, k)
-			v = 0
+		vb := uint16(b.VBHash(k))
+		a, ok1 := kdm[vb]
+		if !ok1 {
+			a = _STRING_POOL.Get()
 		}
-		keyCount[k] = v + 1
+		kdm[vb] = append(a, k)
 	}
 
 	eout := make(chan error, 2)
@@ -516,7 +509,7 @@ func (b *Bucket) getBulk(keys []string, reqDeadline time.Time, subPaths []string
 		_STRING_MCRESPONSE_POOL.Put(m)
 	}
 
-	return rv, keyCount, <-eout
+	return rv, <-eout
 }
 
 // WriteOptions is the set of option flags availble for the Write
@@ -1215,40 +1208,3 @@ func (this *vbStringPool) Put(s map[uint16][]string) {
 }
 
 var _VB_STRING_POOL = newVBStringPool(16, _STRING_POOL)
-
-type stringIntPool struct {
-	pool *sync.Pool
-	size int
-}
-
-func newStringIntPool(size int) *stringIntPool {
-	rv := &stringIntPool{
-		pool: &sync.Pool{
-			New: func() interface{} {
-				return make(map[string]int, size)
-			},
-		},
-		size: size,
-	}
-
-	return rv
-}
-
-func (this *stringIntPool) Get() map[string]int {
-	return this.pool.Get().(map[string]int)
-}
-
-func (this *stringIntPool) Put(s map[string]int) {
-	if s == nil || len(s) > 2*this.size {
-		return
-	}
-
-	for k, _ := range s {
-		s[k] = 0
-		delete(s, k)
-	}
-
-	this.pool.Put(s)
-}
-
-var _STRING_KEYCOUNT_POOL = newStringIntPool(1024)
