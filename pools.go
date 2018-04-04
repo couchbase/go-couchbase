@@ -295,6 +295,24 @@ func (b *Bucket) GetVBmap(addrs []string) (map[string][]uint16, error) {
 	return m, nil
 }
 
+// true if node is not on the bucket VBmap
+func (b *Bucket) checkVBmap(node string) bool {
+	vbmap := b.VBServerMap()
+	servers := vbmap.ServerList
+
+	for _, idxs := range vbmap.VBucketMap {
+		if len(idxs) == 0 {
+			return true
+		} else if idxs[0] < 0 || idxs[0] >= len(servers) {
+			return true
+		}
+		if servers[idxs[0]] == node {
+			return false
+		}
+	}
+	return true
+}
+
 func (b *Bucket) GetName() string {
 	b.RLock()
 	defer b.RUnlock()

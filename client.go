@@ -109,12 +109,19 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 			if err != nil {
 				return
 			}
-			defer pool.Return(conn)
 
 			err = f(conn, uint16(vb))
 			if i, ok := err.(*gomemcached.MCResponse); ok {
 				st := i.Status
 				retry = st == gomemcached.NOT_MY_VBUCKET
+			}
+
+			// MB-28842: in case of NMVB, check if the node is still part of the map
+			// and ditch the connection if it isn't.
+			if retry && b.checkVBmap(pool.Node()) {
+				pool.Discard(conn)
+			} else {
+				pool.Return(conn)
 			}
 			return
 		}()
@@ -268,13 +275,21 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 			err = conn.GetBulk(vb, keys, rv, subPaths)
 			conn.SetReadDeadline(time.Time{})
 
-			pool.Return(conn)
+			discard := false
+			defer func() {
+				if discard {
+					pool.Discard(conn)
+				} else {
+					pool.Return(conn)
+				}
+			}()
 
 			switch err.(type) {
 			case *gomemcached.MCResponse:
 				st := err.(*gomemcached.MCResponse).Status
 				if st == gomemcached.NOT_MY_VBUCKET {
 					b.Refresh()
+					discard = b.checkVBmap(pool.Node())
 					return nil // retry
 				} else if st == gomemcached.ENOMEM || st == gomemcached.EBUSY ||
 					st == gomemcached.TMPFAIL || st == gomemcached.LOCKED {
@@ -294,6 +309,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 					return nil
 				} else if isConnError(err) {
 					logging.Errorf("Connection Error: %s. Refreshing bucket", err.Error())
+					discard = true
 					b.Refresh()
 					// retry
 					return nil

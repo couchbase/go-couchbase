@@ -148,6 +148,10 @@ func (cp *connectionPool) Close() (err error) {
 	return
 }
 
+func (cp *connectionPool) Node() string {
+	return cp.host
+}
+
 func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client, err error) {
 	if cp == nil {
 		return nil, errNoPool
@@ -253,6 +257,13 @@ func (cp *connectionPool) Return(c *memcached.Client) {
 	}
 }
 
+// give the ability to discard a connection from a pool
+// useful for ditching connections to the wrong node after a rebalance
+func (cp *connectionPool) Discard(c *memcached.Client) {
+	<-cp.createsem
+	c.Close()
+}
+
 // asynchronous connection closer
 func (cp *connectionPool) connCloser() {
 	var connCount uint64
@@ -274,7 +285,7 @@ func (cp *connectionPool) connCloser() {
 		// no overflow connections open or sustained requests for connections
 		// nothing to do until the next cycle
 		if len(cp.connections) <= cp.poolSize ||
-		   ConnCloserInterval / ConnPoolAvailWaitTime < time.Duration(cp.connCount-connCount) {
+			ConnCloserInterval/ConnPoolAvailWaitTime < time.Duration(cp.connCount-connCount) {
 			continue
 		}
 
