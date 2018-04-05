@@ -110,7 +110,14 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 				return
 			}
 
-			err = f(conn, uint16(vb))
+			if DefaultReadTimeout > 0 {
+				conn.SetReadDeadline(getDeadline(time.Time{}, DefaultReadTimeout))
+				err = f(conn, uint16(vb))
+				conn.SetReadDeadline(time.Time{})
+			} else {
+				err = f(conn, uint16(vb))
+			}
+
 			if i, ok := err.(*gomemcached.MCResponse); ok {
 				st := i.Status
 				retry = st == gomemcached.NOT_MY_VBUCKET
@@ -206,6 +213,10 @@ func IsReadTimeOutError(err error) bool {
 	return strings.ContainsAny(err.Error(), "read tcp & i/o timeout")
 }
 
+func isTimeoutError(err error) bool {
+	return strings.ContainsAny(err.Error(), "i/o timeout & connection timed out & no route to host")
+}
+
 // Errors that are not considered fatal for our fetch loop
 func isConnError(err error) bool {
 	if err == io.EOF {
@@ -223,8 +234,16 @@ func isOutOfBoundsError(err error) bool {
 
 }
 
+func getDeadline(reqDeadline time.Time, duration time.Duration) time.Time {
+	if reqDeadline.IsZero() && duration > 0 {
+		return time.Now().Add(duration)
+	}
+	return reqDeadline
+}
+
 func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
-	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error, subPaths []string) {
+	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error, subPaths []string,
+	eStatus *errorStatus) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to doBulkGet(%d, %d keys)", vb, len(keys))
 	}
@@ -232,7 +251,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 	rv := _STRING_MCRESPONSE_POOL.Get()
 	attempts := 0
 	done := false
-	for ; attempts < MaxBulkRetries && !done; attempts++ {
+	for ; attempts < MaxBulkRetries && !done && !eStatus.errStatus; attempts++ {
 
 		if len(b.VBServerMap().VBucketMap) < int(vb) {
 			//fatal
@@ -258,8 +277,8 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 			pool := b.getConnPool(masterID)
 			conn, err := pool.Get()
 			if err != nil {
-				if isAuthError(err) {
-					logging.Errorf(" Fatal Auth Error %v", err)
+				if isAuthError(err) || isTimeoutError(err) {
+					logging.Errorf("Fatal Error %v", err)
 					ech <- err
 					return err
 				} else if isConnError(err) {
@@ -271,7 +290,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 				return nil
 			}
 
-			conn.SetReadDeadline(reqDeadline)
+			conn.SetReadDeadline(getDeadline(reqDeadline, DefaultReadTimeout))
 			err = conn.GetBulk(vb, keys, rv, subPaths)
 			conn.SetReadDeadline(time.Time{})
 
@@ -335,6 +354,10 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 	ch <- rv
 }
 
+type errorStatus struct {
+	errStatus bool
+}
+
 type vbBulkGet struct {
 	b           *Bucket
 	ch          chan<- map[string]*gomemcached.MCResponse
@@ -344,16 +367,26 @@ type vbBulkGet struct {
 	reqDeadline time.Time
 	wg          *sync.WaitGroup
 	subPaths    []string
+	groupError  *errorStatus
 }
 
 const _NUM_CHANNELS = 5
 
 var _NUM_CHANNEL_WORKERS = (runtime.NumCPU() + 1) / 2
+var DefaultDialTimeout = time.Duration(0)
+var DefaultReadTimeout = time.Duration(0)
+var DefaultWriteTimeout = time.Duration(0)
 
 // Buffer 4k requests per worker
 var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
 
 func InitBulkGet() {
+
+	DefaultDialTimeout = 20 * time.Second
+	DefaultReadTimeout = 120 * time.Second
+	DefaultWriteTimeout = 120 * time.Second
+
+	memcached.SetDefaultTimeouts(DefaultDialTimeout, DefaultReadTimeout, DefaultWriteTimeout)
 
 	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
 
@@ -385,19 +418,27 @@ func vbDoBulkGet(vbg *vbBulkGet) {
 		// Workers cannot panic and die
 		recover()
 	}()
-	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.reqDeadline, vbg.ch, vbg.ech, vbg.subPaths)
+	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.reqDeadline, vbg.ch, vbg.ech, vbg.subPaths, vbg.groupError)
 }
 
 var _ERR_CHAN_FULL = fmt.Errorf("Data request queue full, aborting query.")
 
 func (b *Bucket) processBulkGet(kdm map[uint16][]string, reqDeadline time.Time,
-	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error, subPaths []string) {
+	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error, subPaths []string,
+	eStatus *errorStatus) {
+
 	defer close(ch)
 	defer close(ech)
 
 	wg := &sync.WaitGroup{}
 
 	for k, keys := range kdm {
+
+		// GetBulk() group has error donot Queue items for this group
+		if eStatus.errStatus {
+			break
+		}
+
 		vbg := &vbBulkGet{
 			b:           b,
 			ch:          ch,
@@ -407,6 +448,7 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string, reqDeadline time.Time,
 			reqDeadline: reqDeadline,
 			wg:          wg,
 			subPaths:    subPaths,
+			groupError:  eStatus,
 		}
 
 		wg.Add(1)
@@ -444,10 +486,14 @@ func (m multiError) Error() string {
 //
 // At least one send is guaranteed on eout, but two is possible, so
 // buffer the out channel appropriately.
-func errorCollector(ech <-chan error, eout chan<- error) {
+func errorCollector(ech <-chan error, eout chan<- error, eStatus *errorStatus) {
 	defer func() { eout <- nil }()
 	var errs multiError
 	for e := range ech {
+		if !eStatus.errStatus && !IsKeyNoEntError(e) {
+			eStatus.errStatus = true
+		}
+
 		errs = append(errs, e)
 	}
 
@@ -502,14 +548,15 @@ func (b *Bucket) getBulk(keys []string, reqDeadline time.Time, subPaths []string
 	}
 
 	eout := make(chan error, 2)
+	groupErrorStatus := &errorStatus{}
 
 	// processBulkGet will own both of these channels and
 	// guarantee they're closed before it returns.
 	ch := make(chan map[string]*gomemcached.MCResponse)
 	ech := make(chan error)
 
-	go errorCollector(ech, eout)
-	go b.processBulkGet(kdm, reqDeadline, ch, ech, subPaths)
+	go errorCollector(ech, eout, groupErrorStatus)
+	go b.processBulkGet(kdm, reqDeadline, ch, ech, subPaths, groupErrorStatus)
 
 	var rv map[string]*gomemcached.MCResponse
 
@@ -857,7 +904,7 @@ func (b *Bucket) GetsMC(key string, reqDeadline time.Time, subPaths []string) (*
 	err = b.Do(key, func(mc *memcached.Client, vb uint16) error {
 		var err1 error
 
-		mc.SetReadDeadline(reqDeadline)
+		mc.SetReadDeadline(getDeadline(reqDeadline, DefaultReadTimeout))
 		if len(subPaths) > 0 {
 			response, err1 = mc.GetSubdoc(vb, key, subPaths)
 		} else {
