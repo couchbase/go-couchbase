@@ -50,7 +50,7 @@ var EnableMutationToken = false
 var EnableDataType = false
 
 // Enable Xattr
-var EnableXattr = true
+var EnableXattr = false
 
 // TCP keepalive interval in seconds. Default 30 minutes
 var TCPKeepaliveInterval = 30 * 60

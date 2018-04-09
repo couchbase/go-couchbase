@@ -864,10 +864,7 @@ func (b *Bucket) GetsMC(key string, reqDeadline time.Time, subPaths []string) (*
 			response, err1 = mc.Get(vb, key)
 		}
 		mc.SetReadDeadline(time.Time{})
-		if err1 != nil &&
-			response.Status != gomemcached.SUBDOC_BAD_MULTI &&
-			response.Status != gomemcached.SUBDOC_PATH_NOT_FOUND &&
-			response.Status != gomemcached.SUBDOC_MULTI_PATH_FAILURE_DELETED {
+		if err1 != nil {
 			return err1
 		}
 		return nil
