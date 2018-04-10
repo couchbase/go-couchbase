@@ -30,6 +30,7 @@ import (
 	"fmt"
 	"io"
 	"runtime"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -202,6 +203,26 @@ func (b *Bucket) GatherStats(which string) map[string]GatheredStats {
 		rv[gs.Server] = gs
 	}
 	return rv
+}
+
+// Get bucket count through the bucket stats
+func (b *Bucket) GetCount(refresh bool) (count int64, err error) {
+	if refresh {
+		b.Refresh()
+	}
+
+	var cnt int64
+	for _, gs := range b.GatherStats("") {
+		if len(gs.Stats) > 0 {
+			cnt, err = strconv.ParseInt(gs.Stats["curr_items"], 10, 64)
+			if err != nil {
+				return 0, err
+			}
+			count += cnt
+		}
+	}
+
+	return count, nil
 }
 
 func isAuthError(err error) bool {
@@ -382,11 +403,13 @@ var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
 
 func InitBulkGet() {
 
-	DefaultDialTimeout = 20 * time.Second
-	DefaultReadTimeout = 120 * time.Second
-	DefaultWriteTimeout = 120 * time.Second
+	/*
+		DefaultDialTimeout = 20 * time.Second
+		DefaultReadTimeout = 120 * time.Second
+		DefaultWriteTimeout = 120 * time.Second
 
-	memcached.SetDefaultTimeouts(DefaultDialTimeout, DefaultReadTimeout, DefaultWriteTimeout)
+		memcached.SetDefaultTimeouts(DefaultDialTimeout, DefaultReadTimeout, DefaultWriteTimeout)
+	*/
 
 	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
 
