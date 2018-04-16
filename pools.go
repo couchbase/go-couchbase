@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -58,9 +59,24 @@ var TCPKeepaliveInterval = 30 * 60
 // Used to decide whether to skip verification of certificates when
 // connecting to an ssl port.
 var skipVerify = true
+var certFile = ""
+var keyFile = ""
+var rootFile = ""
 
 func SetSkipVerify(skip bool) {
 	skipVerify = skip
+}
+
+func SetCertFile(cert string) {
+	certFile = cert
+}
+
+func SetKeyFile(cert string) {
+	keyFile = cert
+}
+
+func SetRootFile(cert string) {
+	rootFile = cert
 }
 
 // Allow applications to speciify the Poolsize and Overflow
@@ -548,6 +564,37 @@ func isHttpConnError(err error) bool {
 
 var client *http.Client
 
+func ClientConfigForX509(certFile, keyFile, rootFile string) (*tls.Config, error) {
+	cfg := &tls.Config{}
+
+	if certFile != "" && keyFile != "" {
+		tlsCert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		if err != nil {
+			return nil, err
+		}
+		cfg.Certificates = []tls.Certificate{tlsCert}
+	} else {
+		//error need to pass both certfile and keyfile
+		return nil, fmt.Errorf("N1QL: Need to pass both certfile and keyfile")
+	}
+
+	var caCert []byte
+	var err1 error
+
+	caCertPool := x509.NewCertPool()
+	if rootFile != "" {
+		// Read that value in
+		caCert, err1 = ioutil.ReadFile(rootFile)
+		if err1 != nil {
+			return nil, fmt.Errorf(" Error in reading cacert file, err: %v", err1)
+		}
+		caCertPool.AppendCertsFromPEM(caCert)
+	}
+
+	cfg.RootCAs = caCertPool
+	return cfg, nil
+}
+
 func doHTTPRequest(req *http.Request) (*http.Response, error) {
 
 	var err error
@@ -562,8 +609,21 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 			tr = &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
 			}
+		} else {
+			// Handle cases with cert
+
+			cfg, err := ClientConfigForX509(certFile, keyFile, rootFile)
+			if err != nil {
+				return nil, err
+			}
+
+			tr = &http.Transport{
+				TLSClientConfig: cfg,
+			}
 		}
+
 		client = &http.Client{Transport: tr}
+
 	} else if client == nil {
 		client = HTTPClient
 	}
