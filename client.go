@@ -49,6 +49,8 @@ type MutationToken struct {
 
 // Maximum number of times to retry a chunk of a bulk get on error.
 var MaxBulkRetries = 5000
+var backOffDuration time.Duration = 100 * time.Millisecond
+var MaxBackOffRetries = 25 // exponentail backOff result in over 30sec (25*13*0.1s)
 
 // If this is set to a nonzero duration, Do() and ViewCustom() will log a warning if the call
 // takes longer than that.
@@ -110,7 +112,14 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 			}
 			defer pool.Return(conn)
 
-			err = f(conn, uint16(vb))
+			if DefaultReadTimeout > 0 {
+				conn.SetReadDeadline(getDeadline(time.Time{}, DefaultReadTimeout))
+				err = f(conn, uint16(vb))
+				conn.SetReadDeadline(time.Time{})
+			} else {
+				err = f(conn, uint16(vb))
+			}
+
 			if i, ok := err.(*gomemcached.MCResponse); ok {
 				st := i.Status
 				retry = st == gomemcached.NOT_MY_VBUCKET
@@ -195,7 +204,16 @@ func isAuthError(err error) bool {
 }
 
 func IsReadTimeOutError(err error) bool {
-	return strings.ContainsAny(err.Error(), "read tcp & i/o timeout")
+	estr := err.Error()
+	return strings.Contains(estr, "read tcp") ||
+		strings.Contains(estr, "i/o timeout")
+}
+
+func isTimeoutError(err error) bool {
+	estr := err.Error()
+	return strings.Contains(estr, "i/0 timeout") ||
+		strings.Contains(estr, "connection timed out") ||
+		strings.Contains(estr, "no route to host")
 }
 
 // Errors that are not considered fatal for our fetch loop
@@ -215,32 +233,55 @@ func isOutOfBoundsError(err error) bool {
 
 }
 
+func getDeadline(reqDeadline time.Time, duration time.Duration) time.Time {
+	if reqDeadline.IsZero() && duration > 0 {
+		return time.Now().Add(duration)
+	}
+	return reqDeadline
+}
+
+func backOff(attempt, maxAttempts int, duration time.Duration, exponential bool) bool {
+	if attempt < maxAttempts {
+		// 0th attempt return immediately
+		if attempt > 0 {
+			if exponential {
+				duration = time.Duration(attempt) * duration
+			}
+			time.Sleep(duration)
+		}
+		return true
+	}
+
+	return false
+}
+
 func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
-	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
+	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error, eStatus *errorStatus) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to doBulkGet(%d, %d keys)", vb, len(keys))
 	}
 
 	rv := _STRING_MCRESPONSE_POOL.Get()
 	attempts := 0
+	backOffAttempts := 0
 	done := false
-	for attempts < MaxBulkRetries && !done {
+	bname := b.Name
+	for ; attempts < MaxBulkRetries && !done && !eStatus.errStatus; attempts++ {
 
 		if len(b.VBServerMap().VBucketMap) < int(vb) {
 			//fatal
-			logging.Errorf("go-couchbase: vbmap smaller than requested vbucket number. vb %d vbmap len %d", vb, len(b.VBServerMap().VBucketMap))
-			err := fmt.Errorf("vbmap smaller than requested vbucket")
+			err := fmt.Errorf("vbmap smaller than requested for %v", bname)
+			logging.Errorf("go-couchbase: %v vb %d vbmap len %d", err.Error(), vb, len(b.VBServerMap().VBucketMap))
 			ech <- err
 			return
 		}
 
 		masterID := b.VBServerMap().VBucketMap[vb][0]
-		attempts++
 
 		if masterID < 0 {
 			// fatal
-			logging.Errorf("No master node available for vb %d", vb)
-			err := fmt.Errorf("No master node available for vb %d", vb)
+			err := fmt.Errorf("No master node available for %v vb %d", bname, vb)
+			logging.Errorf("%v", err.Error())
 			ech <- err
 			return
 		}
@@ -251,20 +292,25 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 			pool := b.getConnPool(masterID)
 			conn, err := pool.Get()
 			if err != nil {
-				if isAuthError(err) {
-					logging.Errorf(" Fatal Auth Error %v", err)
+				if isAuthError(err) || isTimeoutError(err) {
+					logging.Errorf("Fatal Error %v : %v", bname, err)
 					ech <- err
 					return err
 				} else if isConnError(err) {
-					// for a connection error, refresh right away
+					if !backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true) {
+						logging.Errorf("Connection Error %v : %v", bname, err)
+						ech <- err
+						return err
+					}
 					b.Refresh()
+					backOffAttempts++
 				}
-				logging.Infof("Pool Get returned %v", err)
+				logging.Infof("Pool Get returned %v: %v", bname, err)
 				// retry
 				return nil
 			}
 
-			conn.SetReadDeadline(reqDeadline)
+			conn.SetReadDeadline(getDeadline(reqDeadline, DefaultReadTimeout))
 			err = conn.GetBulk(vb, keys, rv)
 			conn.SetReadDeadline(time.Time{})
 
@@ -283,11 +329,12 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 				if isOutOfBoundsError(err) {
 					// We got an out of bound error, retry the operation
 					return nil
-				} else if isConnError(err) {
-					logging.Errorf("Connection Error: %s. Refreshing bucket", err.Error())
+				} else if isConnError(err) && backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true) {
+					backOffAttempts++
+					logging.Errorf("Connection Error: %s. Refreshing bucket %v (vbid:%v,keys:<ud>%v</ud>)",
+						err.Error(), bname, vb, keys)
 					b.Refresh()
-					// retry
-					return nil
+					return nil // retry
 				}
 				ech <- err
 				ch <- rv
@@ -303,11 +350,17 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 		}
 	}
 
-	if attempts == MaxBulkRetries {
-		ech <- fmt.Errorf("bulkget exceeded MaxBulkRetries for vbucket %d", vb)
+	if attempts >= MaxBulkRetries {
+		err := fmt.Errorf("bulkget exceeded MaxBulkRetries for %v(vbid:%d,keys:<ud>%v</ud>)", bname, vb, keys)
+		logging.Errorf("%v", err.Error())
+		ech <- err
 	}
 
 	ch <- rv
+}
+
+type errorStatus struct {
+	errStatus bool
 }
 
 type vbBulkGet struct {
@@ -318,16 +371,26 @@ type vbBulkGet struct {
 	keys        []string
 	reqDeadline time.Time
 	wg          *sync.WaitGroup
+	groupError  *errorStatus
 }
 
 const _NUM_CHANNELS = 5
 
 var _NUM_CHANNEL_WORKERS = (runtime.NumCPU() + 1) / 2
+var DefaultDialTimeout = time.Duration(0)
+var DefaultReadTimeout = time.Duration(0)
+var DefaultWriteTimeout = time.Duration(0)
 
 // Buffer 4k requests per worker
 var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
 
 func InitBulkGet() {
+
+	DefaultDialTimeout = 20 * time.Second
+	DefaultReadTimeout = 120 * time.Second
+	DefaultWriteTimeout = 120 * time.Second
+
+	memcached.SetDefaultTimeouts(DefaultDialTimeout, DefaultReadTimeout, DefaultWriteTimeout)
 
 	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
 
@@ -359,19 +422,25 @@ func vbDoBulkGet(vbg *vbBulkGet) {
 		// Workers cannot panic and die
 		recover()
 	}()
-	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.reqDeadline, vbg.ch, vbg.ech)
+	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.reqDeadline, vbg.ch, vbg.ech, vbg.groupError)
 }
 
 var _ERR_CHAN_FULL = fmt.Errorf("Data request queue full, aborting query.")
 
 func (b *Bucket) processBulkGet(kdm map[uint16][]string, reqDeadline time.Time,
-	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error) {
+	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error, eStatus *errorStatus) {
 	defer close(ch)
 	defer close(ech)
 
 	wg := &sync.WaitGroup{}
 
 	for k, keys := range kdm {
+
+		// GetBulk() group has error donot Queue items for this group
+		if eStatus.errStatus {
+			break
+		}
+
 		vbg := &vbBulkGet{
 			b:           b,
 			ch:          ch,
@@ -380,6 +449,7 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string, reqDeadline time.Time,
 			keys:        keys,
 			reqDeadline: reqDeadline,
 			wg:          wg,
+			groupError:  eStatus,
 		}
 
 		wg.Add(1)
@@ -417,10 +487,14 @@ func (m multiError) Error() string {
 //
 // At least one send is guaranteed on eout, but two is possible, so
 // buffer the out channel appropriately.
-func errorCollector(ech <-chan error, eout chan<- error) {
+func errorCollector(ech <-chan error, eout chan<- error, eStatus *errorStatus) {
 	defer func() { eout <- nil }()
 	var errs multiError
 	for e := range ech {
+		if !eStatus.errStatus && !IsKeyNoEntError(e) {
+			eStatus.errStatus = true
+		}
+
 		errs = append(errs, e)
 	}
 
@@ -482,14 +556,15 @@ func (b *Bucket) getBulk(keys []string, reqDeadline time.Time) (map[string]*gome
 	}
 
 	eout := make(chan error, 2)
+	groupErrorStatus := &errorStatus{}
 
 	// processBulkGet will own both of these channels and
 	// guarantee they're closed before it returns.
 	ch := make(chan map[string]*gomemcached.MCResponse)
 	ech := make(chan error)
 
-	go errorCollector(ech, eout)
-	go b.processBulkGet(kdm, reqDeadline, ch, ech)
+	go errorCollector(ech, eout, groupErrorStatus)
+	go b.processBulkGet(kdm, reqDeadline, ch, ech, groupErrorStatus)
 
 	var rv map[string]*gomemcached.MCResponse
 
