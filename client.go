@@ -112,10 +112,10 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 			}
 			defer pool.Return(conn)
 
-			if DefaultReadTimeout > 0 {
-				conn.SetReadDeadline(getDeadline(time.Time{}, DefaultReadTimeout))
+			if DefaultTimeout > 0 {
+				conn.SetDeadline(getDeadline(noDeadline, DefaultTimeout))
 				err = f(conn, uint16(vb))
-				conn.SetReadDeadline(time.Time{})
+				conn.SetDeadline(noDeadline)
 			} else {
 				err = f(conn, uint16(vb))
 			}
@@ -310,9 +310,9 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 				return nil
 			}
 
-			conn.SetReadDeadline(getDeadline(reqDeadline, DefaultReadTimeout))
+			conn.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
 			err = conn.GetBulk(vb, keys, rv)
-			conn.SetReadDeadline(time.Time{})
+			conn.SetDeadline(noDeadline)
 
 			pool.Return(conn)
 
@@ -378,8 +378,8 @@ const _NUM_CHANNELS = 5
 
 var _NUM_CHANNEL_WORKERS = (runtime.NumCPU() + 1) / 2
 var DefaultDialTimeout = time.Duration(0)
-var DefaultReadTimeout = time.Duration(0)
-var DefaultWriteTimeout = time.Duration(0)
+var DefaultTimeout = time.Duration(0)
+var noDeadline = time.Time{}
 
 // Buffer 4k requests per worker
 var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
@@ -387,10 +387,9 @@ var _VB_BULK_GET_CHANNELS []chan *vbBulkGet
 func InitBulkGet() {
 
 	DefaultDialTimeout = 20 * time.Second
-	DefaultReadTimeout = 120 * time.Second
-	DefaultWriteTimeout = 120 * time.Second
+	DefaultTimeout = 120 * time.Second
 
-	memcached.SetDefaultTimeouts(DefaultDialTimeout, DefaultReadTimeout, DefaultWriteTimeout)
+	memcached.SetDefaultDialTimeout(DefaultDialTimeout)
 
 	_VB_BULK_GET_CHANNELS = make([]chan *vbBulkGet, _NUM_CHANNELS)
 
@@ -510,7 +509,7 @@ func errorCollector(ech <-chan error, eout chan<- error, eStatus *errorStatus) {
 // Returns one document for duplicate keys
 func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
 
-	resp, keyCount, eout := b.getBulk(keys, time.Time{})
+	resp, keyCount, eout := b.getBulk(keys, noDeadline)
 
 	rv := make(map[string][]byte, len(keys))
 	for k, av := range resp {
