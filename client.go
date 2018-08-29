@@ -87,6 +87,17 @@ func IsKeyNoEntError(err error) bool {
 	return false
 }
 
+// Return true if error suggests a bucket refresh is required. Required by cbq-engine
+func IsRefreshRequired(err error) bool {
+
+	res, ok := err.(*gomemcached.MCResponse)
+	if ok && res.Status == gomemcached.NO_BUCKET {
+		return true
+	}
+
+	return false
+}
+
 // ClientOpCallback is called for each invocation of Do.
 var ClientOpCallback func(opname, k string, start time.Time, err error)
 
