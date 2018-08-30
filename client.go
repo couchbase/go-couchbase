@@ -91,7 +91,7 @@ func IsKeyNoEntError(err error) bool {
 func IsRefreshRequired(err error) bool {
 
 	res, ok := err.(*gomemcached.MCResponse)
-	if ok && res.Status == gomemcached.NO_BUCKET {
+	if ok && (res.Status == gomemcached.NO_BUCKET || res.Status == gomemcached.NOT_MY_VBUCKET) {
 		return true
 	}
 
@@ -113,6 +113,7 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 
 	vb := b.VBHash(k)
 
+	backOffAttempts := 0
 	maxTries := len(b.Nodes()) * 2
 	for i := 0; i < maxTries; i++ {
 		// We encapsulate the attempt within an anonymous function to allow
@@ -131,15 +132,30 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 				err = f(conn, uint16(vb))
 			}
 
-			if i, ok := err.(*gomemcached.MCResponse); ok {
-				st := i.Status
-				retry = (st == gomemcached.NOT_MY_VBUCKET || st == gomemcached.NOT_SUPPORTED)
+			var st gomemcached.Status
 
+			// MB-30967 / MB-31001 implement back off for transient errors
+			if i, ok := err.(*gomemcached.MCResponse); ok {
+				st = i.Status
+				switch st {
+				case gomemcached.NOT_MY_VBUCKET:
+					b.Refresh()
+					retry = true
+				case gomemcached.NOT_SUPPORTED:
+					retry = true
+				case gomemcached.ENOMEM:
+					fallthrough
+				case gomemcached.TMPFAIL:
+                                        backOffAttempts++
+					retry =  backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true)
+				default:
+					retry = false
+				}
 			}
 
 			// MB-28842: in case of NMVB, check if the node is still part of the map
 			// and ditch the connection if it isn't.
-			if retry && b.checkVBmap(pool.Node()) {
+			if st == gomemcached.NOT_MY_VBUCKET && b.checkVBmap(pool.Node()) {
 				pool.Discard(conn)
 			} else {
 				pool.Return(conn)
@@ -147,9 +163,7 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 			return
 		}()
 
-		if retry {
-			b.Refresh()
-		} else {
+		if !retry {
 			return err
 		}
 	}
@@ -372,13 +386,14 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 					b.Refresh()
 					discard = b.checkVBmap(pool.Node())
 					return nil // retry
-				} else if st == gomemcached.EBUSY || st == gomemcached.TMPFAIL || st == gomemcached.LOCKED {
+				} else if st == gomemcached.EBUSY || st == gomemcached.LOCKED {
 					if (attempts % (MaxBulkRetries / 100)) == 0 {
 						logging.Infof("Retrying Memcached error (%v) FOR %v(vbid:%d, keys:<ud>%v</ud>)",
 							err.Error(), bname, vb, keys)
 					}
 					return nil // retry
-				} else if st == gomemcached.ENOMEM && backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true) {
+				} else if (st == gomemcached.ENOMEM || st == gomemcached.TMPFAIL) && backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true) {
+					// MB-30967 / MB-31001 use backoff for TMPFAIL too
 					backOffAttempts++
 					logging.Infof("Retrying Memcached error (%v) FOR %v(vbid:%d, keys:<ud>%v</ud>)",
 						err.Error(), bname, vb, keys)
