@@ -146,8 +146,8 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 				case gomemcached.ENOMEM:
 					fallthrough
 				case gomemcached.TMPFAIL:
-                                        backOffAttempts++
-					retry =  backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true)
+					backOffAttempts++
+					retry = backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true)
 				default:
 					retry = false
 				}
@@ -265,7 +265,7 @@ func IsReadTimeOutError(err error) bool {
 
 func isTimeoutError(err error) bool {
 	estr := err.Error()
-	return strings.Contains(estr, "i/0 timeout") ||
+	return strings.Contains(estr, "i/o timeout") ||
 		strings.Contains(estr, "connection timed out") ||
 		strings.Contains(estr, "no route to host")
 }

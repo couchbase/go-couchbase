@@ -93,7 +93,21 @@ func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 	}
 
 	if len(features) > 0 {
+		if DefaultTimeout > 0 {
+			conn.SetDeadline(getDeadline(noDeadline, DefaultTimeout))
+		}
+
 		res, err := conn.EnableFeatures(features)
+
+		if DefaultTimeout > 0 {
+			conn.SetDeadline(noDeadline)
+		}
+
+		if err != nil && isTimeoutError(err) {
+			conn.Close()
+			return nil, err
+		}
+
 		if err != nil || res.Status != gomemcached.SUCCESS {
 			logging.Warnf("Unable to enable features %v", err)
 		}
