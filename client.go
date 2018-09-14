@@ -620,12 +620,14 @@ func (b *Bucket) getBulk(keys []string, reqDeadline time.Time, subPaths []string
 	kdm := _VB_STRING_POOL.Get()
 	defer _VB_STRING_POOL.Put(kdm)
 	for _, k := range keys {
-		vb := uint16(b.VBHash(k))
-		a, ok1 := kdm[vb]
-		if !ok1 {
-			a = _STRING_POOL.Get()
+		if k != "" {
+			vb := uint16(b.VBHash(k))
+			a, ok1 := kdm[vb]
+			if !ok1 {
+				a = _STRING_POOL.Get()
+			}
+			kdm[vb] = append(a, k)
 		}
-		kdm[vb] = append(a, k)
 	}
 
 	eout := make(chan error, 2)
@@ -977,6 +979,10 @@ func (b *Bucket) Append(k string, data []byte) error {
 func (b *Bucket) GetsMC(key string, reqDeadline time.Time, subPaths []string) (*gomemcached.MCResponse, error) {
 	var err error
 	var response *gomemcached.MCResponse
+
+	if key == "" {
+		return nil, nil
+	}
 
 	if ClientOpCallback != nil {
 		defer func(t time.Time) { ClientOpCallback("GetsRaw", key, t, err) }(time.Now())
