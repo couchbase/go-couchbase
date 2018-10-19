@@ -116,52 +116,107 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 	backOffAttempts := 0
 	maxTries := len(b.Nodes()) * 2
 	for i := 0; i < maxTries; i++ {
-		// We encapsulate the attempt within an anonymous function to allow
-		// "defer" statement to work as intended.
-		retry, err := func() (retry bool, err error) {
-			conn, pool, err := b.getConnectionToVBucket(vb)
-			if err != nil {
-				return
-			}
+		conn, pool, err := b.getConnectionToVBucket(vb)
+		if err != nil {
+			return err
+		}
 
-			if DefaultTimeout > 0 {
-				conn.SetDeadline(getDeadline(noDeadline, DefaultTimeout))
-				err = f(conn, uint16(vb))
-				conn.SetDeadline(noDeadline)
-			} else {
-				err = f(conn, uint16(vb))
-			}
+		if DefaultTimeout > 0 {
+			conn.SetDeadline(getDeadline(noDeadline, DefaultTimeout))
+			err = f(conn, uint16(vb))
+			conn.SetDeadline(noDeadline)
+		} else {
+			err = f(conn, uint16(vb))
+		}
 
-			var st gomemcached.Status
+		var st gomemcached.Status
+		var retry bool
 
-			// MB-30967 / MB-31001 implement back off for transient errors
-			if i, ok := err.(*gomemcached.MCResponse); ok {
-				st = i.Status
-				switch st {
-				case gomemcached.NOT_MY_VBUCKET:
-					b.Refresh()
-					retry = true
-				case gomemcached.NOT_SUPPORTED:
-					retry = true
-				case gomemcached.ENOMEM:
-					fallthrough
-				case gomemcached.TMPFAIL:
-					backOffAttempts++
-					retry = backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true)
-				default:
-					retry = false
-				}
+		// MB-30967 / MB-31001 implement back off for transient errors
+		if i, ok := err.(*gomemcached.MCResponse); ok {
+			st = i.Status
+			switch st {
+			case gomemcached.NOT_MY_VBUCKET:
+				b.Refresh()
+				retry = true
+			case gomemcached.NOT_SUPPORTED:
+				retry = true
+			case gomemcached.ENOMEM:
+				fallthrough
+			case gomemcached.TMPFAIL:
+				backOffAttempts++
+				retry = backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true)
+			default:
+				retry = false
 			}
+		}
 
-			// MB-28842: in case of NMVB, check if the node is still part of the map
-			// and ditch the connection if it isn't.
-			if st == gomemcached.NOT_MY_VBUCKET && b.checkVBmap(pool.Node()) {
-				pool.Discard(conn)
-			} else {
-				pool.Return(conn)
+		// MB-28842: in case of NMVB, check if the node is still part of the map
+		// and ditch the connection if it isn't.
+		if st == gomemcached.NOT_MY_VBUCKET && b.checkVBmap(pool.Node()) {
+			pool.Discard(conn)
+		} else {
+			pool.Return(conn)
+		}
+
+		if !retry {
+			return err
+		}
+	}
+
+	return fmt.Errorf("unable to complete action after %v attemps",
+		maxTries)
+}
+
+// this is the same as Do, ie executes a function on a memcached connection to the node owning key "k"
+// however it avoid setting the connection deadline, leaving the responsibility on the function
+// all other considerations as Do() apply
+func (b *Bucket) DoNoDeadline(k string, f func(mc *memcached.Client, vb uint16) error) (err error) {
+	if SlowServerCallWarningThreshold > 0 {
+		defer slowLog(time.Now(), "call to Do(%q)", k)
+	}
+
+	vb := b.VBHash(k)
+
+	backOffAttempts := 0
+	maxTries := len(b.Nodes()) * 2
+	for i := 0; i < maxTries; i++ {
+		conn, pool, err := b.getConnectionToVBucket(vb)
+		if err != nil {
+			return err
+		}
+
+		err = f(conn, uint16(vb))
+
+		var st gomemcached.Status
+		var retry bool
+
+		// MB-30967 / MB-31001 implement back off for transient errors
+		if i, ok := err.(*gomemcached.MCResponse); ok {
+			st = i.Status
+			switch st {
+			case gomemcached.NOT_MY_VBUCKET:
+				b.Refresh()
+				retry = true
+			case gomemcached.NOT_SUPPORTED:
+				retry = true
+			case gomemcached.ENOMEM:
+				fallthrough
+			case gomemcached.TMPFAIL:
+				backOffAttempts++
+				retry = backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true)
+			default:
+				retry = false
 			}
-			return
-		}()
+		}
+
+		// MB-28842: in case of NMVB, check if the node is still part of the map
+		// and ditch the connection if it isn't.
+		if st == gomemcached.NOT_MY_VBUCKET && b.checkVBmap(pool.Node()) {
+			pool.Discard(conn)
+		} else {
+			pool.Return(conn)
+		}
 
 		if !retry {
 			return err
@@ -976,7 +1031,8 @@ func (b *Bucket) Append(k string, data []byte) error {
 	return b.Write(k, 0, 0, data, Append|Raw)
 }
 
-func (b *Bucket) GetsMC(key string, reqDeadline time.Time, subPaths []string) (*gomemcached.MCResponse, error) {
+// Get a value straight from Memcached
+func (b *Bucket) GetsMC(key string, reqDeadline time.Time) (*gomemcached.MCResponse, error) {
 	var err error
 	var response *gomemcached.MCResponse
 
@@ -985,18 +1041,41 @@ func (b *Bucket) GetsMC(key string, reqDeadline time.Time, subPaths []string) (*
 	}
 
 	if ClientOpCallback != nil {
-		defer func(t time.Time) { ClientOpCallback("GetsRaw", key, t, err) }(time.Now())
+		defer func(t time.Time) { ClientOpCallback("GetsMC", key, t, err) }(time.Now())
 	}
 
-	err = b.Do(key, func(mc *memcached.Client, vb uint16) error {
+	err = b.DoNoDeadline(key, func(mc *memcached.Client, vb uint16) error {
 		var err1 error
 
 		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
-		if len(subPaths) > 0 {
-			response, err1 = mc.GetSubdoc(vb, key, subPaths)
-		} else {
-			response, err1 = mc.Get(vb, key)
+		response, err1 = mc.Get(vb, key)
+		mc.SetDeadline(noDeadline)
+		if err1 != nil {
+			return err1
 		}
+		return nil
+	})
+	return response, err
+}
+
+// Get a value through the subdoc API
+func (b *Bucket) GetsSubDoc(key string, reqDeadline time.Time, subPaths []string) (*gomemcached.MCResponse, error) {
+	var err error
+	var response *gomemcached.MCResponse
+
+	if key == "" {
+		return nil, nil
+	}
+
+	if ClientOpCallback != nil {
+		defer func(t time.Time) { ClientOpCallback("GetsSubDoc", key, t, err) }(time.Now())
+	}
+
+	err = b.DoNoDeadline(key, func(mc *memcached.Client, vb uint16) error {
+		var err1 error
+
+		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
+		response, err1 = mc.GetSubdoc(vb, key, subPaths)
 		mc.SetDeadline(noDeadline)
 		if err1 != nil {
 			return err1
