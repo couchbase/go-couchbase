@@ -846,18 +846,18 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		connect = memcached.Connect
 	}
 
-	emptyWorkerCh := func() {
+	emptyWorkerCh := func() int {
 		for {
 			select {
 			case _, ok := <-workerCh:
 				if !ok {
-					return
+					return -1 // workerCh was closed
 				}
 
 				// Else, keep looping to consume workerCh.
 
 			default:
-				return // Stop loop when workerCh is empty.
+				return 0 // Stop loop when workerCh is empty.
 			}
 		}
 	}
@@ -872,11 +872,11 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		// or failed-over, so consume the workerCh so that the
 		// refresh-cluster goroutine will be unblocked and can receive
 		// our kick.
-		emptyWorkerCh()
+		ret := emptyWorkerCh()
 
 		d.Kick("worker-connect-err")
 
-		return 0
+		return ret
 	}
 	atomic.AddUint64(&d.stats.TotWorkerConnectOk, 1)
 
@@ -902,11 +902,11 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 				// rebalanced out, so consume the workerCh so that the
 				// refresh-cluster goroutine will be unblocked and can
 				// receive our kick.
-				emptyWorkerCh()
+				ret := emptyWorkerCh()
 
 				d.Kick("worker-auth-AuthenticateMemcachedConn")
 
-				return 0
+				return ret
 			}
 			atomic.AddUint64(&d.stats.TotWorkerAuthenticateMemcachedConnOk, 1)
 		} else if auth, ok := d.auth.(couchbase.AuthWithSaslHandler); ok {
@@ -922,7 +922,16 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 				atomic.AddUint64(&d.stats.TotWorkerAuthErr, 1)
 				d.receiver.OnError(fmt.Errorf("worker auth, server: %s,"+
 					" user: %s, err: %v", server, user, err))
-				return 0
+
+				// If we can't authenticate, then maybe a node was
+				// rebalanced out, so consume the workerCh so that the
+				// refresh-cluster goroutine will be unblocked and can
+				// receive our kick.
+				ret := emptyWorkerCh()
+
+				d.Kick("worker-auth-client")
+
+				return ret
 			}
 
 			if res.Status != gomemcached.SUCCESS {
