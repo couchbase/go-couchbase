@@ -102,49 +102,60 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 
 	vb := b.VBHash(k)
 
+	backOffAttempts := 0
 	maxTries := len(b.Nodes()) * 2
 	for i := 0; i < maxTries; i++ {
-		// We encapsulate the attempt within an anonymous function to allow
-		// "defer" statement to work as intended.
-		retry, err := func() (retry bool, err error) {
-			conn, pool, err := b.getConnectionToVBucket(vb)
-			if err != nil {
-				return
-			}
+		conn, pool, err := b.getConnectionToVBucket(vb)
+		if err != nil {
+			return err
+		}
 
-			if DefaultTimeout > 0 {
-				conn.SetDeadline(getDeadline(noDeadline, DefaultTimeout))
-				err = f(conn, uint16(vb))
-				conn.SetDeadline(noDeadline)
-			} else {
-				err = f(conn, uint16(vb))
-			}
-
-			if i, ok := err.(*gomemcached.MCResponse); ok {
-				st := i.Status
-				retry = (st == gomemcached.NOT_MY_VBUCKET || st == gomemcached.NOT_SUPPORTED)
-
-			}
-
-			// MB-28842: in case of NMVB, check if the node is still part of the map
-			// and ditch the connection if it isn't.
-			if retry && b.checkVBmap(pool.Node()) {
-				pool.Discard(conn)
-			} else {
-				pool.Return(conn)
-			}
-			return
-		}()
-
-		if retry {
-			b.Refresh()
+		if DefaultTimeout > 0 {
+			conn.SetDeadline(getDeadline(noDeadline, DefaultTimeout))
+			err = f(conn, uint16(vb))
+			conn.SetDeadline(noDeadline)
 		} else {
+			err = f(conn, uint16(vb))
+		}
+
+		var retry, discard bool
+
+		// MB-30967 / MB-31001 implement back off for transient errors
+		if i, ok := err.(*gomemcached.MCResponse); ok {
+			switch i.Status {
+			case gomemcached.NOT_MY_VBUCKET:
+				b.Refresh()
+				// MB-28842: in case of NMVB, check if the node is still part of the map
+				// and ditch the connection if it isn't.
+				discard = b.checkVBmap(pool.Node())
+				retry = true
+			case gomemcached.NOT_SUPPORTED:
+				discard = true
+				retry = true
+			case gomemcached.ENOMEM:
+				fallthrough
+			case gomemcached.TMPFAIL:
+				backOffAttempts++
+				retry = backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true)
+			default:
+				retry = false
+			}
+		} else if isOutOfBoundsError(err) {
+			discard = true
+		}
+
+		if discard {
+			pool.Discard(conn)
+		} else {
+			pool.Return(conn)
+		}
+
+		if !retry {
 			return err
 		}
 	}
 
-	return fmt.Errorf("unable to complete action after %v attemps",
-		maxTries)
+	return fmt.Errorf("unable to complete action after %v attemps", maxTries)
 }
 
 type GatheredStats struct {
@@ -258,7 +269,7 @@ func isConnError(err error) bool {
 }
 
 func isOutOfBoundsError(err error) bool {
-	return strings.Contains(err.Error(), "Out of Bounds error")
+	return err != nil && strings.Contains(err.Error(), "Out of Bounds error")
 
 }
 
@@ -377,6 +388,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 				return err
 			case error:
 				if isOutOfBoundsError(err) {
+					discard = true
 					// We got an out of bound error, retry the operation
 					return nil
 				} else if isConnError(err) && backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true) {
