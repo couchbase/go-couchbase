@@ -96,21 +96,29 @@ var ClientOpCallback func(opname, k string, start time.Time, err error)
 // your function on a "not-my-vbucket" error, so don't assume
 // your command will only be executed only once.
 func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (err error) {
+	return b.Do2(k, f, true)
+}
+
+func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, deadline bool) (err error) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to Do(%q)", k)
 	}
 
 	vb := b.VBHash(k)
 
-	backOffAttempts := 0
 	maxTries := len(b.Nodes()) * 2
 	for i := 0; i < maxTries; i++ {
 		conn, pool, err := b.getConnectionToVBucket(vb)
 		if err != nil {
+			if isConnError(err) && backOff(i, maxTries, backOffDuration, true) {
+				b.Refresh()
+				continue
+			}
+
 			return err
 		}
 
-		if DefaultTimeout > 0 {
+		if deadline && DefaultTimeout > 0 {
 			conn.SetDeadline(getDeadline(noDeadline, DefaultTimeout))
 			err = f(conn, uint16(vb))
 			conn.SetDeadline(noDeadline)
@@ -118,10 +126,12 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 			err = f(conn, uint16(vb))
 		}
 
-		var retry, discard bool
+		var retry bool
+		discard := isOutOfBoundsError(err)
+
 		// MB-30967 / MB-31001 implement back off for transient errors
-		if i, ok := err.(*gomemcached.MCResponse); ok {
-			switch i.Status {
+		if resp, ok := err.(*gomemcached.MCResponse); ok {
+			switch resp.Status {
 			case gomemcached.NOT_MY_VBUCKET:
 				b.Refresh()
 				// MB-28842: in case of NMVB, check if the node is still part of the map
@@ -134,11 +144,10 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 			case gomemcached.ENOMEM:
 				fallthrough
 			case gomemcached.TMPFAIL:
-				backOffAttempts++
-				retry = backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true)
+				retry = backOff(i, maxTries, backOffDuration, true)
 			}
-		} else if isOutOfBoundsError(err) {
-			discard = true
+		} else if err != nil && isConnError(err) && backOff(i, maxTries, backOffDuration, true) {
+			retry = true
 		}
 
 		if discard {
