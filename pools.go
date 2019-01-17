@@ -240,6 +240,7 @@ type Bucket struct {
 	commonSufix      string
 	ah               AuthHandler        // auth handler
 	ds               *DurablitySettings // Durablity Settings for this bucket
+	Scopes           Scopes
 }
 
 // PoolServices is all the bucket-independent services in a pool
@@ -1033,14 +1034,48 @@ func (b *Bucket) NodeListChanged() bool {
 	return false
 }
 
+// Sample data for scopes and collections as returned from the
+// /pooles/default/$BUCKET_NAME/collections API.
+// {"myScope2":{"myCollectionC":{}},"myScope1":{"myCollectionB":{},"myCollectionA":{}},"_default":{"_default":{}}}
+
+// A Scopes holds the set of scopes in a bucket.
+// The map key is the name of the scope.
+type Scopes map[string]Collections
+
+// A Collections holds the set of collections in a scope.
+// The map key is the name of the collection.
+type Collections map[string]Collection
+
+// A Collection holds the information for a collection.
+// It is currently returned empty.
+type Collection struct{}
+
+func getScopesAndCollections(pool *Pool, bucketName string) (Scopes, error) {
+	scopes := make(Scopes)
+	// This URL is a bit of a hack. The "default" is the name of the pool, and should
+	// be a parameter. But the name does not appear to be available anywhere,
+	// and in any case we never use a pool other than "default".
+	err := pool.client.parseURLResponse(fmt.Sprintf("/pools/default/buckets/%s/collections", bucketName), &scopes)
+	if err != nil {
+		return nil, err
+	}
+	return scopes, nil
+}
+
 func (b *Bucket) Refresh() error {
 	b.RLock()
 	pool := b.pool
 	uri := b.URI
+	name := b.Name
 	b.RUnlock()
 
 	tmpb := &Bucket{}
 	err := pool.client.parseURLResponse(uri, tmpb)
+	if err != nil {
+		return err
+	}
+
+	scopes, err := getScopesAndCollections(pool, name)
 	if err != nil {
 		return err
 	}
@@ -1085,6 +1120,7 @@ func (b *Bucket) Refresh() error {
 	tmpb.ah = b.ah
 	b.vBucketServerMap = unsafe.Pointer(&tmpb.VBSMJson)
 	b.nodeList = unsafe.Pointer(&tmpb.NodesJSON)
+	b.Scopes = scopes
 
 	b.Unlock()
 	return nil

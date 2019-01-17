@@ -140,7 +140,7 @@ func (feed *UprFeed) UprRequestStream(vb uint16, opaque uint16, flags uint32,
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Panic("Panic in UprRequestStream. Feed %v Bucket %v ", feed, feed.bucket)
+			log.Panicf("Panic in UprRequestStream. Feed %v Bucket %v", feed, feed.bucket)
 		}
 	}()
 
@@ -177,7 +177,7 @@ func (feed *UprFeed) UprCloseStream(vb, opaqueMSB uint16) error {
 
 	defer func() {
 		if r := recover(); r != nil {
-			log.Panic("Panic in UprCloseStream. Feed %v Bucket %v ", feed, feed.bucket)
+			log.Panicf("Panic in UprCloseStream. Feed %v Bucket %v ", feed, feed.bucket)
 		}
 	}()
 

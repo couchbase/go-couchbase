@@ -17,9 +17,11 @@ func TestGetRolesAll(t *testing.T) {
 	}
 
 	cases := make(map[string]RoleDescription, 2)
-	cases["admin"] = RoleDescription{Role: "admin", Name: "Admin", Desc: "Can manage ALL cluster features including security.", Ce: true}
+	cases["admin"] = RoleDescription{Role: "admin", Name: "Full Admin",
+		Desc: "Can manage all cluster features (including security). This user can access the web console. This user can read and write all data.",
+		Ce:   true}
 	cases["query_select"] = RoleDescription{Role: "query_select", BucketName: "*", Name: "Query Select",
-		Desc: "Can execute SELECT statement on bucket to retrieve data"}
+		Desc: "Can execute a SELECT statement on a given bucket to retrieve data. This user can access the web console and can read data, but not write it."}
 	for roleName, expectedValue := range cases {
 		foundThisRole := false
 		for _, foundValue := range roles {
