@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"unsafe"
@@ -52,6 +53,9 @@ var EnableDataType = false
 
 // Enable Xattr
 var EnableXattr = false
+
+// Enable Collections
+var EnableCollections = false
 
 // TCP keepalive interval in seconds. Default 30 minutes
 var TCPKeepaliveInterval = 30 * 60
@@ -240,7 +244,6 @@ type Bucket struct {
 	commonSufix      string
 	ah               AuthHandler        // auth handler
 	ds               *DurablitySettings // Durablity Settings for this bucket
-	Scopes           Scopes
 }
 
 // PoolServices is all the bucket-independent services in a pool
@@ -337,7 +340,7 @@ func (b *Bucket) GetName() string {
 	return ret
 }
 
-// Nodes returns teh current list of nodes servicing this bucket.
+// Nodes returns the current list of nodes servicing this bucket.
 func (b *Bucket) Nodes() []Node {
 	b.RLock()
 	defer b.RUnlock()
@@ -1038,44 +1041,134 @@ func (b *Bucket) NodeListChanged() bool {
 // /pooles/default/$BUCKET_NAME/collections API.
 // {"myScope2":{"myCollectionC":{}},"myScope1":{"myCollectionB":{},"myCollectionA":{}},"_default":{"_default":{}}}
 
-// A Scopes holds the set of scopes in a bucket.
+// Structures for parsing collections manifest.
 // The map key is the name of the scope.
-type Scopes map[string]Collections
+// Example data:
+// {"uid":"b","scopes":[
+//    {"name":"_default","uid":"0","collections":[
+//       {"name":"_default","uid":"0"}]},
+//    {"name":"myScope1","uid":"8","collections":[
+//       {"name":"myCollectionB","uid":"c"},
+//       {"name":"myCollectionA","uid":"b"}]},
+//    {"name":"myScope2","uid":"9","collections":[
+//       {"name":"myCollectionC","uid":"d"}]}]}
+type InputManifest struct {
+	Uid    string
+	Scopes []InputScope
+}
+type InputScope struct {
+	Name        string
+	Uid         string
+	Collections []InputCollection
+}
+type InputCollection struct {
+	Name string
+	Uid  string
+}
 
-// A Collections holds the set of collections in a scope.
-// The map key is the name of the collection.
-type Collections map[string]Collection
+// Structures for storing collections information.
+type Manifest struct {
+	Uid    uint64
+	Scopes map[string]*Scope // map by name
+}
+type Scope struct {
+	Name        string
+	Uid         uint64
+	Collections map[string]*Collection // map by name
+}
+type Collection struct {
+	Name string
+	Uid  uint64
+}
 
-// A Collection holds the information for a collection.
-// It is currently returned empty.
-type Collection struct{}
+var _EMPTY_MANIFEST *Manifest = &Manifest{Uid: 0, Scopes: map[string]*Scope{}}
 
-func getScopesAndCollections(pool *Pool, bucketName string) (Scopes, error) {
-	scopes := make(Scopes)
-	// This URL is a bit of a hack. The "default" is the name of the pool, and should
-	// be a parameter. But the name does not appear to be available anywhere,
-	// and in any case we never use a pool other than "default".
-	err := pool.client.parseURLResponse(fmt.Sprintf("/pools/default/buckets/%s/collections", bucketName), &scopes)
+func parseCollectionsManifest(res *gomemcached.MCResponse) (*Manifest, error) {
+	if !EnableCollections {
+		return _EMPTY_MANIFEST, nil
+	}
+
+	var im InputManifest
+	err := json.Unmarshal(res.Body, &im)
 	if err != nil {
 		return nil, err
 	}
-	return scopes, nil
+
+	uid, err := strconv.ParseUint(im.Uid, 16, 64)
+	if err != nil {
+		return nil, err
+	}
+	mani := &Manifest{Uid: uid, Scopes: make(map[string]*Scope, len(im.Scopes))}
+	for _, iscope := range im.Scopes {
+		scope_uid, err := strconv.ParseUint(iscope.Uid, 16, 64)
+		if err != nil {
+			return nil, err
+		}
+		scope := &Scope{Uid: scope_uid, Name: iscope.Name, Collections: make(map[string]*Collection, len(iscope.Collections))}
+		mani.Scopes[iscope.Name] = scope
+		for _, icoll := range iscope.Collections {
+			coll_uid, err := strconv.ParseUint(icoll.Uid, 16, 64)
+			if err != nil {
+				return nil, err
+			}
+			coll := &Collection{Uid: coll_uid, Name: icoll.Name}
+			scope.Collections[icoll.Name] = coll
+		}
+	}
+
+	return mani, nil
+}
+
+// This function assumes the bucket is locked.
+func (b *Bucket) GetCollectionsManifest() (*Manifest, error) {
+	// Collections not used?
+	if !EnableCollections {
+		return nil, fmt.Errorf("Collections not enabled.")
+	}
+
+	b.RLock()
+	pools := b.getConnPools(true /* already locked */)
+	pool := pools[0] // Any pool will do, so use the first one.
+	b.RUnlock()
+	client, err := pool.Get()
+	if err != nil {
+		return nil, fmt.Errorf("Unable to get connection to retrieve collections manifest: %v. No collections access to bucket %s.", err, b.Name)
+	}
+
+	// We need to select the bucket before GetCollectionsManifest()
+	// will work. This is sometimes done at startup (see defaultMkConn())
+	// but not always, depending on the auth type.
+	// Doing this is safe because we collect the the connections
+	// by bucket, so the bucket being selected will never change.
+	_, err = client.SelectBucket(b.Name)
+	if err != nil {
+		pool.Return(client)
+		return nil, fmt.Errorf("Unable to select bucket %s: %v. No collections access to bucket %s.", err, b.Name, b.Name)
+	}
+
+	res, err := client.GetCollectionsManifest()
+	if err != nil {
+		pool.Return(client)
+		return nil, fmt.Errorf("Unable to retrieve collections manifest: %v. No collections access to bucket %s.", err, b.Name)
+	}
+	mani, err := parseCollectionsManifest(res)
+	if err != nil {
+		pool.Return(client)
+		return nil, fmt.Errorf("Unable to parse collections manifest: %v. No collections access to bucket %s.", err, b.Name)
+	}
+
+	pool.Return(client)
+	return mani, nil
 }
 
 func (b *Bucket) Refresh() error {
 	b.RLock()
 	pool := b.pool
 	uri := b.URI
-	name := b.Name
 	b.RUnlock()
 
 	tmpb := &Bucket{}
 	err := pool.client.parseURLResponse(uri, tmpb)
-	if err != nil {
-		return err
-	}
-
-	scopes, err := getScopesAndCollections(pool, name)
 	if err != nil {
 		return err
 	}
@@ -1120,7 +1213,6 @@ func (b *Bucket) Refresh() error {
 	tmpb.ah = b.ah
 	b.vBucketServerMap = unsafe.Pointer(&tmpb.VBSMJson)
 	b.nodeList = unsafe.Pointer(&tmpb.NodesJSON)
-	b.Scopes = scopes
 
 	b.Unlock()
 	return nil
@@ -1138,7 +1230,6 @@ func (p *Pool) refresh() (err error) {
 		b.pool = p
 		b.nodeList = unsafe.Pointer(&b.NodesJSON)
 		b.replaceConnPools(make([]*connectionPool, len(b.VBSMJson.ServerList)))
-
 		p.BucketMap[b.Name] = b
 	}
 	return nil

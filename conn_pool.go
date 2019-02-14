@@ -92,6 +92,10 @@ func defaultMkConn(host string, ah AuthHandler) (*memcached.Client, error) {
 		features = append(features, memcached.FeatureXattr)
 	}
 
+	if EnableCollections {
+		features = append(features, memcached.FeatureCollections)
+	}
+
 	if len(features) > 0 {
 		if DefaultTimeout > 0 {
 			conn.SetDeadline(getDeadline(noDeadline, DefaultTimeout))

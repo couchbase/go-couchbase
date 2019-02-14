@@ -980,6 +980,78 @@ func (b *Bucket) Append(k string, data []byte) error {
 	return b.Write(k, 0, 0, data, Append|Raw)
 }
 
+func (b *Bucket) GetsMCFromCollection(collUid uint32, key string, reqDeadline time.Time) (*gomemcached.MCResponse, error) {
+	var err error
+	var response *gomemcached.MCResponse
+
+	if key == "" {
+		return nil, nil
+	}
+
+	if ClientOpCallback != nil {
+		defer func(t time.Time) { ClientOpCallback("GetsMCFromCollection", key, t, err) }(time.Now())
+	}
+
+	err = b.Do2(key, func(mc *memcached.Client, vb uint16) error {
+		var err1 error
+
+		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
+		_, err1 = mc.SelectBucket(b.Name)
+		if err1 != nil {
+			mc.SetDeadline(noDeadline)
+			return err1
+		}
+
+		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
+		response, err1 = mc.GetFromCollection(vb, collUid, key)
+		if err1 != nil {
+			mc.SetDeadline(noDeadline)
+			return err1
+		}
+
+		return nil
+	}, false)
+
+	return response, err
+}
+
+// Returns collectionUid, manifestUid, error.
+func (b *Bucket) GetCollectionCID(scope string, collection string, reqDeadline time.Time) (uint32, uint32, error) {
+	var err error
+	var response *gomemcached.MCResponse
+
+	if ClientOpCallback != nil {
+		defer func(t time.Time) { ClientOpCallback("GetCollectionCID", scope+"."+collection, t, err) }(time.Now())
+	}
+
+	var key = "DUMMY" // Contact any server.
+	var manifestUid uint32
+	var collUid uint32
+	err = b.Do2(key, func(mc *memcached.Client, vb uint16) error {
+		var err1 error
+
+		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
+		_, err1 = mc.SelectBucket(b.Name)
+		if err1 != nil {
+			mc.SetDeadline(noDeadline)
+			return err1
+		}
+
+		response, err1 = mc.CollectionsGetCID(scope, collection)
+		if err1 != nil {
+			mc.SetDeadline(noDeadline)
+			return err1
+		}
+
+		manifestUid = binary.BigEndian.Uint32(response.Extras[4:8])
+		collUid = binary.BigEndian.Uint32(response.Extras[8:12])
+
+		return nil
+	}, false)
+
+	return collUid, manifestUid, err
+}
+
 // Get a value straight from Memcached
 func (b *Bucket) GetsMC(key string, reqDeadline time.Time) (*gomemcached.MCResponse, error) {
 	var err error

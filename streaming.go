@@ -110,15 +110,6 @@ func (b *Bucket) UpdateBucket() error {
 			return err
 		}
 
-		b.RLock()
-		pool := b.pool
-		bucketName := b.Name
-		b.RUnlock()
-		scopes, err := getScopesAndCollections(pool, bucketName)
-		if err != nil {
-			return err
-		}
-
 		// Lock here to avoid having pool closed under us.
 		b.RLock()
 		err = maybeAddAuth(req, b.pool.client.ah)
@@ -194,7 +185,6 @@ func (b *Bucket) UpdateBucket() error {
 			tmpb.ah = b.ah
 			b.vBucketServerMap = unsafe.Pointer(&tmpb.VBSMJson)
 			b.nodeList = unsafe.Pointer(&tmpb.NodesJSON)
-			b.Scopes = scopes
 			b.Unlock()
 
 			logging.Infof("Got new configuration for bucket %s", b.GetName())
