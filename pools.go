@@ -178,7 +178,7 @@ type Node struct {
 
 // A Pool of nodes and buckets.
 type Pool struct {
-	BucketMap map[string]Bucket
+	BucketMap map[string]*Bucket
 	Nodes     []Node
 
 	BucketURL map[string]string `json:"buckets"`
@@ -1091,19 +1091,28 @@ func (b *Bucket) Refresh() error {
 }
 
 func (p *Pool) refresh() (err error) {
-	p.BucketMap = make(map[string]Bucket)
+	p.BucketMap = make(map[string]*Bucket)
 
 	buckets := []Bucket{}
 	err = p.client.parseURLResponse(p.BucketURL["uri"], &buckets)
 	if err != nil {
 		return err
 	}
-	for _, b := range buckets {
+	for i, _ := range buckets {
+		b := new(Bucket)
+		*b = buckets[i]
 		b.pool = p
 		b.nodeList = unsafe.Pointer(&b.NodesJSON)
-		b.replaceConnPools(make([]*connectionPool, len(b.VBSMJson.ServerList)))
 
+		// MB-33185 this is merely defensive, just in case
+		// refresh() gets called on a perfectly node pool
+		ob, ok := p.BucketMap[b.Name]
+		if ok && ob.connPools != nil {
+			ob.Close()
+		}
+		b.replaceConnPools(make([]*connectionPool, len(b.VBSMJson.ServerList)))
 		p.BucketMap[b.Name] = b
+		runtime.SetFinalizer(b, bucketFinalizer)
 	}
 	return nil
 }
@@ -1115,6 +1124,7 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 	for _, p := range c.Info.Pools {
 		if p.Name == name {
 			poolURI = p.URI
+			break
 		}
 	}
 	if poolURI == "" {
@@ -1166,6 +1176,9 @@ func (b *Bucket) Close() {
 func bucketFinalizer(b *Bucket) {
 	if b.connPools != nil {
 		logging.Warnf("Finalizing a bucket with active connections.")
+
+		// MB-33185 do not leak connection pools
+		b.Close()
 	}
 }
 
@@ -1175,12 +1188,11 @@ func (p *Pool) GetBucket(name string) (*Bucket, error) {
 	if !ok {
 		return nil, &BucketNotFoundError{bucket: name}
 	}
-	runtime.SetFinalizer(&rv, bucketFinalizer)
 	err := rv.Refresh()
 	if err != nil {
 		return nil, err
 	}
-	return &rv, nil
+	return rv, nil
 }
 
 // GetBucket gets a bucket from within this pool.
@@ -1189,13 +1201,12 @@ func (p *Pool) GetBucketWithAuth(bucket, username, password string) (*Bucket, er
 	if !ok {
 		return nil, &BucketNotFoundError{bucket: bucket}
 	}
-	runtime.SetFinalizer(&rv, bucketFinalizer)
 	rv.ah = newBucketAuth(username, password, bucket)
 	err := rv.Refresh()
 	if err != nil {
 		return nil, err
 	}
-	return &rv, nil
+	return rv, nil
 }
 
 // GetPool gets the pool to which this bucket belongs.
@@ -1209,6 +1220,15 @@ func (b *Bucket) GetPool() *Pool {
 // GetClient gets the client from which we got this pool.
 func (p *Pool) GetClient() *Client {
 	return &p.client
+}
+
+// Release bucket connections when the pool is no longer in use
+func (p *Pool) Close() {
+	// fine to loop through the buckets unlocked
+	// locking happens at the bucket level
+	for b, _ := range p.BucketMap {
+		p.BucketMap[b].Close()
+	}
 }
 
 // GetBucket is a convenience function for getting a named bucket from
