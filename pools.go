@@ -244,6 +244,7 @@ type Bucket struct {
 	commonSufix      string
 	ah               AuthHandler        // auth handler
 	ds               *DurablitySettings // Durablity Settings for this bucket
+	closed           bool
 }
 
 // PoolServices is all the bucket-independent services in a pool
@@ -1304,7 +1305,9 @@ func (b *Bucket) Close() {
 
 func bucketFinalizer(b *Bucket) {
 	if b.connPools != nil {
-		logging.Warnf("Finalizing a bucket with active connections.")
+		if !b.closed {
+			logging.Warnf("Finalizing a bucket with active connections.")
+		}
 
 		// MB-33185 do not leak connection pools
 		b.Close()
@@ -1356,7 +1359,12 @@ func (p *Pool) Close() {
 	// fine to loop through the buckets unlocked
 	// locking happens at the bucket level
 	for b, _ := range p.BucketMap {
-		p.BucketMap[b].Close()
+
+		// MB-33208 defer closing connection pools until the bucket is no longer used
+		bucket := p.BucketMap[b]
+		bucket.Lock()
+		bucket.closed = true
+		bucket.Unlock()
 	}
 }
 
