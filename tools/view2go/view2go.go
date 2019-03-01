@@ -51,5 +51,5 @@ func main() {
 	err = json.Indent(buf, []byte(j), "", "  ")
 
 	fmt.Printf("const %s = `%s`\n", *objName,
-		strings.Replace(buf.String(), "`", "` + \"`\" + `", 0))
+		strings.Replace(buf.String(), "`", "` + \"`\" + `", -1))
 }
