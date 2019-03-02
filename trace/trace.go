@@ -78,7 +78,7 @@ func NewRingBuffer(
 // Add appens a trace message to the ring buffer, consolidating trace
 // messages based on the optional consolidation function.
 func (trb *RingBuffer) Add(title string, body []byte) {
-	if len(trb.msgs) <= 0 {
+	if len(trb.msgs) == 0 {
 		return
 	}
 
@@ -123,7 +123,7 @@ func (trb *RingBuffer) Last() *Msg {
 }
 
 func (trb *RingBuffer) lastUNLOCKED() *Msg {
-	if len(trb.msgs) <= 0 {
+	if len(trb.msgs) == 0 {
 		return nil
 	}
 	last := trb.next - 1
