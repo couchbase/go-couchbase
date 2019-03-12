@@ -251,6 +251,7 @@ type Bucket struct {
 type PoolServices struct {
 	Rev      int            `json:"rev"`
 	NodesExt []NodeServices `json:"nodesExt"`
+	Capabilities json.RawMessage	`json:"clusterCapabilities"`
 }
 
 // NodeServices is all the bucket-independent services running on
