@@ -255,6 +255,26 @@ func (b *Bucket) GetCount(refresh bool) (count int64, err error) {
 	return count, nil
 }
 
+// Get bucket document size through the bucket stats
+func (b *Bucket) GetSize(refresh bool) (size int64, err error) {
+	if refresh {
+		b.Refresh()
+	}
+
+	var sz int64
+	for _, gs := range b.GatherStats("") {
+		if len(gs.Stats) > 0 {
+			sz, err = strconv.ParseInt(gs.Stats["ep_value_size"], 10, 64)
+			if err != nil {
+				return 0, err
+			}
+			size += sz
+		}
+	}
+
+	return size, nil
+}
+
 func isAuthError(err error) bool {
 	estr := err.Error()
 	return strings.Contains(estr, "Auth failure")
