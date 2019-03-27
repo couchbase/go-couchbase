@@ -1193,6 +1193,10 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 				}
 
 				atomic.AddUint64(&d.stats.TotUPRDataChangeOk, 1)
+
+				// Update received bytes for mutations, deletions, expirations
+				recvBytesTotal += uint32(gomemcached.HDR_LEN) +
+					uint32(len(pkt.Key)+len(pkt.Extras)+len(pkt.Body))
 			} else {
 				tr.Add(fmt.Sprintf("%d", pkt.Opcode), nil)
 
@@ -1214,11 +1218,18 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 					return
 				}
 				atomic.AddUint64(&d.stats.TotWorkerHandleRecvOk, 1)
+
+				if pkt.Opcode == gomemcached.UPR_SNAPSHOT ||
+					pkt.Opcode == gomemcached.SET_VBUCKET ||
+					pkt.Opcode == gomemcached.UPR_STREAMEND {
+					// Update bytes received only for select packets
+					// See: https://github.com/couchbase/kv_engine/blob/master/docs..
+					//      ../dcp/documentation/flow-control.md#buffering-messages
+					recvBytesTotal += uint32(gomemcached.HDR_LEN) +
+						uint32(len(pkt.Key)+len(pkt.Extras)+len(pkt.Body))
+				}
 			}
 
-			recvBytesTotal +=
-				uint32(gomemcached.HDR_LEN) +
-					uint32(len(pkt.Key)+len(pkt.Extras)+len(pkt.Body))
 			if ackBytes > 0 && recvBytesTotal > ackBytes {
 				atomic.AddUint64(&d.stats.TotUPRBufferAck, 1)
 				ack := &gomemcached.MCRequest{Opcode: gomemcached.UPR_BUFFERACK}
