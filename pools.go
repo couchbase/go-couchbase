@@ -249,9 +249,9 @@ type Bucket struct {
 
 // PoolServices is all the bucket-independent services in a pool
 type PoolServices struct {
-	Rev      int            `json:"rev"`
-	NodesExt []NodeServices `json:"nodesExt"`
-	Capabilities json.RawMessage	`json:"clusterCapabilities"`
+	Rev          int             `json:"rev"`
+	NodesExt     []NodeServices  `json:"nodesExt"`
+	Capabilities json.RawMessage `json:"clusterCapabilities"`
 }
 
 // NodeServices is all the bucket-independent services running on
@@ -476,6 +476,14 @@ func (b *Bucket) GetRandomDoc() (*gomemcached.MCResponse, error) {
 	// get a connection from the pool
 	conn, pool, err := b.getRandomConnection()
 
+	if err != nil {
+		return nil, err
+	}
+
+	// We may need to select the bucket before GetRandomDoc()
+	// will work. This is sometimes done at startup (see defaultMkConn())
+	// but not always, depending on the auth type.
+	_, err = conn.SelectBucket(b.Name)
 	if err != nil {
 		return nil, err
 	}
@@ -1368,7 +1376,6 @@ func (p *Pool) Close() {
 		bucket.Unlock()
 	}
 }
-
 
 // GetBucket is a convenience function for getting a named bucket from
 // a URL
