@@ -1,6 +1,7 @@
 package couchbase
 
 import (
+	"crypto/tls"
 	"errors"
 	"io"
 	"testing"
@@ -22,6 +23,14 @@ func (t testT) Write([]byte) (int, error) {
 	return 0, io.EOF
 }
 
+func (t testT) SetReadDeadline(time.Time) error {
+	return nil
+}
+
+func (t testT) SetDeadline(time.Time) error {
+	return nil
+}
+
 var errAlreadyClosed = errors.New("already closed")
 
 func (t *testT) Close() error {
@@ -32,12 +41,12 @@ func (t *testT) Close() error {
 	return nil
 }
 
-func testMkConn(h string, ah AuthHandler) (*memcached.Client, error) {
+func testMkConn(h string, ah AuthHandler, tlsConfig *tls.Config) (*memcached.Client, error) {
 	return memcached.Wrap(&testT{})
 }
 
 func TestConnPool(t *testing.T) {
-	cp := newConnectionPool("h", &basicAuth{}, false, 3, 6)
+	cp := newConnectionPool("h", &basicAuth{}, false, 3, 6, nil)
 	cp.mkConn = testMkConn
 
 	seenClients := map[*memcached.Client]bool{}
@@ -129,7 +138,7 @@ func TestConnPoolSoonAvailable(t *testing.T) {
 		timings = append(timings, time.Since(start))
 	}
 
-	cp := newConnectionPool("h", &basicAuth{}, false, 3, 4)
+	cp := newConnectionPool("h", &basicAuth{}, false, 3, 4, nil)
 	cp.mkConn = testMkConn
 
 	seenClients := map[*memcached.Client]bool{}
@@ -170,7 +179,7 @@ func TestConnPoolSoonAvailable(t *testing.T) {
 }
 
 func TestConnPoolClosedFull(t *testing.T) {
-	cp := newConnectionPool("h", &basicAuth{}, false, 3, 4)
+	cp := newConnectionPool("h", &basicAuth{}, false, 3, 4, nil)
 	cp.mkConn = testMkConn
 
 	seenClients := map[*memcached.Client]bool{}
@@ -197,7 +206,7 @@ func TestConnPoolClosedFull(t *testing.T) {
 }
 
 func TestConnPoolWaitFull(t *testing.T) {
-	cp := newConnectionPool("h", &basicAuth{}, false, 3, 4)
+	cp := newConnectionPool("h", &basicAuth{}, false, 3, 4, nil)
 	cp.mkConn = testMkConn
 
 	seenClients := map[*memcached.Client]bool{}
@@ -226,7 +235,7 @@ func TestConnPoolWaitFull(t *testing.T) {
 }
 
 func TestConnPoolWaitFailFull(t *testing.T) {
-	cp := newConnectionPool("h", &basicAuth{}, false, 3, 4)
+	cp := newConnectionPool("h", &basicAuth{}, false, 3, 4, nil)
 	cp.mkConn = testMkConn
 
 	seenClients := map[*memcached.Client]bool{}
@@ -257,7 +266,7 @@ func TestConnPoolWaitFailFull(t *testing.T) {
 }
 
 func TestConnPoolWaitDoubleFailFull(t *testing.T) {
-	cp := newConnectionPool("h", &basicAuth{}, false, 3, 4)
+	cp := newConnectionPool("h", &basicAuth{}, false, 3, 4, nil)
 	cp.mkConn = testMkConn
 
 	seenClients := map[*memcached.Client]bool{}
@@ -277,7 +286,7 @@ func TestConnPoolWaitDoubleFailFull(t *testing.T) {
 		seenClients[sc] = true
 	}
 
-	cp.mkConn = func(h string, ah AuthHandler) (*memcached.Client, error) {
+	cp.mkConn = func(h string, ah AuthHandler, tlsConfig *tls.Config) (*memcached.Client, error) {
 		return nil, io.EOF
 	}
 
@@ -303,7 +312,7 @@ func TestConnPoolNil(t *testing.T) {
 }
 
 func TestConnPoolClosed(t *testing.T) {
-	cp := newConnectionPool("h", &basicAuth{}, false, 3, 6)
+	cp := newConnectionPool("h", &basicAuth{}, false, 3, 6, nil)
 	cp.mkConn = testMkConn
 	c, err := cp.Get()
 	if err != nil {
@@ -324,7 +333,7 @@ func TestConnPoolClosed(t *testing.T) {
 }
 
 func TestConnPoolCloseWrongPool(t *testing.T) {
-	cp := newConnectionPool("h", &basicAuth{}, false, 3, 6)
+	cp := newConnectionPool("h", &basicAuth{}, false, 3, 6, nil)
 	cp.mkConn = testMkConn
 	c, err := cp.Get()
 	if err != nil {
@@ -333,7 +342,7 @@ func TestConnPoolCloseWrongPool(t *testing.T) {
 	cp.Close()
 
 	// Return to a different pool.  Should still be OK.
-	cp = newConnectionPool("h", &basicAuth{}, false, 3, 6)
+	cp = newConnectionPool("h", &basicAuth{}, false, 3, 6, nil)
 	cp.mkConn = testMkConn
 	c, err = cp.Get()
 	if err != nil {
@@ -348,7 +357,7 @@ func TestConnPoolCloseWrongPool(t *testing.T) {
 }
 
 func TestConnPoolCloseNil(t *testing.T) {
-	cp := newConnectionPool("h", &basicAuth{}, false, 3, 6)
+	cp := newConnectionPool("h", &basicAuth{}, false, 3, 6, nil)
 	cp.mkConn = testMkConn
 	c, err := cp.Get()
 	if err != nil {
@@ -371,7 +380,7 @@ func TestConnPoolStartTapFeed(t *testing.T) {
 		t.Errorf("Expected no pool error with no pool, got %v/%v", tf, err)
 	}
 
-	cp = newConnectionPool("h", &basicAuth{}, false, 3, 6)
+	cp = newConnectionPool("h", &basicAuth{}, false, 3, 6, nil)
 	cp.mkConn = testMkConn
 
 	tf, err = cp.StartTapFeed(&args)
@@ -387,7 +396,7 @@ func TestConnPoolStartTapFeed(t *testing.T) {
 }
 
 func BenchmarkBestCaseCPGet(b *testing.B) {
-	cp := newConnectionPool("h", &basicAuth{}, false, 3, 6)
+	cp := newConnectionPool("h", &basicAuth{}, false, 3, 6, nil)
 	cp.mkConn = testMkConn
 
 	for i := 0; i < b.N; i++ {

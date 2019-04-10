@@ -187,7 +187,7 @@ type Pool struct {
 
 	BucketURL map[string]string `json:"buckets"`
 
-	client Client
+	client *Client
 }
 
 // VBucketServerMap is the a mapping of vbuckets to nodes.
@@ -546,9 +546,10 @@ func (b *Bucket) CommonAddressSuffix() string {
 // A Client is the starting point for all services across all buckets
 // in a Couchbase cluster.
 type Client struct {
-	BaseURL *url.URL
-	ah      AuthHandler
-	Info    Pools
+	BaseURL   *url.URL
+	ah        AuthHandler
+	Info      Pools
+	tlsConfig *tls.Config
 }
 
 func maybeAddAuth(req *http.Request, ah AuthHandler) error {
@@ -944,6 +945,25 @@ func ConnectWithAuth(baseU string, ah AuthHandler) (c Client, err error) {
 	return c, c.parseURLResponse("/pools", &c.Info)
 }
 
+// Call this method with a TLS certificate file name to make communication
+// with the KV engine encrypted.
+//
+// This method should be called immediately after a Connect*() method.
+func (c *Client) InitTLS(certFile string) error {
+	serverCert, err := ioutil.ReadFile(certFile)
+	if err != nil {
+		return err
+	}
+	CA_Pool := x509.NewCertPool()
+	CA_Pool.AppendCertsFromPEM(serverCert)
+	c.tlsConfig = &tls.Config{RootCAs: CA_Pool}
+	return nil
+}
+
+func (c *Client) ClearTLS() {
+	c.tlsConfig = nil
+}
+
 // ConnectWithAuthCreds connects to a couchbase cluster with the give
 // authorization creds returned by cb_auth
 func ConnectWithAuthCreds(baseU, username, password string) (c Client, err error) {
@@ -954,7 +974,6 @@ func ConnectWithAuthCreds(baseU, username, password string) (c Client, err error
 
 	c.ah = newBucketAuth(username, password, "")
 	return c, c.parseURLResponse("/pools", &c.Info)
-
 }
 
 // Connect to a couchbase cluster.  An authentication handler will be
@@ -1171,14 +1190,33 @@ func (b *Bucket) GetCollectionsManifest() (*Manifest, error) {
 	return mani, nil
 }
 
+func (b *Bucket) RefreshFully() error {
+	return b.refresh(false)
+}
+
 func (b *Bucket) Refresh() error {
+	return b.refresh(true)
+}
+
+func (b *Bucket) refresh(preserveConnections bool) error {
 	b.RLock()
 	pool := b.pool
 	uri := b.URI
+	client := pool.client
 	b.RUnlock()
+	tlsConfig := client.tlsConfig
+
+	var poolServices PoolServices
+	var err error
+	if tlsConfig != nil {
+		poolServices, err = client.GetPoolServices("default")
+		if err != nil {
+			return err
+		}
+	}
 
 	tmpb := &Bucket{}
-	err := pool.client.parseURLResponse(uri, tmpb)
+	err = pool.client.parseURLResponse(uri, tmpb)
 	if err != nil {
 		return err
 	}
@@ -1199,24 +1237,33 @@ func (b *Bucket) Refresh() error {
 	newcps := make([]*connectionPool, len(tmpb.VBSMJson.ServerList))
 	for i := range newcps {
 
-		pool := b.getConnPoolByHost(tmpb.VBSMJson.ServerList[i], true /* bucket already locked */)
-		if pool != nil && pool.inUse == false {
-			// if the hostname and index is unchanged then reuse this pool
-			newcps[i] = pool
-			pool.inUse = true
-			continue
+		if preserveConnections {
+			pool := b.getConnPoolByHost(tmpb.VBSMJson.ServerList[i], true /* bucket already locked */)
+			if pool != nil && pool.inUse == false {
+				// if the hostname and index is unchanged then reuse this pool
+				newcps[i] = pool
+				pool.inUse = true
+				continue
+			}
+		}
+
+		hostport := tmpb.VBSMJson.ServerList[i]
+		if tlsConfig != nil {
+			hostport, err = MapKVtoSSL(hostport, &poolServices)
+			if err != nil {
+				b.Unlock()
+				return err
+			}
 		}
 
 		if b.ah != nil {
-			newcps[i] = newConnectionPool(
-				tmpb.VBSMJson.ServerList[i],
-				b.ah, AsynchronousCloser, PoolSize, PoolOverflow)
+			newcps[i] = newConnectionPool(hostport,
+				b.ah, AsynchronousCloser, PoolSize, PoolOverflow, tlsConfig)
 
 		} else {
-			newcps[i] = newConnectionPool(
-				tmpb.VBSMJson.ServerList[i],
+			newcps[i] = newConnectionPool(hostport,
 				b.authHandler(true /* bucket already locked */),
-				AsynchronousCloser, PoolSize, PoolOverflow)
+				AsynchronousCloser, PoolSize, PoolOverflow, tlsConfig)
 		}
 	}
 	b.replaceConnPools2(newcps, true /* bucket already locked */)
@@ -1272,7 +1319,7 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 
 	err = c.parseURLResponse(poolURI, &p)
 
-	p.client = *c
+	p.client = c
 
 	err = p.refresh()
 	return
@@ -1360,7 +1407,7 @@ func (b *Bucket) GetPool() *Pool {
 
 // GetClient gets the client from which we got this pool.
 func (p *Pool) GetClient() *Client {
-	return &p.client
+	return p.client
 }
 
 // Release bucket connections when the pool is no longer in use
