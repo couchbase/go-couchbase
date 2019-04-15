@@ -54,7 +54,12 @@ func MapKVtoSSL(hostport string, ps *PoolServices) (string, error) {
 		ns = &(ps.NodesExt[0])
 	} else {
 		for i := range ps.NodesExt {
-			if ps.NodesExt[i].Hostname == host {
+			hostname := ps.NodesExt[i].Hostname
+			if len(hostname) == 0 {
+				// in case of missing hostname, check for 127.0.0.1
+				hostname = "127.0.0.1"
+			}
+			if hostname == host {
 				ns = &(ps.NodesExt[i])
 				break
 			}

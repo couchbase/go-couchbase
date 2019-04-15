@@ -135,3 +135,44 @@ func TestIPv6Node(t *testing.T) {
 		t.Fatalf("Mapping target %s, expected failure, got success: %s", target, res)
 	}
 }
+
+func TestMissingIPNodes(t *testing.T) {
+	jsonInput := `{"rev":73,"nodesExt":[{"services":{"mgmt":9000,"mgmtSSL":19000,"fts":9200,"ftsSSL":19200,"ftsGRPC":9201,"ftsGRPCSSL":19201,"kv":12000,"kvSSL":11998,"capi":9500,"capiSSL":19500,"projector":10000},"thisNode":true,"hostname":"192.168.212.71"},{"services":{"mgmt":9001,"mgmtSSL":19001,"kv":12002,"kvSSL":11994,"capi":9501,"capiSSL":19501,"projector":10001}}],"clusterCapabilitiesVer":[1,0],"clusterCapabilities":{"n1ql":["enhancedPreparedStatements"]}}`
+
+	poolServices, err := ParsePoolServices(jsonInput)
+	if err != nil {
+		t.Fatalf("Unable to parse json: %v", err)
+	}
+	if poolServices == nil {
+		t.Fatalf("Parse produced no result")
+	}
+	if len(poolServices.NodesExt) != 2 {
+		t.Fatalf("Expected nodesExt of length 2, got %d", len(poolServices.NodesExt))
+	}
+	if poolServices.NodesExt[0].Services["kvSSL"] != 11998 {
+		t.Fatalf("Expected kv port 11998, got %d", poolServices.NodesExt[0].Services["kvSSL"])
+	}
+	if poolServices.NodesExt[1].Services["kvSSL"] != 11994 {
+		t.Fatalf("Expected kvSSL port 11994, got %d", poolServices.NodesExt[1].Services["kvSSL"])
+	}
+
+	target := "192.168.212.71:12000"
+	res, err := MapKVtoSSL(target, poolServices)
+	if err != nil {
+		t.Fatalf("Mapping target %s, expected success, got error: %v", target, err)
+	}
+	expected := "192.168.212.71:11998"
+	if res != expected {
+		t.Fatalf("Mapping target %s, expected %s, got %s", target, expected, res)
+	}
+
+	target = "127.0.0.1:12002"
+	res, err = MapKVtoSSL(target, poolServices)
+	if err != nil {
+		t.Fatalf("Mapping target %s, expected success, got error: %v", target, err)
+	}
+	expected = "127.0.0.1:11994"
+	if res != expected {
+		t.Fatalf("Mapping target %s, expected %s, got %s", target, expected, res)
+	}
+}
