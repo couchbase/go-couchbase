@@ -1344,6 +1344,19 @@ func (c *Client) GetPoolServices(name string) (ps PoolServices, err error) {
 	return
 }
 
+func (b *Bucket) GetPoolServices(name string) (*PoolServices, error) {
+	b.RLock()
+	pool := b.pool
+	b.RUnlock()
+
+	ps, err := pool.client.GetPoolServices(name)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ps, nil
+}
+
 // Close marks this bucket as no longer needed, closing connections it
 // may have open.
 func (b *Bucket) Close() {

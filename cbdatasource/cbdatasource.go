@@ -21,9 +21,12 @@ package cbdatasource
 
 import (
 	"bytes"
+	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io/ioutil"
 	"math/rand"
 	"reflect"
 	"sort"
@@ -45,6 +48,77 @@ const FeatureEnabledXAttrs = uint16(0x06)
 const FeatureEnabledXError = uint16(0x07)
 
 var ErrXAttrsNotSupported = fmt.Errorf("xattrs not supported by server")
+
+type SecurityConfig struct {
+	EncryptData        bool
+	DisableNonSSLPorts bool
+	CertFile           string
+	KeyFile            string
+}
+
+type securitySetting struct {
+	config    *SecurityConfig
+	rootCAs   *x509.CertPool
+	refreshCh chan bool
+}
+
+var currSecuritySettingMutex sync.RWMutex
+var currSecuritySetting *securitySetting
+
+func init() {
+	currSecuritySetting = &securitySetting{
+		config:    &SecurityConfig{},
+		refreshCh: make(chan bool, 10),
+	}
+}
+
+func UpdateSecurityConfig(newConfig *SecurityConfig) error {
+	if newConfig == nil {
+		return fmt.Errorf("security config provided is nil")
+	}
+
+	currSecuritySettingMutex.Lock()
+	defer currSecuritySettingMutex.Unlock()
+
+	var roots *x509.CertPool
+	if newConfig.EncryptData && newConfig.CertFile != "" {
+		certInBytes, err := ioutil.ReadFile(newConfig.CertFile)
+		if err != nil {
+			return err
+		}
+
+		roots = x509.NewCertPool()
+		ok := roots.AppendCertsFromPEM(certInBytes)
+		if !ok {
+			return fmt.Errorf("Error appending certificates")
+		}
+	}
+
+	currSecuritySetting.config = newConfig
+	currSecuritySetting.rootCAs = roots
+	currSecuritySetting.refreshCh <- true
+
+	return nil
+}
+
+func fetchTLSConfig() (*tls.Config, bool) {
+	currSecuritySettingMutex.RLock()
+
+	var refreshed bool
+	for len(currSecuritySetting.refreshCh) > 0 {
+		<-currSecuritySetting.refreshCh
+		refreshed = true
+	}
+
+	var tlsConfig *tls.Config
+	if currSecuritySetting.config.EncryptData && currSecuritySetting.rootCAs != nil {
+		tlsConfig = &tls.Config{RootCAs: currSecuritySetting.rootCAs}
+	}
+
+	currSecuritySettingMutex.RUnlock()
+
+	return tlsConfig, refreshed
+}
 
 // BucketDataSource is the main control interface returned by
 // NewBucketDataSource().
@@ -187,6 +261,11 @@ type BucketDataSourceOptions struct {
 	// Defaults to memcached.Connect().
 	Connect func(protocol, dest string) (*memcached.Client, error)
 
+	// Optional function to connect to a couchbase data manager nodes, over SSL.
+	// Defaults to memcached.ConnectTLS().
+	ConnectTLS func(protocol, dest string, tlsConfig *tls.Config) (
+		*memcached.Client, error)
+
 	// Optional function for logging diagnostic messages.
 	Logf func(fmt string, v ...interface{})
 
@@ -240,6 +319,7 @@ type Bucket interface {
 	Close()
 	GetUUID() string
 	VBServerMap() *couchbase.VBucketServerMap
+	GetPoolServices(string) (*couchbase.PoolServices, error)
 }
 
 // DefaultBucketDataSourceOptions defines the default options that
@@ -453,6 +533,7 @@ type bucketDataSource struct {
 	m    sync.Mutex // Protects all the below fields.
 	life string     // Valid life states: "" (unstarted); "running"; "closed".
 	vbm  *couchbase.VBucketServerMap
+	ps   *couchbase.PoolServices
 }
 
 // NewBucketDataSource is the main starting point for using the
@@ -604,10 +685,17 @@ func (d *bucketDataSource) refreshCluster() int {
 			continue // Try another serverURL.
 		}
 
+		ps, err := bucket.GetPoolServices(d.poolName)
+		if err != nil {
+			d.receiver.OnError(fmt.Errorf("refreshCluster got an error"+
+				" when it requested for /pools/nodeServices, err: %v", err))
+		}
+
 		bucket.Close()
 
 		d.m.Lock()
 		d.vbm = vbm
+		d.ps = ps
 		d.m.Unlock()
 
 		for {
@@ -685,11 +773,26 @@ func (d *bucketDataSource) refreshWorkers() {
 	workers := make(map[string]chan []uint16)
 
 OUTER_LOOP:
-	for _ = range d.refreshWorkersCh { // Wait for a refresh kick.
+	for {
+		var tlsConfigRefreshed bool
+		select {
+		case <-d.refreshWorkersCh:
+			// Wait for refresh kick
+		case <-d.stopCh:
+			break OUTER_LOOP
+		case <-currSecuritySetting.refreshCh:
+			// tlsConfig has been refreshed
+			tlsConfigRefreshed = true
+		}
+
+		tlsConfig, refreshed := fetchTLSConfig()
+		tlsConfigRefreshed = tlsConfigRefreshed || refreshed
+
 		atomic.AddUint64(&d.stats.TotRefreshWorkers, 1)
 
 		d.m.Lock()
 		vbm := d.vbm
+		ps := d.ps
 		d.m.Unlock()
 
 		if vbm == nil {
@@ -758,15 +861,37 @@ OUTER_LOOP:
 			}
 		}
 
+		// Use the data obtained from /pools/nodeServices to map the regular
+		// memcached ("kv") port to the "kvSsl" port for SSL, when encryption
+		// has been enabled. Note that if for some reason data isn't available
+		// from nodeServices, proceed with non-encrypted DCP.
+		if ps == nil {
+			tlsConfig = nil
+		}
+
 		// Add any missing workers and update workers with their
 		// latest vbucketIDs.
 		for server, serverVBucketIDs := range vbucketIDsByServer {
 			workerCh, exists := workers[server]
-			if !exists || workerCh == nil {
+			if !exists || workerCh == nil || tlsConfigRefreshed {
 				atomic.AddUint64(&d.stats.TotRefreshWorkersAddWorker, 1)
 				workerCh = make(chan []uint16, 1)
 				workers[server] = workerCh
-				d.workerStart(server, workerCh)
+
+				var conf *tls.Config
+				if tlsConfig != nil {
+					serverSSL, err := couchbase.MapKVtoSSL(server, ps)
+					// If the "kv" port for the selected server wasn't
+					// successfully mapped to it's "kvSsl" port, silently
+					// fall back to using non-encrypted DCP to support
+					// mixed-version cluster scenarios.
+					if err == nil {
+						server = serverSSL
+						conf = tlsConfig
+					}
+				}
+
+				d.workerStart(server, workerCh, conf)
 			}
 
 			select {
@@ -795,7 +920,7 @@ OUTER_LOOP:
 }
 
 // A worker connects to one data manager server.
-func (d *bucketDataSource) workerStart(server string, workerCh chan []uint16) {
+func (d *bucketDataSource) workerStart(server string, workerCh chan []uint16, tlsConfig *tls.Config) {
 	backoffFactor := d.options.DataManagerBackoffFactor
 	if backoffFactor <= 0.0 {
 		backoffFactor = DefaultBucketDataSourceOptions.DataManagerBackoffFactor
@@ -814,7 +939,7 @@ func (d *bucketDataSource) workerStart(server string, workerCh chan []uint16) {
 		atomic.AddUint64(&d.stats.TotWorkerStart, 1)
 
 		ExponentialBackoffLoop("cbdatasource.worker-"+server,
-			func() int { return d.worker(server, workerCh) },
+			func() int { return d.worker(server, workerCh, tlsConfig) },
 			sleepInitMS, backoffFactor, sleepMaxMS)
 
 		atomic.AddUint64(&d.stats.TotWorkerDone, 1)
@@ -833,7 +958,7 @@ type VBucketState struct {
 // Connect once to the server and work the UPR stream.  If anything
 // goes wrong, return our level of progress in order to let our caller
 // control any potential retries.
-func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
+func (d *bucketDataSource) worker(server string, workerCh chan []uint16, tlsConfig *tls.Config) int {
 	atomic.AddUint64(&d.stats.TotWorkerBody, 1)
 
 	if !d.isRunning() {
@@ -841,11 +966,6 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 	}
 
 	atomic.AddUint64(&d.stats.TotWorkerConnect, 1)
-	connect := d.options.Connect
-	if connect == nil {
-		connect = memcached.Connect
-	}
-
 	emptyWorkerCh := func() int {
 		for {
 			select {
@@ -862,7 +982,22 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 		}
 	}
 
-	client, err := connect("tcp", server)
+	var client *memcached.Client
+	var err error
+	if tlsConfig == nil {
+		connect := d.options.Connect
+		if connect == nil {
+			connect = memcached.Connect
+		}
+		client, err = connect("tcp", server)
+	} else {
+		connectTLS := d.options.ConnectTLS
+		if connectTLS == nil {
+			connectTLS = memcached.ConnectTLS
+		}
+		client, err = connectTLS("tcp", server, tlsConfig)
+	}
+
 	if err != nil {
 		atomic.AddUint64(&d.stats.TotWorkerConnectErr, 1)
 		d.receiver.OnError(fmt.Errorf("worker connect, server: %s, err: %v",
@@ -961,7 +1096,7 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16) int {
 
 	// Select the bucket for this connection.
 	if user != d.bucketName {
-		err = selectBucket(client, d.bucketName)
+		_, err = client.SelectBucket(d.bucketName)
 		if err != nil {
 			atomic.AddUint64(&d.stats.TotSelectBucketErr, 1)
 			d.receiver.OnError(err)
@@ -1809,6 +1944,10 @@ func (bw *bucketWrapper) VBServerMap() *couchbase.VBucketServerMap {
 	return bw.b.VBServerMap()
 }
 
+func (bw *bucketWrapper) GetPoolServices(name string) (*couchbase.PoolServices, error) {
+	return bw.b.GetPoolServices(name)
+}
+
 // ConnectBucket is the default function used by BucketDataSource
 // to connect to a Couchbase cluster to retrieve Bucket information.
 // It is exposed for testability and to allow applications to
@@ -1817,21 +1956,9 @@ func ConnectBucket(serverURL, poolName, bucketName string,
 	auth couchbase.AuthHandler) (Bucket, error) {
 	var bucket *couchbase.Bucket
 	var err error
-	var client couchbase.Client
-	var pool couchbase.Pool
 
 	if auth != nil {
-		client, err = couchbase.ConnectWithAuth(serverURL, auth)
-		if err != nil {
-			return nil, err
-		}
-
-		pool, err = client.GetPool(poolName)
-		if err != nil {
-			return nil, err
-		}
-
-		bucket, err = pool.GetBucket(bucketName)
+		bucket, err = couchbase.ConnectWithAuthAndGetBucket(serverURL, poolName, bucketName, auth)
 	} else {
 		bucket, err = couchbase.GetBucket(serverURL, poolName, bucketName)
 	}
@@ -1844,15 +1971,6 @@ func ConnectBucket(serverURL, poolName, bucketName string,
 	}
 
 	return &bucketWrapper{b: bucket}, nil
-}
-
-// Select bucket for this connection.
-func selectBucket(mc *memcached.Client, bucketName string) error {
-	_, err := mc.Send(&gomemcached.MCRequest{
-		Opcode: gomemcached.SELECT_BUCKET,
-		Key:    []byte(bucketName),
-	})
-	return err
 }
 
 func serverHandShake(mc *memcached.Client, d *bucketDataSource) (uint32, error) {

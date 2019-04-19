@@ -57,6 +57,10 @@ func (bw *TestBucket) VBServerMap() *couchbase.VBucketServerMap {
 	return bw.vbsm
 }
 
+func (bw *TestBucket) GetPoolServices(name string) (*couchbase.PoolServices, error) {
+	return nil, nil
+}
+
 type TestMutation struct {
 	delete    bool
 	vbucketID uint16
