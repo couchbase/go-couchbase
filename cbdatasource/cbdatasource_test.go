@@ -15,11 +15,11 @@ import (
 	"bytes"
 	"encoding/binary"
 	"fmt"
-	"io"
 	"reflect"
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/couchbase/go-couchbase"
 	"github.com/couchbase/gomemcached"
@@ -201,6 +201,14 @@ func (c *TestRWC) Write(p []byte) (n int, err error) {
 }
 
 func (c *TestRWC) Close() error {
+	return nil
+}
+
+func (c *TestRWC) SetReadDeadline(time.Time) error {
+	return nil
+}
+
+func (c *TestRWC) SetDeadline(time.Time) error {
 	return nil
 }
 
@@ -700,7 +708,7 @@ func TestConnThatAlwaysErrors(t *testing.T) {
 
 	rwcWriteCh := make(chan RWReq)
 
-	newFakeConn := func(dest string) io.ReadWriteCloser {
+	newFakeConn := func(dest string) *TestRWC {
 		lastRWCM.Lock()
 		defer lastRWCM.Unlock()
 
@@ -818,7 +826,7 @@ func TestUPROpenStreamReqMAXPROCS1(t *testing.T) {
 	var lastRWCM sync.Mutex
 	var lastRWC *TestRWC
 
-	newFakeConn := func(dest string) io.ReadWriteCloser {
+	newFakeConn := func(dest string) *TestRWC {
 		lastRWCM.Lock()
 		defer lastRWCM.Unlock()
 

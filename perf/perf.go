@@ -98,7 +98,7 @@ func doBulkGetOps(b *couchbase.Bucket, total int, quantum int, startNum int) {
 			currentKeyNum++
 
 		}
-		_, err := b.GetBulk(keylist)
+		_, err := b.GetBulk(keylist, start.Add(5*time.Second), nil)
 		if err != nil {
 			log.Printf(" Failed to get keys startnum %s to %d", keylist[0], quantum)
 		}
@@ -113,7 +113,7 @@ func generateRandomDoc(size int) []byte {
 	_, err := rand.Read(rb)
 
 	if err != nil {
-		log.Fatal("Cannot generate data %v", err)
+		log.Fatalf("Cannot generate data %v", err)
 	}
 
 	rs := base64.URLEncoding.EncodeToString(rb)

@@ -49,7 +49,7 @@ func main() {
 			log.Fatalf("GetAndTouchRaw returned error %v", err)
 		}
 		if len(result) == 0 {
-			log.Fatalf("GetAndTouchRaw returned invalid content", err)
+			log.Fatalf("GetAndTouchRaw returned invalid content, %v", err)
 		}
 		log.Printf("Successful retrieval via GetAndTouchRaw after %ds", i+1)
 		time.Sleep(1 * time.Second)

@@ -49,7 +49,7 @@ func performOp(b *couchbase.Bucket) {
 	key := fmt.Sprintf("odwalla-juice1")
 	odwalla1 := map[string]interface{}{"type": "juice"}
 	log.Printf(" setting key %v value %v", key, odwalla1)
-	err := b.SetWithMeta(key, 0x1000001, 0, odwalla1)
+	_, err := b.SetWithMeta(key, 0x1000001, 0, odwalla1)
 	if err != nil {
 		log.Printf("set failed error %v", err)
 		return
@@ -61,7 +61,7 @@ func performOp(b *couchbase.Bucket) {
 	}
 
 	if flags != 0x1000001 {
-		log.Fatal("Flag mismatch %v", flags)
+		log.Fatalf("Flag mismatch %v", flags)
 	}
 
 	n1ql, err := sql.Open("n1ql", "localhost:8093")
@@ -87,6 +87,6 @@ func performOp(b *couchbase.Bucket) {
 	}
 
 	if flags != 0x1000001 {
-		log.Fatal("Flag mismatch %v", flags)
+		log.Fatalf("Flag mismatch %v", flags)
 	}
 }

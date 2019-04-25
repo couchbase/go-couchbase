@@ -7,6 +7,8 @@ import (
 )
 
 func TestGetRolesAll(t *testing.T) {
+	t.Skip("Skip this test, as it needs a live connection")
+
 	client, err := ConnectWithAuthCreds("http://localhost:8091", "Administrator", "password")
 	if err != nil {
 		t.Fatalf("Unable to connect: %v", err)

@@ -168,13 +168,13 @@ func TestTraceConsolidateByTitle(t *testing.T) {
 	}
 
 	s := MsgsToString(r.Msgs(), "\n", "")
-	exps := "bye (2 times)\nbuh (2 times)"
+	exps := "bye (2x)\nbuh (2x)"
 	if s != exps {
 		t.Errorf("expected string %q, got %q", exps, s)
 	}
 
 	s = MsgsToString(r.Msgs(), "\n", "prefix")
-	exps = "bye (2 times)\nprefixbuh (2 times)"
+	exps = "bye (2x)\nprefixbuh (2x)"
 	if s != exps {
 		t.Errorf("expected string %q, got %q", exps, s)
 	}
