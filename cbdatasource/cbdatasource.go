@@ -888,6 +888,10 @@ OUTER_LOOP:
 					if err == nil {
 						server = serverSSL
 						conf = tlsConfig
+					} else if d.options.Logf != nil {
+						d.options.Logf("cbdatasource: falling back to non"+
+							" encrypted dcp as MapKVtoSSL err: %v for"+
+							" server: %s", err, server)
 					}
 				}
 
