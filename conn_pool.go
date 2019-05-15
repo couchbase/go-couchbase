@@ -37,7 +37,7 @@ var ConnPoolAvailWaitTime = time.Millisecond
 
 type connectionPool struct {
 	host        string
-	mkConn      func(host string, ah AuthHandler, tlsConfig *tls.Config) (*memcached.Client, error)
+	mkConn      func(host string, ah AuthHandler, tlsConfig *tls.Config, bucketName string) (*memcached.Client, error)
 	auth        AuthHandler
 	connections chan *memcached.Client
 	createsem   chan bool
@@ -46,9 +46,10 @@ type connectionPool struct {
 	connCount   uint64
 	inUse       bool
 	tlsConfig   *tls.Config
+	bucket string
 }
 
-func newConnectionPool(host string, ah AuthHandler, closer bool, poolSize, poolOverflow int, tlsConfig *tls.Config) *connectionPool {
+func newConnectionPool(host string, ah AuthHandler, closer bool, poolSize, poolOverflow int, tlsConfig *tls.Config, bucket string) *connectionPool {
 	connSize := poolSize
 	if closer {
 		connSize += poolOverflow
@@ -61,6 +62,7 @@ func newConnectionPool(host string, ah AuthHandler, closer bool, poolSize, poolO
 		auth:        ah,
 		poolSize:    poolSize,
 		tlsConfig:   tlsConfig,
+		bucket:      bucket,
 	}
 	if closer {
 		rv.bailOut = make(chan bool, 1)
@@ -74,7 +76,7 @@ var ConnPoolCallback func(host string, source string, start time.Time, err error
 
 // Use regular in-the-clear connection if tlsConfig is nil.
 // Use secure connection (TLS) if tlsConfig is set.
-func defaultMkConn(host string, ah AuthHandler, tlsConfig *tls.Config) (*memcached.Client, error) {
+func defaultMkConn(host string, ah AuthHandler, tlsConfig *tls.Config, bucketName string) (*memcached.Client, error) {
 	var features memcached.Features
 
 	var conn *memcached.Client
@@ -138,6 +140,11 @@ func defaultMkConn(host string, ah AuthHandler, tlsConfig *tls.Config) (*memcach
 		return conn, nil
 	}
 	name, pass, bucket := ah.GetCredentials()
+	if bucket  == "" {
+		// Authenticator does not know specific bucket.
+		bucket = bucketName
+	}
+
 	if name != "default" {
 		_, err = conn.Auth(name, pass)
 		if err != nil {
@@ -237,7 +244,7 @@ func (cp *connectionPool) GetWithTimeout(d time.Duration) (rv *memcached.Client,
 			// Build a connection if we can't get a real one.
 			// This can potentially be an overflow connection, or
 			// a pooled connection.
-			rv, err := cp.mkConn(cp.host, cp.auth, cp.tlsConfig)
+			rv, err := cp.mkConn(cp.host, cp.auth, cp.tlsConfig, cp.bucket)
 			if err != nil {
 				// On error, release our create hold
 				<-cp.createsem

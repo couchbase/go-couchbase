@@ -187,12 +187,12 @@ func (b *Bucket) UpdateBucket() error {
 				}
 				if b.ah != nil {
 					newcps[i] = newConnectionPool(hostport,
-						b.ah, false, PoolSize, PoolOverflow, b.pool.client.tlsConfig)
+						b.ah, false, PoolSize, PoolOverflow, b.pool.client.tlsConfig, b.Name)
 
 				} else {
 					newcps[i] = newConnectionPool(hostport,
 						b.authHandler(true /* bucket already locked */),
-						false, PoolSize, PoolOverflow, b.pool.client.tlsConfig)
+						false, PoolSize, PoolOverflow, b.pool.client.tlsConfig, b.Name)
 				}
 			}
 

@@ -1258,12 +1258,12 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 		if b.ah != nil {
 			newcps[i] = newConnectionPool(hostport,
-				b.ah, AsynchronousCloser, PoolSize, PoolOverflow, tlsConfig)
+				b.ah, AsynchronousCloser, PoolSize, PoolOverflow, tlsConfig, b.Name)
 
 		} else {
 			newcps[i] = newConnectionPool(hostport,
 				b.authHandler(true /* bucket already locked */),
-				AsynchronousCloser, PoolSize, PoolOverflow, tlsConfig)
+				AsynchronousCloser, PoolSize, PoolOverflow, tlsConfig, b.Name)
 		}
 	}
 	b.replaceConnPools2(newcps, true /* bucket already locked */)
