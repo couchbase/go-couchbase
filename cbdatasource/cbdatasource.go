@@ -373,19 +373,22 @@ type BucketDataSourceStats struct {
 	TotRefreshClusterAllServerURLsConnectBucketErr uint64
 	TotRefreshClusterDone                          uint64
 
-	TotRefreshWorkers                uint64
-	TotRefreshWorkersVBMNilErr       uint64
-	TotRefreshWorkersVBucketIDErr    uint64
-	TotRefreshWorkersServerIdxsErr   uint64
-	TotRefreshWorkersMasterIdxErr    uint64
-	TotRefreshWorkersMasterServerErr uint64
-	TotRefreshWorkersRemoveWorker    uint64
-	TotRefreshWorkersAddWorker       uint64
-	TotRefreshWorkersKickWorker      uint64
-	TotRefreshWorkersCloseWorker     uint64
-	TotRefreshWorkersLoop            uint64
-	TotRefreshWorkersLoopDone        uint64
-	TotRefreshWorkersDone            uint64
+	TotRefreshWorkersStarted             uint64
+	TotRefreshWorkers                    uint64
+	TotRefreshWorkersClusterChKicks      uint64
+	TotRefreshWorkersSecurityUpdateKicks uint64
+	TotRefreshWorkersVBMNilErr           uint64
+	TotRefreshWorkersVBucketIDErr        uint64
+	TotRefreshWorkersServerIdxsErr       uint64
+	TotRefreshWorkersMasterIdxErr        uint64
+	TotRefreshWorkersMasterServerErr     uint64
+	TotRefreshWorkersRemoveWorker        uint64
+	TotRefreshWorkersAddWorker           uint64
+	TotRefreshWorkersKickWorker          uint64
+	TotRefreshWorkersCloseWorker         uint64
+	TotRefreshWorkersLoop                uint64
+	TotRefreshWorkersLoopDone            uint64
+	TotRefreshWorkersDone                uint64
 
 	TotWorkerStart      uint64
 	TotWorkerDone       uint64
@@ -768,6 +771,7 @@ func (d *bucketDataSource) refreshCluster() int {
 }
 
 func (d *bucketDataSource) refreshWorkers() {
+	atomic.AddUint64(&d.stats.TotRefreshWorkersStarted, 1)
 	// Keyed by server, value is chan of array of vbucketID's that the
 	// worker needs to provide.
 	workers := make(map[string]chan []uint16)
@@ -778,11 +782,13 @@ OUTER_LOOP:
 		select {
 		case <-d.refreshWorkersCh:
 			// Wait for refresh kick
+			atomic.AddUint64(&d.stats.TotRefreshWorkersClusterChKicks, 1)
 		case <-d.stopCh:
 			break OUTER_LOOP
 		case <-currSecuritySetting.refreshCh:
 			// tlsConfig has been refreshed
 			tlsConfigRefreshed = true
+			atomic.AddUint64(&d.stats.TotRefreshWorkersSecurityUpdateKicks, 1)
 		}
 
 		tlsConfig, refreshed := fetchTLSConfig()
