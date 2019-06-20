@@ -19,6 +19,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/couchbase/goutils/logging"
@@ -29,8 +30,9 @@ import (
 
 // HTTPClient to use for REST and view operations.
 var MaxIdleConnsPerHost = 256
+var ClientTimeOut = 10 * time.Second
 var HTTPTransport = &http.Transport{MaxIdleConnsPerHost: MaxIdleConnsPerHost}
-var HTTPClient = &http.Client{Transport: HTTPTransport}
+var HTTPClient = &http.Client{Transport: HTTPTransport, Timeout: ClientTimeOut}
 
 // PoolSize is the size of each connection pool (per host).
 var PoolSize = 64
@@ -615,11 +617,11 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 	var err error
 	var res *http.Response
 
-	tr := &http.Transport{}
-
 	// we need a client that ignores certificate errors, since we self-sign
 	// our certs
 	if client == nil && req.URL.Scheme == "https" {
+		var tr *http.Transport
+
 		if skipVerify {
 			tr = &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
