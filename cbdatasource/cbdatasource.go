@@ -62,7 +62,7 @@ type securitySetting struct {
 	refreshCh chan bool
 }
 
-var currSecuritySettingMutex sync.RWMutex
+var currSecuritySettingMutex sync.Mutex
 var currSecuritySetting *securitySetting
 
 func init() {
@@ -102,7 +102,7 @@ func UpdateSecurityConfig(newConfig *SecurityConfig) error {
 }
 
 func fetchTLSConfig() (*tls.Config, bool) {
-	currSecuritySettingMutex.RLock()
+	currSecuritySettingMutex.Lock()
 
 	var refreshed bool
 	for len(currSecuritySetting.refreshCh) > 0 {
@@ -115,7 +115,7 @@ func fetchTLSConfig() (*tls.Config, bool) {
 		tlsConfig = &tls.Config{RootCAs: currSecuritySetting.rootCAs}
 	}
 
-	currSecuritySettingMutex.RUnlock()
+	currSecuritySettingMutex.Unlock()
 
 	return tlsConfig, refreshed
 }
