@@ -47,6 +47,8 @@ const FeatureEnabledDataType = uint16(0x01)
 const FeatureEnabledXAttrs = uint16(0x06)
 const FeatureEnabledXError = uint16(0x07)
 
+const UpdateSecuritySettings = "UpdateSecuritySettings"
+
 var ErrXAttrsNotSupported = fmt.Errorf("xattrs not supported by server")
 
 type SecurityConfig struct {
@@ -57,18 +59,16 @@ type SecurityConfig struct {
 }
 
 type securitySetting struct {
-	config    *SecurityConfig
-	rootCAs   *x509.CertPool
-	refreshCh chan bool
+	config  *SecurityConfig
+	rootCAs *x509.CertPool
 }
 
-var currSecuritySettingMutex sync.Mutex
+var currSecuritySettingMutex sync.RWMutex
 var currSecuritySetting *securitySetting
 
 func init() {
 	currSecuritySetting = &securitySetting{
-		config:    &SecurityConfig{},
-		refreshCh: make(chan bool, 10),
+		config: &SecurityConfig{},
 	}
 }
 
@@ -96,28 +96,21 @@ func UpdateSecurityConfig(newConfig *SecurityConfig) error {
 
 	currSecuritySetting.config = newConfig
 	currSecuritySetting.rootCAs = roots
-	currSecuritySetting.refreshCh <- true
 
 	return nil
 }
 
-func fetchTLSConfig() (*tls.Config, bool) {
-	currSecuritySettingMutex.Lock()
-
-	var refreshed bool
-	for len(currSecuritySetting.refreshCh) > 0 {
-		<-currSecuritySetting.refreshCh
-		refreshed = true
-	}
-
+func tlsConfig() *tls.Config {
 	var tlsConfig *tls.Config
-	if currSecuritySetting.config.EncryptData && currSecuritySetting.rootCAs != nil {
+	currSecuritySettingMutex.RLock()
+
+	if currSecuritySetting.config.EncryptData &&
+		currSecuritySetting.rootCAs != nil {
 		tlsConfig = &tls.Config{RootCAs: currSecuritySetting.rootCAs}
 	}
 
-	currSecuritySettingMutex.Unlock()
-
-	return tlsConfig, refreshed
+	currSecuritySettingMutex.RUnlock()
+	return tlsConfig
 }
 
 // BucketDataSource is the main control interface returned by
@@ -373,22 +366,22 @@ type BucketDataSourceStats struct {
 	TotRefreshClusterAllServerURLsConnectBucketErr uint64
 	TotRefreshClusterDone                          uint64
 
-	TotRefreshWorkersStarted             uint64
-	TotRefreshWorkers                    uint64
-	TotRefreshWorkersClusterChKicks      uint64
-	TotRefreshWorkersSecurityUpdateKicks uint64
-	TotRefreshWorkersVBMNilErr           uint64
-	TotRefreshWorkersVBucketIDErr        uint64
-	TotRefreshWorkersServerIdxsErr       uint64
-	TotRefreshWorkersMasterIdxErr        uint64
-	TotRefreshWorkersMasterServerErr     uint64
-	TotRefreshWorkersRemoveWorker        uint64
-	TotRefreshWorkersAddWorker           uint64
-	TotRefreshWorkersKickWorker          uint64
-	TotRefreshWorkersCloseWorker         uint64
-	TotRefreshWorkersLoop                uint64
-	TotRefreshWorkersLoopDone            uint64
-	TotRefreshWorkersDone                uint64
+	TotRefreshWorkersStarted         uint64
+	TotRefreshWorkers                uint64
+	TotRefreshWorkersClusterChKicks  uint64
+	TotRefreshWorkersSecurityUpdates uint64
+	TotRefreshWorkersVBMNilErr       uint64
+	TotRefreshWorkersVBucketIDErr    uint64
+	TotRefreshWorkersServerIdxsErr   uint64
+	TotRefreshWorkersMasterIdxErr    uint64
+	TotRefreshWorkersMasterServerErr uint64
+	TotRefreshWorkersRemoveWorker    uint64
+	TotRefreshWorkersAddWorker       uint64
+	TotRefreshWorkersKickWorker      uint64
+	TotRefreshWorkersCloseWorker     uint64
+	TotRefreshWorkersLoop            uint64
+	TotRefreshWorkersLoopDone        uint64
+	TotRefreshWorkersDone            uint64
 
 	TotWorkerStart      uint64
 	TotWorkerDone       uint64
@@ -775,24 +768,24 @@ func (d *bucketDataSource) refreshWorkers() {
 	// Keyed by server, value is chan of array of vbucketID's that the
 	// worker needs to provide.
 	workers := make(map[string]chan []uint16)
-
+	var totSecurityUpdates uint64
 OUTER_LOOP:
 	for {
-		var tlsConfigRefreshed bool
 		select {
 		case <-d.refreshWorkersCh:
 			// Wait for refresh kick
 			atomic.AddUint64(&d.stats.TotRefreshWorkersClusterChKicks, 1)
 		case <-d.stopCh:
 			break OUTER_LOOP
-		case <-currSecuritySetting.refreshCh:
-			// tlsConfig has been refreshed
-			tlsConfigRefreshed = true
-			atomic.AddUint64(&d.stats.TotRefreshWorkersSecurityUpdateKicks, 1)
 		}
 
-		tlsConfig, refreshed := fetchTLSConfig()
-		tlsConfigRefreshed = tlsConfigRefreshed || refreshed
+		// if the security settings refresh kick happens from a tls config update,
+		// then this stat would have bumped.
+		latestTotSecurityUpdates :=
+			atomic.LoadUint64(&d.stats.TotRefreshWorkersSecurityUpdates)
+		tlsConfigUpdated := (totSecurityUpdates != latestTotSecurityUpdates)
+		totSecurityUpdates = latestTotSecurityUpdates
+		tlsConfig := tlsConfig()
 
 		atomic.AddUint64(&d.stats.TotRefreshWorkers, 1)
 
@@ -879,7 +872,7 @@ OUTER_LOOP:
 		// latest vbucketIDs.
 		for server, serverVBucketIDs := range vbucketIDsByServer {
 			workerCh, exists := workers[server]
-			if !exists || workerCh == nil || tlsConfigRefreshed {
+			if !exists || workerCh == nil || tlsConfigUpdated {
 				atomic.AddUint64(&d.stats.TotRefreshWorkersAddWorker, 1)
 				workerCh = make(chan []uint16, 1)
 				workers[server] = workerCh
@@ -1849,6 +1842,9 @@ func (d *bucketDataSource) Close() error {
 
 func (d *bucketDataSource) Kick(reason string) error {
 	if d.isRunning() {
+		if reason == UpdateSecuritySettings {
+			atomic.AddUint64(&d.stats.TotRefreshWorkersSecurityUpdates, 1)
+		}
 		atomic.AddUint64(&d.stats.TotKick, 1)
 
 		var refreshClusterCh chan struct{}
