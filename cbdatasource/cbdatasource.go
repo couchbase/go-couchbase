@@ -1310,6 +1310,12 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16, tlsConf
 
 				currVBucketsMutex.Unlock()
 
+				if len(pkt.Extras) < 8 {
+					d.receiver.OnError(fmt.Errorf("error: DataChange,"+
+						" corrupted packet, vbucketID: %d, pkt: %+v",
+						vbucketID, pkt))
+					return
+				}
 				seq := binary.BigEndian.Uint64(pkt.Extras[:8])
 
 				if pkt.Opcode == gomemcached.UPR_MUTATION {
