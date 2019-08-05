@@ -46,7 +46,7 @@ type connectionPool struct {
 	connCount   uint64
 	inUse       bool
 	tlsConfig   *tls.Config
-	bucket string
+	bucket      string
 }
 
 func newConnectionPool(host string, ah AuthHandler, closer bool, poolSize, poolOverflow int, tlsConfig *tls.Config, bucket string) *connectionPool {
@@ -91,6 +91,10 @@ func defaultMkConn(host string, ah AuthHandler, tlsConfig *tls.Config, bucketNam
 		return nil, err
 	}
 
+	if DefaultTimeout > 0 {
+		conn.SetDeadline(getDeadline(noDeadline, DefaultTimeout))
+	}
+
 	if TCPKeepalive == true {
 		conn.SetKeepAliveOptions(time.Duration(TCPKeepaliveInterval) * time.Second)
 	}
@@ -111,16 +115,7 @@ func defaultMkConn(host string, ah AuthHandler, tlsConfig *tls.Config, bucketNam
 	}
 
 	if len(features) > 0 {
-		if DefaultTimeout > 0 {
-			conn.SetDeadline(getDeadline(noDeadline, DefaultTimeout))
-		}
-
 		res, err := conn.EnableFeatures(features)
-
-		if DefaultTimeout > 0 {
-			conn.SetDeadline(noDeadline)
-		}
-
 		if err != nil && isTimeoutError(err) {
 			conn.Close()
 			return nil, err
@@ -137,10 +132,15 @@ func defaultMkConn(host string, ah AuthHandler, tlsConfig *tls.Config, bucketNam
 			conn.Close()
 			return nil, err
 		}
+
+		if DefaultTimeout > 0 {
+			conn.SetDeadline(noDeadline)
+		}
+
 		return conn, nil
 	}
 	name, pass, bucket := ah.GetCredentials()
-	if bucket  == "" {
+	if bucket == "" {
 		// Authenticator does not know specific bucket.
 		bucket = bucketName
 	}
@@ -161,6 +161,11 @@ func defaultMkConn(host string, ah AuthHandler, tlsConfig *tls.Config, bucketNam
 			}
 		}
 	}
+
+	if DefaultTimeout > 0 {
+		conn.SetDeadline(noDeadline)
+	}
+
 	return conn, nil
 }
 
