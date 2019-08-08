@@ -34,6 +34,9 @@ var ClientTimeOut = 10 * time.Second
 var HTTPTransport = &http.Transport{MaxIdleConnsPerHost: MaxIdleConnsPerHost}
 var HTTPClient = &http.Client{Transport: HTTPTransport, Timeout: ClientTimeOut}
 
+// Use this client for reading from streams that should be open for an extended duration.
+var HTTPClientForStreaming = &http.Client{Transport: HTTPTransport, Timeout: 0}
+
 // PoolSize is the size of each connection pool (per host).
 var PoolSize = 64
 
@@ -580,6 +583,7 @@ func isHttpConnError(err error) bool {
 }
 
 var client *http.Client
+var clientForStreaming *http.Client
 
 func ClientConfigForX509(certFile, keyFile, rootFile string) (*tls.Config, error) {
 	cfg := &tls.Config{}
@@ -610,6 +614,59 @@ func ClientConfigForX509(certFile, keyFile, rootFile string) (*tls.Config, error
 
 	cfg.RootCAs = caCertPool
 	return cfg, nil
+}
+
+// This version of doHTTPRequest is for requests where the response connection is held open
+// for an extended duration since line is a new and significant output.
+//
+// The ordinary version of this method expects the results to arrive promptly, and
+// therefore use an HTTP client with a timeout. This client is not suitable
+// for streaming use.
+func doHTTPRequestForStreaming(req *http.Request) (*http.Response, error) {
+	var err error
+	var res *http.Response
+
+	// we need a client that ignores certificate errors, since we self-sign
+	// our certs
+	if clientForStreaming == nil && req.URL.Scheme == "https" {
+		var tr *http.Transport
+
+		if skipVerify {
+			tr = &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			}
+		} else {
+			// Handle cases with cert
+
+			cfg, err := ClientConfigForX509(certFile, keyFile, rootFile)
+			if err != nil {
+				return nil, err
+			}
+
+			tr = &http.Transport{
+				TLSClientConfig: cfg,
+			}
+		}
+
+		clientForStreaming = &http.Client{Transport: tr, Timeout: 0}
+
+	} else if clientForStreaming == nil {
+		clientForStreaming = HTTPClientForStreaming
+	}
+
+	for i := 0; i < HTTP_MAX_RETRY; i++ {
+		res, err = clientForStreaming.Do(req)
+		if err != nil && isHttpConnError(err) {
+			continue
+		}
+		break
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return res, err
 }
 
 func doHTTPRequest(req *http.Request) (*http.Response, error) {
@@ -787,7 +844,7 @@ func (c *Client) processStream(baseURL *url.URL, path string, authHandler AuthHa
 		return err
 	}
 
-	res, err := doHTTPRequest(req)
+	res, err := doHTTPRequestForStreaming(req)
 	if err != nil {
 		return err
 	}
