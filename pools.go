@@ -262,9 +262,15 @@ type PoolServices struct {
 // NodeServices is all the bucket-independent services running on
 // a node (given by Hostname)
 type NodeServices struct {
-	Services map[string]int `json:"services,omitempty"`
+	Services       map[string]int                `json:"services,omitempty"`
+	Hostname       string                        `json:"hostname"`
+	ThisNode       bool                          `json:"thisNode"`
+	AlternateNames map[string]NodeAlternateNames `json:"alternateAddresses"`
+}
+
+type NodeAlternateNames struct {
 	Hostname string         `json:"hostname"`
-	ThisNode bool           `json:"thisNode"`
+	Ports    map[string]int `json:"ports"`
 }
 
 type BucketNotFoundError struct {
