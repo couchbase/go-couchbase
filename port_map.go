@@ -27,8 +27,8 @@ We will assume that either hostname fields are present, or there is only a singl
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"strconv"
-	"strings"
 )
 
 func ParsePoolServices(jsonInput string) (*PoolServices, error) {
@@ -38,12 +38,11 @@ func ParsePoolServices(jsonInput string) (*PoolServices, error) {
 }
 
 func MapKVtoSSL(hostport string, ps *PoolServices) (string, error) {
-	colonIndex := strings.LastIndex(hostport, ":")
-	if colonIndex < 0 {
-		return "", fmt.Errorf("Unable to find host/port separator in %s", hostport)
+	host, port, err := net.SplitHostPort(hostport)
+	if err != nil {
+		return "", fmt.Errorf("Unable to split hostport %s: %v", hostport, err)
 	}
-	host := hostport[0:colonIndex]
-	port := hostport[colonIndex+1:]
+
 	portInt, err := strconv.Atoi(port)
 	if err != nil {
 		return "", fmt.Errorf("Unable to parse host/port combination %s: %v", hostport, err)
