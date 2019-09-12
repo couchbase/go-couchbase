@@ -37,6 +37,9 @@ func ParsePoolServices(jsonInput string) (*PoolServices, error) {
 	return ps, err
 }
 
+// Accepts a "host:port" string representing the KV TCP port and the pools
+// nodeServices payload and returns a host:port string representing the KV
+// TLS port on the same node as the KV TCP port.
 func MapKVtoSSL(hostport string, ps *PoolServices) (string, error) {
 	host, port, err := net.SplitHostPort(hostport)
 	if err != nil {
@@ -49,35 +52,36 @@ func MapKVtoSSL(hostport string, ps *PoolServices) (string, error) {
 	}
 
 	var ns *NodeServices
-	if len(ps.NodesExt) == 1 {
-		ns = &(ps.NodesExt[0])
-	} else {
-		for i := range ps.NodesExt {
-			hostname := ps.NodesExt[i].Hostname
-			if len(hostname) == 0 {
-				// in case of missing hostname, check for 127.0.0.1
-				hostname = "127.0.0.1"
-			}
-			if hostname == host {
-				ns = &(ps.NodesExt[i])
-				break
-			}
+	for i := range ps.NodesExt {
+		hostname := ps.NodesExt[i].Hostname
+		if len(hostname) != 0 && hostname != host {
+			/* If the hostname is the empty string, it means the node (and by extension
+			   the cluster) is configured on the loopback. Further, it means that the client
+			   should use whatever hostname it used to get the nodeServices information in
+			   the first place to access the cluster. Thus, when the hostname is empty in
+			   the nodeService entry we can assume that client will use the hostname it used
+			   to access the KV TCP endpoint - and thus that it automatically "matches".
+			   If hostname is not empty and doesn't match then we move to the next entry.
+			*/
+			continue
+		}
+		kvPort, found := ps.NodesExt[i].Services["kv"]
+		if !found {
+			/* not a node with a KV service  */
+			continue
+		}
+		if kvPort == portInt {
+			ns = &(ps.NodesExt[i])
+			break
 		}
 	}
 
 	if ns == nil {
 		return "", fmt.Errorf("Unable to parse host/port combination %s: no matching node found among %d", hostport, len(ps.NodesExt))
 	}
-	kv, found := ns.Services["kv"]
-	if !found {
-		return "", fmt.Errorf("Unable to map host/port combination %s: target host has no kv port listed", hostport)
-	}
 	kvSSL, found := ns.Services["kvSSL"]
 	if !found {
 		return "", fmt.Errorf("Unable to map host/port combination %s: target host has no kvSSL port listed", hostport)
-	}
-	if portInt != kv {
-		return "", fmt.Errorf("Unable to map hostport combination %s: expected port %d but found %d", hostport, portInt, kv)
 	}
 	return fmt.Sprintf("%s:%d", host, kvSSL), nil
 }
