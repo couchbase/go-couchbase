@@ -1269,11 +1269,10 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 	uri := b.URI
 	client := pool.client
 	b.RUnlock()
-	tlsConfig := client.tlsConfig
 
 	var poolServices PoolServices
 	var err error
-	if tlsConfig != nil {
+	if client.tlsConfig != nil {
 		poolServices, err = client.GetPoolServices("default")
 		if err != nil {
 			return err
@@ -1304,7 +1303,7 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 		if preserveConnections {
 			pool := b.getConnPoolByHost(tmpb.VBSMJson.ServerList[i], true /* bucket already locked */)
-			if pool != nil && pool.inUse == false {
+			if pool != nil && pool.inUse == false && pool.tlsConfig == client.tlsConfig {
 				// if the hostname and index is unchanged then reuse this pool
 				newcps[i] = pool
 				pool.inUse = true
@@ -1313,7 +1312,7 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 		}
 
 		hostport := tmpb.VBSMJson.ServerList[i]
-		if tlsConfig != nil {
+		if client.tlsConfig != nil {
 			hostport, err = MapKVtoSSL(hostport, &poolServices)
 			if err != nil {
 				b.Unlock()
@@ -1323,12 +1322,12 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 		if b.ah != nil {
 			newcps[i] = newConnectionPool(hostport,
-				b.ah, AsynchronousCloser, PoolSize, PoolOverflow, tlsConfig, b.Name)
+				b.ah, AsynchronousCloser, PoolSize, PoolOverflow, client.tlsConfig, b.Name)
 
 		} else {
 			newcps[i] = newConnectionPool(hostport,
 				b.authHandler(true /* bucket already locked */),
-				AsynchronousCloser, PoolSize, PoolOverflow, tlsConfig, b.Name)
+				AsynchronousCloser, PoolSize, PoolOverflow, client.tlsConfig, b.Name)
 		}
 	}
 	b.replaceConnPools2(newcps, true /* bucket already locked */)

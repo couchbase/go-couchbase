@@ -84,19 +84,9 @@ func (b *Bucket) replaceConnPools2(with []*connectionPool, bucketLocked bool) {
 }
 
 func (b *Bucket) UpdateBucket() error {
-
 	var failures int
 	var returnErr error
-
 	var poolServices PoolServices
-	var err error
-	tlsConfig := b.pool.client.tlsConfig
-	if tlsConfig != nil {
-		poolServices, err = b.pool.client.GetPoolServices("default")
-		if err != nil {
-			return err
-		}
-	}
 
 	for {
 
@@ -156,6 +146,16 @@ func (b *Bucket) UpdateBucket() error {
 
 			// if we got here, reset failure count
 			failures = 0
+
+			if b.pool.client.tlsConfig != nil {
+				poolServices, err = b.pool.client.GetPoolServices("default")
+				if err != nil {
+					returnErr = err
+					res.Body.Close()
+					break
+				}
+			}
+
 			b.Lock()
 
 			// mark all the old connection pools for deletion
@@ -170,7 +170,7 @@ func (b *Bucket) UpdateBucket() error {
 			for i := range newcps {
 				// get the old connection pool and check if it is still valid
 				pool := b.getConnPoolByHost(tmpb.VBSMJson.ServerList[i], true /* bucket already locked */)
-				if pool != nil && pool.inUse == false {
+				if pool != nil && pool.inUse == false && pool.tlsConfig == b.pool.client.tlsConfig {
 					// if the hostname and index is unchanged then reuse this pool
 					newcps[i] = pool
 					pool.inUse = true
@@ -178,7 +178,7 @@ func (b *Bucket) UpdateBucket() error {
 				}
 				// else create a new pool
 				hostport := tmpb.VBSMJson.ServerList[i]
-				if tlsConfig != nil {
+				if b.pool.client.tlsConfig != nil {
 					hostport, err = MapKVtoSSL(hostport, &poolServices)
 					if err != nil {
 						b.Unlock()
