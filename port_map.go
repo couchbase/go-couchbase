@@ -40,15 +40,15 @@ func ParsePoolServices(jsonInput string) (*PoolServices, error) {
 // Accepts a "host:port" string representing the KV TCP port and the pools
 // nodeServices payload and returns a host:port string representing the KV
 // TLS port on the same node as the KV TCP port.
-func MapKVtoSSL(hostport string, ps *PoolServices) (string, error) {
+func MapKVtoSSL(hostport string, ps *PoolServices) (string, bool, error) {
 	host, port, err := net.SplitHostPort(hostport)
 	if err != nil {
-		return "", fmt.Errorf("Unable to split hostport %s: %v", hostport, err)
+		return "", false, fmt.Errorf("Unable to split hostport %s: %v", hostport, err)
 	}
 
 	portInt, err := strconv.Atoi(port)
 	if err != nil {
-		return "", fmt.Errorf("Unable to parse host/port combination %s: %v", hostport, err)
+		return "", false, fmt.Errorf("Unable to parse host/port combination %s: %v", hostport, err)
 	}
 
 	var ns *NodeServices
@@ -77,11 +77,16 @@ func MapKVtoSSL(hostport string, ps *PoolServices) (string, error) {
 	}
 
 	if ns == nil {
-		return "", fmt.Errorf("Unable to parse host/port combination %s: no matching node found among %d", hostport, len(ps.NodesExt))
+		return "", false, fmt.Errorf("Unable to parse host/port combination %s: no matching node found among %d", hostport, len(ps.NodesExt))
 	}
 	kvSSL, found := ns.Services["kvSSL"]
 	if !found {
-		return "", fmt.Errorf("Unable to map host/port combination %s: target host has no kvSSL port listed", hostport)
+		return "", false, fmt.Errorf("Unable to map host/port combination %s: target host has no kvSSL port listed", hostport)
 	}
-	return fmt.Sprintf("%s:%d", host, kvSSL), nil
+
+	//Don't encrypt for communication between local nodes
+	if len(ns.Hostname) == 0 || ns.ThisNode {
+		return hostport, false, nil
+	}
+	return fmt.Sprintf("%s:%d", host, kvSSL), true, nil
 }

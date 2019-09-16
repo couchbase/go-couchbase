@@ -1300,10 +1300,10 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 	newcps := make([]*connectionPool, len(tmpb.VBSMJson.ServerList))
 	for i := range newcps {
-
+		hostport := tmpb.VBSMJson.ServerList[i]
 		if preserveConnections {
-			pool := b.getConnPoolByHost(tmpb.VBSMJson.ServerList[i], true /* bucket already locked */)
-			if pool != nil && pool.inUse == false && pool.tlsConfig == client.tlsConfig {
+			pool := b.getConnPoolByHost(hostport, true /* bucket already locked */)
+			if pool != nil && pool.inUse == false && (!pool.encrypted || pool.tlsConfig == client.tlsConfig) {
 				// if the hostname and index is unchanged then reuse this pool
 				newcps[i] = pool
 				pool.inUse = true
@@ -1311,9 +1311,9 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 			}
 		}
 
-		hostport := tmpb.VBSMJson.ServerList[i]
+		var encrypted bool
 		if client.tlsConfig != nil {
-			hostport, err = MapKVtoSSL(hostport, &poolServices)
+			hostport, encrypted, err = MapKVtoSSL(hostport, &poolServices)
 			if err != nil {
 				b.Unlock()
 				return err
@@ -1322,12 +1322,12 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 		if b.ah != nil {
 			newcps[i] = newConnectionPool(hostport,
-				b.ah, AsynchronousCloser, PoolSize, PoolOverflow, client.tlsConfig, b.Name)
+				b.ah, AsynchronousCloser, PoolSize, PoolOverflow, client.tlsConfig, b.Name, encrypted)
 
 		} else {
 			newcps[i] = newConnectionPool(hostport,
 				b.authHandler(true /* bucket already locked */),
-				AsynchronousCloser, PoolSize, PoolOverflow, client.tlsConfig, b.Name)
+				AsynchronousCloser, PoolSize, PoolOverflow, client.tlsConfig, b.Name, encrypted)
 		}
 	}
 	b.replaceConnPools2(newcps, true /* bucket already locked */)

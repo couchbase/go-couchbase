@@ -879,14 +879,18 @@ OUTER_LOOP:
 
 				var conf *tls.Config
 				if tlsConfig != nil {
-					serverSSL, err := couchbase.MapKVtoSSL(server, ps)
+					serverSSL, encrypted, err := couchbase.MapKVtoSSL(server, ps)
 					// If the "kv" port for the selected server wasn't
 					// successfully mapped to it's "kvSsl" port, silently
 					// fall back to using non-encrypted DCP to support
 					// mixed-version cluster scenarios.
 					if err == nil {
 						server = serverSSL
-						conf = tlsConfig
+						if encrypted {
+							conf = tlsConfig
+						} else {
+							conf = nil
+						}
 					} else if d.options.Logf != nil {
 						d.options.Logf("cbdatasource: falling back to non"+
 							" encrypted dcp as MapKVtoSSL err: %v for"+

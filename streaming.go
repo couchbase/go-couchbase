@@ -177,9 +177,10 @@ func (b *Bucket) UpdateBucket() error {
 					continue
 				}
 				// else create a new pool
+				var encrypted bool
 				hostport := tmpb.VBSMJson.ServerList[i]
 				if b.pool.client.tlsConfig != nil {
-					hostport, err = MapKVtoSSL(hostport, &poolServices)
+					hostport, encrypted, err = MapKVtoSSL(hostport, &poolServices)
 					if err != nil {
 						b.Unlock()
 						return err
@@ -187,12 +188,12 @@ func (b *Bucket) UpdateBucket() error {
 				}
 				if b.ah != nil {
 					newcps[i] = newConnectionPool(hostport,
-						b.ah, false, PoolSize, PoolOverflow, b.pool.client.tlsConfig, b.Name)
+						b.ah, false, PoolSize, PoolOverflow, b.pool.client.tlsConfig, b.Name, encrypted)
 
 				} else {
 					newcps[i] = newConnectionPool(hostport,
 						b.authHandler(true /* bucket already locked */),
-						false, PoolSize, PoolOverflow, b.pool.client.tlsConfig, b.Name)
+						false, PoolSize, PoolOverflow, b.pool.client.tlsConfig, b.Name, encrypted)
 				}
 			}
 

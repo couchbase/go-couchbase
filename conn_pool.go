@@ -45,11 +45,12 @@ type connectionPool struct {
 	poolSize    int
 	connCount   uint64
 	inUse       bool
+	encrypted   bool
 	tlsConfig   *tls.Config
 	bucket      string
 }
 
-func newConnectionPool(host string, ah AuthHandler, closer bool, poolSize, poolOverflow int, tlsConfig *tls.Config, bucket string) *connectionPool {
+func newConnectionPool(host string, ah AuthHandler, closer bool, poolSize, poolOverflow int, tlsConfig *tls.Config, bucket string, encrypted bool) *connectionPool {
 	connSize := poolSize
 	if closer {
 		connSize += poolOverflow
@@ -61,9 +62,14 @@ func newConnectionPool(host string, ah AuthHandler, closer bool, poolSize, poolO
 		mkConn:      defaultMkConn,
 		auth:        ah,
 		poolSize:    poolSize,
-		tlsConfig:   tlsConfig,
 		bucket:      bucket,
+		encrypted:   encrypted,
 	}
+
+	if encrypted {
+		rv.tlsConfig = tlsConfig
+	}
+
 	if closer {
 		rv.bailOut = make(chan bool, 1)
 		go rv.connCloser()
