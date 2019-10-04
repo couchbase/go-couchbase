@@ -1363,6 +1363,7 @@ func (p *Pool) refresh() (err error) {
 		p.BucketMap[b.Name] = b
 		runtime.SetFinalizer(b, bucketFinalizer)
 	}
+	buckets = nil
 	return nil
 }
 
@@ -1495,10 +1496,16 @@ func (p *Pool) Close() {
 
 		// MB-33208 defer closing connection pools until the bucket is no longer used
 		bucket := p.BucketMap[b]
+		p.BucketMap[b] = nil
 		bucket.Lock()
 		bucket.closed = true
+		if bucket.connPools == nil {
+			runtime.SetFinalizer(&bucket, nil)
+			bucket.Close()
+		}
 		bucket.Unlock()
 	}
+	p.BucketMap = nil
 }
 
 // GetBucket is a convenience function for getting a named bucket from
