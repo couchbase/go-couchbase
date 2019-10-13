@@ -1490,22 +1490,33 @@ func (p *Pool) GetClient() *Client {
 
 // Release bucket connections when the pool is no longer in use
 func (p *Pool) Close() {
+
+	// MB-36186 make the bucket map inaccessible
+	bucketMap := p.BucketMap
+	p.BucketMap = nil
+
 	// fine to loop through the buckets unlocked
 	// locking happens at the bucket level
-	for b, _ := range p.BucketMap {
+	for b, _ := range bucketMap {
+
+		// MB-36186 make the bucket unreachable and avoid concurrent read/write map panics
+		bucket := bucketMap[b]
+		bucketMap[b] = nil
+
+		bucket.Lock()
 
 		// MB-33208 defer closing connection pools until the bucket is no longer used
-		bucket := p.BucketMap[b]
-		p.BucketMap[b] = nil
-		bucket.Lock()
-		bucket.closed = true
-		if bucket.connPools == nil {
+		// MB-36186 if the bucket is unused make it unreachable straight away
+		needClose := bucket.connPools == nil && !bucket.closed
+		if needClose {
 			runtime.SetFinalizer(&bucket, nil)
+		}
+		bucket.closed = true
+		bucket.Unlock()
+		if needClose {
 			bucket.Close()
 		}
-		bucket.Unlock()
 	}
-	p.BucketMap = nil
 }
 
 // GetBucket is a convenience function for getting a named bucket from
