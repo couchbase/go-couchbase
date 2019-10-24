@@ -27,32 +27,32 @@ func TestSingleNode(t *testing.T) {
 
 	// Should succeed.
 	target := "127.0.0.1:11210"
-	res, err := MapKVtoSSL(target, poolServices)
+	res, _, err := MapKVtoSSL(target, poolServices)
 	if err != nil {
 		t.Fatalf("Mapping target %s, expected success, got error: %v", target, err)
 	}
-	expected := "127.0.0.1:11207"
+	expected := "127.0.0.1:11210" // no hostname
 	if res != expected {
 		t.Fatalf("Mapping target %s, expected %s, got %s", target, expected, res)
 	}
 
 	// No port.
 	target = "127.0.0.1"
-	res, err = MapKVtoSSL(target, poolServices)
+	res, _, err = MapKVtoSSL(target, poolServices)
 	if err == nil {
 		t.Fatalf("Mapping target %s, expected failure, got success: %s", target, res)
 	}
 
 	// Bad KV port.
 	target = "127.0.0.1:11111"
-	res, err = MapKVtoSSL(target, poolServices)
+	res, _, err = MapKVtoSSL(target, poolServices)
 	if err == nil {
 		t.Fatalf("Mapping target %s, expected failure, got success: %s", target, res)
 	}
 }
 
 func TestMultiNode(t *testing.T) {
-	jsonInput := `{"rev":32,"nodesExt":[{"services":{"mgmt":8091,"mgmtSSL":18091,"fts":8094,"ftsSSL":18094,"indexAdmin":9100,"indexScan":9101,"indexHttp":9102,"indexStreamInit":9103,"indexStreamCatchup":9104,"indexStreamMaint":9105,"indexHttps":19102,"capiSSL":18092,"capi":8092,"kvSSL":11299,"projector":9999,"kv":11298,"moxi":11211},"hostname":"172.23.123.101"},{"services":{"mgmt":8091,"mgmtSSL":18091,"indexAdmin":9100,"indexScan":9101,"indexHttp":9102,"indexStreamInit":9103,"indexStreamCatchup":9104,"indexStreamMaint":9105,"indexHttps":19102,"capiSSL":18092,"capi":8092,"kvSSL":11207,"projector":9999,"kv":11210,"moxi":11211,"n1ql":8093,"n1qlSSL":18093},"thisNode":true,"hostname":"172.23.123.102"}]}`
+	jsonInput := `{"rev":32,"nodesExt":[{"services":{"mgmt":8091,"mgmtSSL":18091,"fts":8094,"ftsSSL":18094,"indexAdmin":9100,"indexScan":9101,"indexHttp":9102,"indexStreamInit":9103,"indexStreamCatchup":9104,"indexStreamMaint":9105,"indexHttps":19102,"capiSSL":18092,"capi":8092,"kvSSL":11299,"projector":9999,"kv":11298,"moxi":11211},"hostname":"172.23.123.101"},{"services":{"mgmt":8091,"mgmtSSL":18091,"indexAdmin":9100,"indexScan":9101,"indexHttp":9102,"indexStreamInit":9103,"indexStreamCatchup":9104,"indexStreamMaint":9105,"indexHttps":19102,"capiSSL":18092,"capi":8092,"kvSSL":11207,"projector":9999,"kv":11210,"moxi":11211,"n1ql":8093,"n1qlSSL":18093},"thisNode":false,"hostname":"172.23.123.102"}]}`
 
 	poolServices, err := ParsePoolServices(jsonInput)
 	if err != nil {
@@ -73,7 +73,7 @@ func TestMultiNode(t *testing.T) {
 
 	// Should succeed.
 	target := "172.23.123.102:11210"
-	res, err := MapKVtoSSL(target, poolServices)
+	res, _, err := MapKVtoSSL(target, poolServices)
 	if err != nil {
 		t.Fatalf("Mapping target %s, expected success, got error: %v", target, err)
 	}
@@ -84,21 +84,21 @@ func TestMultiNode(t *testing.T) {
 
 	// No such host.
 	target = "172.23.123.999:11210"
-	res, err = MapKVtoSSL(target, poolServices)
+	res, _, err = MapKVtoSSL(target, poolServices)
 	if err == nil {
 		t.Fatalf("Mapping target %s, expected failure, got success: %s", target, res)
 	}
 
 	// Bad KV port.
 	target = "172.23.123.101:11111"
-	res, err = MapKVtoSSL(target, poolServices)
+	res, _, err = MapKVtoSSL(target, poolServices)
 	if err == nil {
 		t.Fatalf("Mapping target %s, expected failure, got success: %s", target, res)
 	}
 }
 
 func TestIPv6Node(t *testing.T) {
-	jsonInput := `{"rev":32,"nodesExt":[{"services":{"mgmt":8091,"mgmtSSL":18091,"fts":8094,"ftsSSL":18094,"indexAdmin":9100,"indexScan":9101,"indexHttp":9102,"indexStreamInit":9103,"indexStreamCatchup":9104,"indexStreamMaint":9105,"indexHttps":19102,"capiSSL":18092,"capi":8092,"kvSSL":11299,"projector":9999,"kv":11298,"moxi":11211},"hostname":"[DEAD::BEEF]"},{"services":{"mgmt":8091,"mgmtSSL":18091,"indexAdmin":9100,"indexScan":9101,"indexHttp":9102,"indexStreamInit":9103,"indexStreamCatchup":9104,"indexStreamMaint":9105,"indexHttps":19102,"capiSSL":18092,"capi":8092,"kvSSL":11207,"projector":9999,"kv":11210,"moxi":11211,"n1ql":8093,"n1qlSSL":18093},"thisNode":true,"hostname":"[FEED::DEED]"}]}`
+	jsonInput := `{"rev":32,"nodesExt":[{"services":{"mgmt":8091,"mgmtSSL":18091,"fts":8094,"ftsSSL":18094,"indexAdmin":9100,"indexScan":9101,"indexHttp":9102,"indexStreamInit":9103,"indexStreamCatchup":9104,"indexStreamMaint":9105,"indexHttps":19102,"capiSSL":18092,"capi":8092,"kvSSL":11299,"projector":9999,"kv":11298,"moxi":11211},"hostname":"DEAD::BEEF"},{"services":{"mgmt":8091,"mgmtSSL":18091,"indexAdmin":9100,"indexScan":9101,"indexHttp":9102,"indexStreamInit":9103,"indexStreamCatchup":9104,"indexStreamMaint":9105,"indexHttps":19102,"capiSSL":18092,"capi":8092,"kvSSL":11207,"projector":9999,"kv":11210,"moxi":11211,"n1ql":8093,"n1qlSSL":18093},"thisNode":false,"hostname":"FEED::DEED"}]}`
 
 	poolServices, err := ParsePoolServices(jsonInput)
 	if err != nil {
@@ -119,7 +119,7 @@ func TestIPv6Node(t *testing.T) {
 
 	// Should succeed.
 	target := "[FEED::DEED]:11210"
-	res, err := MapKVtoSSL(target, poolServices)
+	res, _, err := MapKVtoSSL(target, poolServices)
 	if err != nil {
 		t.Fatalf("Mapping target %s, expected success, got error: %v", target, err)
 	}
@@ -130,14 +130,14 @@ func TestIPv6Node(t *testing.T) {
 
 	// Bad KV port.
 	target = "[DEAD::BEEF]:11111"
-	res, err = MapKVtoSSL(target, poolServices)
+	res, _, err = MapKVtoSSL(target, poolServices)
 	if err == nil {
 		t.Fatalf("Mapping target %s, expected failure, got success: %s", target, res)
 	}
 }
 
 func TestMissingIPNodes(t *testing.T) {
-	jsonInput := `{"rev":73,"nodesExt":[{"services":{"mgmt":9000,"mgmtSSL":19000,"fts":9200,"ftsSSL":19200,"ftsGRPC":9201,"ftsGRPCSSL":19201,"kv":12000,"kvSSL":11998,"capi":9500,"capiSSL":19500,"projector":10000},"thisNode":true,"hostname":"192.168.212.71"},{"services":{"mgmt":9001,"mgmtSSL":19001,"kv":12002,"kvSSL":11994,"capi":9501,"capiSSL":19501,"projector":10001}}],"clusterCapabilitiesVer":[1,0],"clusterCapabilities":{"n1ql":["enhancedPreparedStatements"]}}`
+	jsonInput := `{"rev":73,"nodesExt":[{"services":{"mgmt":9000,"mgmtSSL":19000,"fts":9200,"ftsSSL":19200,"ftsGRPC":9201,"ftsGRPCSSL":19201,"kv":12000,"kvSSL":11998,"capi":9500,"capiSSL":19500,"projector":10000},"thisNode":false,"hostname":"192.168.212.71"},{"services":{"mgmt":9001,"mgmtSSL":19001,"kv":12002,"kvSSL":11994,"capi":9501,"capiSSL":19501,"projector":10001},"thisNode":false,"hostname":"192.168.212.72"}],"clusterCapabilitiesVer":[1,0],"clusterCapabilities":{"n1ql":["enhancedPreparedStatements"]}}`
 
 	poolServices, err := ParsePoolServices(jsonInput)
 	if err != nil {
@@ -157,7 +157,7 @@ func TestMissingIPNodes(t *testing.T) {
 	}
 
 	target := "192.168.212.71:12000"
-	res, err := MapKVtoSSL(target, poolServices)
+	res, _, err := MapKVtoSSL(target, poolServices)
 	if err != nil {
 		t.Fatalf("Mapping target %s, expected success, got error: %v", target, err)
 	}
@@ -166,12 +166,12 @@ func TestMissingIPNodes(t *testing.T) {
 		t.Fatalf("Mapping target %s, expected %s, got %s", target, expected, res)
 	}
 
-	target = "127.0.0.1:12002"
-	res, err = MapKVtoSSL(target, poolServices)
+	target = "192.168.212.72:12002"
+	res, _, err = MapKVtoSSL(target, poolServices)
 	if err != nil {
 		t.Fatalf("Mapping target %s, expected success, got error: %v", target, err)
 	}
-	expected = "127.0.0.1:11994"
+	expected = "192.168.212.72:11994"
 	if res != expected {
 		t.Fatalf("Mapping target %s, expected %s, got %s", target, expected, res)
 	}
