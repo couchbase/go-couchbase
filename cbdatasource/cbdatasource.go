@@ -100,7 +100,7 @@ func UpdateSecurityConfig(newConfig *SecurityConfig) error {
 	return nil
 }
 
-func tlsConfig() *tls.Config {
+func fetchGlobalTLSConfig() *tls.Config {
 	var tlsConfig *tls.Config
 	currSecuritySettingMutex.RLock()
 
@@ -258,6 +258,10 @@ type BucketDataSourceOptions struct {
 	// Defaults to memcached.ConnectTLS().
 	ConnectTLS func(protocol, dest string, tlsConfig *tls.Config) (
 		*memcached.Client, error)
+
+	// Optional function to fetch tls.Config that would be used for the
+	// ConnectTLS(..) function (above)
+	TLSConfig func() *tls.Config
 
 	// Optional function for logging diagnostic messages.
 	Logf func(fmt string, v ...interface{})
@@ -785,7 +789,12 @@ OUTER_LOOP:
 			atomic.LoadUint64(&d.stats.TotRefreshWorkersSecurityUpdates)
 		tlsConfigUpdated := (totSecurityUpdates != latestTotSecurityUpdates)
 		totSecurityUpdates = latestTotSecurityUpdates
-		tlsConfig := tlsConfig()
+		var tlsConfig *tls.Config
+		if tlsConfigCB := d.options.TLSConfig; tlsConfigCB != nil {
+			tlsConfig = tlsConfigCB()
+		} else {
+			tlsConfig = fetchGlobalTLSConfig()
+		}
 
 		atomic.AddUint64(&d.stats.TotRefreshWorkers, 1)
 
