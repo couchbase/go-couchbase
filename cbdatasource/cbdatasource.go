@@ -656,6 +656,8 @@ func (d *bucketDataSource) refreshCluster() int {
 
 		bucket, err := connectBucket(serverURL, d.poolName, d.bucketName, d.auth)
 		if err != nil {
+			err = fmt.Errorf("connectBucket failed for server: %s, poolName: %s,"+
+				" bucketName: %s, err: %v", serverURL, d.poolName, d.bucketName, err)
 			atomic.AddUint64(&d.stats.TotRefreshClusterConnectBucketErr, 1)
 			d.receiver.OnError(err)
 			continue // Try another serverURL.

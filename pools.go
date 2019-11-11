@@ -821,7 +821,8 @@ func queryRestAPI(
 
 	d := json.NewDecoder(res.Body)
 	if err = d.Decode(&out); err != nil {
-		return err
+		return fmt.Errorf("json decode err: %#v, for requestUrl: %s",
+			err, requestUrl)
 	}
 	return nil
 }
@@ -1383,6 +1384,9 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 	}
 
 	err = c.parseURLResponse(poolURI, &p)
+	if err != nil {
+		return p, err
+	}
 
 	p.client = c
 
