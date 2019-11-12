@@ -88,6 +88,11 @@ var samplePool = `{
             "clusterMembership": "active",
             "couchApiBase": "http://10.203.6.236:8092/",
             "hostname": "10.203.6.236:8091",
+            "alternateAddresses": {
+                "external": {
+                    "hostname": "server0.example.com"
+                }
+            },
             "interestingStats": {
                 "curr_items": 0,
                 "curr_items_tot": 0,
@@ -117,6 +122,11 @@ var samplePool = `{
             "clusterMembership": "active",
             "couchApiBase": "http://10.32.21.163:8092/",
             "hostname": "10.32.21.163:8091",
+            "alternateAddresses": {
+                "external": {
+                    "hostname": "server1.example.com"
+                }
+            },
             "interestingStats": {
                 "curr_items": 0,
                 "curr_items_tot": 0,
@@ -145,6 +155,11 @@ var samplePool = `{
             "clusterMembership": "active",
             "couchApiBase": "http://10.98.83.17:8092/",
             "hostname": "10.98.83.17:8091",
+            "alternateAddresses": {
+                "external": {
+                    "hostname": "server2.example.com"
+                }
+            },
             "interestingStats": {
                 "curr_items": 0,
                 "curr_items_tot": 0,
@@ -173,6 +188,11 @@ var samplePool = `{
             "clusterMembership": "active",
             "couchApiBase": "http://10.34.21.232:8092/",
             "hostname": "10.34.21.232:8091",
+            "alternateAddresses": {
+                "external": {
+                    "hostname": "server3.example.com"
+                }
+            },
             "interestingStats": {
                 "curr_items": 0,
                 "curr_items_tot": 0,
@@ -201,6 +221,11 @@ var samplePool = `{
             "clusterMembership": "active",
             "couchApiBase": "http://10.203.33.4:8092/",
             "hostname": "10.203.33.4:8091",
+            "alternateAddresses": {
+                "external": {
+                    "hostname": "server4.example.com"
+                }
+            },
             "interestingStats": {
                 "curr_items": 0,
                 "curr_items_tot": 0,
@@ -287,6 +312,21 @@ func TestPool(t *testing.T) {
 	res := Pool{}
 	testParse(t, samplePool, &res)
 	assert(t, "len(pools)", 5, len(res.Nodes))
+}
+
+func TestPoolAlternateNames(t *testing.T) {
+	res := Pool{}
+	testParse(t, samplePool, &res)
+	assert(t, "node[0].AlternateAddresses[\"external\"].Hostname",
+		res.Nodes[0].AlternateNames["external"].Hostname, "server0.example.com")
+	assert(t, "node[1].AlternateAddresses[\"external\"].Hostname",
+		res.Nodes[1].AlternateNames["external"].Hostname, "server1.example.com")
+	assert(t, "node[2].AlternateAddresses[\"external\"].Hostname",
+		res.Nodes[2].AlternateNames["external"].Hostname, "server2.example.com")
+	assert(t, "node[3].AlternateAddresses[\"external\"].Hostname",
+		res.Nodes[3].AlternateNames["external"].Hostname, "server3.example.com")
+	assert(t, "node[4].AlternateAddresses[\"external\"].Hostname",
+		res.Nodes[4].AlternateNames["external"].Hostname, "server4.example.com")
 }
 
 func TestCommonAddressSuffixEmpty(t *testing.T) {

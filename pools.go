@@ -167,22 +167,23 @@ type Pools struct {
 
 // A Node is a computer in a cluster running the couchbase software.
 type Node struct {
-	ClusterCompatibility int                `json:"clusterCompatibility"`
-	ClusterMembership    string             `json:"clusterMembership"`
-	CouchAPIBase         string             `json:"couchApiBase"`
-	Hostname             string             `json:"hostname"`
-	InterestingStats     map[string]float64 `json:"interestingStats,omitempty"`
-	MCDMemoryAllocated   float64            `json:"mcdMemoryAllocated"`
-	MCDMemoryReserved    float64            `json:"mcdMemoryReserved"`
-	MemoryFree           float64            `json:"memoryFree"`
-	MemoryTotal          float64            `json:"memoryTotal"`
-	OS                   string             `json:"os"`
-	Ports                map[string]int     `json:"ports"`
-	Services             []string           `json:"services"`
-	Status               string             `json:"status"`
-	Uptime               int                `json:"uptime,string"`
-	Version              string             `json:"version"`
-	ThisNode             bool               `json:"thisNode,omitempty"`
+	ClusterCompatibility int                           `json:"clusterCompatibility"`
+	ClusterMembership    string                        `json:"clusterMembership"`
+	CouchAPIBase         string                        `json:"couchApiBase"`
+	Hostname             string                        `json:"hostname"`
+	AlternateNames       map[string]NodeAlternateNames `json:"alternateAddresses"`
+	InterestingStats     map[string]float64            `json:"interestingStats,omitempty"`
+	MCDMemoryAllocated   float64                       `json:"mcdMemoryAllocated"`
+	MCDMemoryReserved    float64                       `json:"mcdMemoryReserved"`
+	MemoryFree           float64                       `json:"memoryFree"`
+	MemoryTotal          float64                       `json:"memoryTotal"`
+	OS                   string                        `json:"os"`
+	Ports                map[string]int                `json:"ports"`
+	Services             []string                      `json:"services"`
+	Status               string                        `json:"status"`
+	Uptime               int                           `json:"uptime,string"`
+	Version              string                        `json:"version"`
+	ThisNode             bool                          `json:"thisNode,omitempty"`
 }
 
 // A Pool of nodes and buckets.
