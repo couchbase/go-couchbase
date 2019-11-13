@@ -1969,26 +1969,6 @@ func (d *bucketDataSource) logVBucketStates(server, uprOpenName, prefix string,
 
 // --------------------------------------------------------------
 
-type bucketWrapper struct {
-	b *couchbase.Bucket
-}
-
-func (bw *bucketWrapper) Close() {
-	bw.b.Close()
-}
-
-func (bw *bucketWrapper) GetUUID() string {
-	return bw.b.UUID
-}
-
-func (bw *bucketWrapper) VBServerMap() *couchbase.VBucketServerMap {
-	return bw.b.VBServerMap()
-}
-
-func (bw *bucketWrapper) GetPoolServices(name string) (*couchbase.PoolServices, error) {
-	return bw.b.GetPoolServices(name)
-}
-
 // ConnectBucket is the default function used by BucketDataSource
 // to connect to a Couchbase cluster to retrieve Bucket information.
 // It is exposed for testability and to allow applications to
@@ -2011,7 +1991,7 @@ func ConnectBucket(serverURL, poolName, bucketName string,
 			" serverURL: %s, bucketName: %s", serverURL, bucketName)
 	}
 
-	return &bucketWrapper{b: bucket}, nil
+	return bucket, nil
 }
 
 func serverHandShake(mc *memcached.Client, d *bucketDataSource) (uint32, error) {

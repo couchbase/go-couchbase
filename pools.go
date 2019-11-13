@@ -353,6 +353,13 @@ func (b *Bucket) GetName() string {
 	return ret
 }
 
+func (b *Bucket) GetUUID() string {
+	b.RLock()
+	defer b.RUnlock()
+	ret := b.UUID
+	return ret
+}
+
 // Nodes returns the current list of nodes servicing this bucket.
 func (b *Bucket) Nodes() []Node {
 	b.RLock()
