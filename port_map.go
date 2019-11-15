@@ -89,7 +89,8 @@ func MapKVtoSSL(hostport string, ps *PoolServices) (string, bool, error) {
 		return hostport, false, nil
 	}
 
-	if net.ParseIP(host).To4() == nil { // IPv6
+	ip := net.ParseIP(host)
+	if ip != nil && ip.To4() == nil && ip.To16() != nil { // IPv6 and not a FQDN
 		// Prefix and suffix square brackets as SplitHostPort removes them,
 		// see: https://golang.org/pkg/net/#SplitHostPort
 		host = "[" + host + "]"
