@@ -987,10 +987,11 @@ func (d *bucketDataSource) workerStart(server string, workerCh chan []uint16, tl
 type VBucketState struct {
 	// Valid values for state: "" (dead/closed/unknown), "requested",
 	// "running", "closing".
-	State     string
-	SnapStart uint64
-	SnapEnd   uint64
-	SnapSaved bool // True when the snapStart/snapEnd have been persisted.
+	State       string
+	SnapStart   uint64
+	SnapEnd     uint64
+	FailOverLog [][]uint64
+	SnapSaved   bool // True when the snapStart/snapEnd have been persisted.
 }
 
 // Connect once to the server and work the UPR stream.  If anything
@@ -1319,17 +1320,11 @@ func (d *bucketDataSource) worker(server string, workerCh chan []uint16, tlsConf
 					// SnapStart/SnapEnd might have a lastSeq number <
 					// SnapStart, where Couchbase Server will respond
 					// to the stream-req with an ERANGE error code.
-					v, _, err := d.getVBucketMetaData(vbucketID)
-					if err != nil || v == nil {
-						currVBucketsMutex.Unlock()
-						d.receiver.OnError(fmt.Errorf("error: DataChange,"+
-							" getVBucketMetaData, vbucketID: %d, err: %v",
-							vbucketID, err))
-						return
+					v := &VBucketMetaData{
+						SnapStart:   vbucketState.SnapStart,
+						SnapEnd:     vbucketState.SnapEnd,
+						FailOverLog: vbucketState.FailOverLog,
 					}
-
-					v.SnapStart = vbucketState.SnapStart
-					v.SnapEnd = vbucketState.SnapEnd
 
 					err = d.setVBucketMetaData(vbucketID, v)
 					if err != nil {
@@ -1639,7 +1634,10 @@ func (d *bucketDataSource) handleRecv(sendCh chan interface{},
 				return err
 			}
 
-			currVBuckets[vbucketID] = &VBucketState{State: "running"}
+			currVBuckets[vbucketID] = &VBucketState{
+				State:       "running",
+				FailOverLog: flog,
+			}
 			atomic.AddUint64(&d.stats.TotUPRStreamReqResSuccessOk, 1)
 		}
 
