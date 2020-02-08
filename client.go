@@ -236,7 +236,7 @@ func (b *Bucket) GatherStats(which string) map[string]GatheredStats {
 }
 
 // Get bucket count through the bucket stats
-func (b *Bucket) GetCount(refresh bool) (count int64, err error) {
+func (b *Bucket) GetCount(refresh bool, context ...*memcached.ClientContext) (count int64, err error) {
 	if refresh {
 		b.Refresh()
 	}
@@ -256,7 +256,7 @@ func (b *Bucket) GetCount(refresh bool) (count int64, err error) {
 }
 
 // Get bucket document size through the bucket stats
-func (b *Bucket) GetSize(refresh bool) (size int64, err error) {
+func (b *Bucket) GetSize(refresh bool, context ...*memcached.ClientContext) (size int64, err error) {
 	if refresh {
 		b.Refresh()
 	}
@@ -334,7 +334,7 @@ func backOff(attempt, maxAttempts int, duration time.Duration, exponential bool)
 
 func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error, subPaths []string,
-	eStatus *errorStatus) {
+	eStatus *errorStatus, context ...*memcached.ClientContext) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to doBulkGet(%d, %d keys)", vb, len(keys))
 	}
@@ -389,7 +389,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 			}
 
 			conn.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
-			err = conn.GetBulk(vb, keys, rv, subPaths)
+			err = conn.GetBulk(vb, keys, rv, subPaths, context...)
 			conn.SetDeadline(noDeadline)
 
 			discard := false
@@ -474,6 +474,7 @@ type vbBulkGet struct {
 	wg          *sync.WaitGroup
 	subPaths    []string
 	groupError  *errorStatus
+	context     []*memcached.ClientContext
 }
 
 const _NUM_CHANNELS = 5
@@ -523,14 +524,14 @@ func vbDoBulkGet(vbg *vbBulkGet) {
 		// Workers cannot panic and die
 		recover()
 	}()
-	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.reqDeadline, vbg.ch, vbg.ech, vbg.subPaths, vbg.groupError)
+	vbg.b.doBulkGet(vbg.k, vbg.keys, vbg.reqDeadline, vbg.ch, vbg.ech, vbg.subPaths, vbg.groupError, vbg.context...)
 }
 
 var _ERR_CHAN_FULL = fmt.Errorf("Data request queue full, aborting query.")
 
 func (b *Bucket) processBulkGet(kdm map[uint16][]string, reqDeadline time.Time,
 	ch chan<- map[string]*gomemcached.MCResponse, ech chan<- error, subPaths []string,
-	eStatus *errorStatus) {
+	eStatus *errorStatus, context ...*memcached.ClientContext) {
 
 	defer close(ch)
 	defer close(ech)
@@ -554,6 +555,7 @@ func (b *Bucket) processBulkGet(kdm map[uint16][]string, reqDeadline time.Time,
 			wg:          wg,
 			subPaths:    subPaths,
 			groupError:  eStatus,
+			context:     context,
 		}
 
 		wg.Add(1)
@@ -612,9 +614,9 @@ func errorCollector(ech <-chan error, eout chan<- error, eStatus *errorStatus) {
 // This is a wrapper around GetBulk which converts all values returned
 // by GetBulk from raw memcached responses into []byte slices.
 // Returns one document for duplicate keys
-func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
+func (b *Bucket) GetBulkRaw(keys []string, context ...*memcached.ClientContext) (map[string][]byte, error) {
 
-	resp, eout := b.getBulk(keys, noDeadline, nil)
+	resp, eout := b.getBulk(keys, noDeadline, nil, context...)
 
 	rv := make(map[string][]byte, len(keys))
 	for k, av := range resp {
@@ -632,15 +634,15 @@ func (b *Bucket) GetBulkRaw(keys []string) (map[string][]byte, error) {
 // map array for each key.  Keys that were not found will not be included in
 // the map.
 
-func (b *Bucket) GetBulk(keys []string, reqDeadline time.Time, subPaths []string) (map[string]*gomemcached.MCResponse, error) {
-	return b.getBulk(keys, reqDeadline, subPaths)
+func (b *Bucket) GetBulk(keys []string, reqDeadline time.Time, subPaths []string, context ...*memcached.ClientContext) (map[string]*gomemcached.MCResponse, error) {
+	return b.getBulk(keys, reqDeadline, subPaths, context...)
 }
 
 func (b *Bucket) ReleaseGetBulkPools(rv map[string]*gomemcached.MCResponse) {
 	_STRING_MCRESPONSE_POOL.Put(rv)
 }
 
-func (b *Bucket) getBulk(keys []string, reqDeadline time.Time, subPaths []string) (map[string]*gomemcached.MCResponse, error) {
+func (b *Bucket) getBulk(keys []string, reqDeadline time.Time, subPaths []string, context ...*memcached.ClientContext) (map[string]*gomemcached.MCResponse, error) {
 	kdm := _VB_STRING_POOL.Get()
 	defer _VB_STRING_POOL.Put(kdm)
 	for _, k := range keys {
@@ -663,7 +665,7 @@ func (b *Bucket) getBulk(keys []string, reqDeadline time.Time, subPaths []string
 	ech := make(chan error)
 
 	go errorCollector(ech, eout, groupErrorStatus)
-	go b.processBulkGet(kdm, reqDeadline, ch, ech, subPaths, groupErrorStatus)
+	go b.processBulkGet(kdm, reqDeadline, ch, ech, subPaths, groupErrorStatus, context...)
 
 	var rv map[string]*gomemcached.MCResponse
 
@@ -739,7 +741,7 @@ var ErrKeyExists = errors.New("key exists")
 // before being written. It must be JSON-marshalable and it must not
 // be nil.
 func (b *Bucket) Write(k string, flags, exp int, v interface{},
-	opt WriteOptions) (err error) {
+	opt WriteOptions, context ...*memcached.ClientContext) (err error) {
 
 	if ClientOpCallback != nil {
 		defer func(t time.Time) {
@@ -761,7 +763,7 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		if opt&AddOnly != 0 {
 			res, err = memcached.UnwrapMemcachedError(
-				mc.Add(vb, k, flags, exp, data))
+				mc.Add(vb, k, flags, exp, data, context...))
 			if err == nil && res.Status != gomemcached.SUCCESS {
 				if res.Status == gomemcached.KEY_EEXISTS {
 					err = ErrKeyExists
@@ -770,11 +772,11 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 				}
 			}
 		} else if opt&Append != 0 {
-			res, err = mc.Append(vb, k, data)
+			res, err = mc.Append(vb, k, data, context...)
 		} else if data == nil {
-			res, err = mc.Del(vb, k)
+			res, err = mc.Del(vb, k, context...)
 		} else {
-			res, err = mc.Set(vb, k, flags, exp, data)
+			res, err = mc.Set(vb, k, flags, exp, data, context...)
 		}
 
 		return err
@@ -788,7 +790,7 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 }
 
 func (b *Bucket) WriteWithMT(k string, flags, exp int, v interface{},
-	opt WriteOptions) (mt *MutationToken, err error) {
+	opt WriteOptions, context ...*memcached.ClientContext) (mt *MutationToken, err error) {
 
 	if ClientOpCallback != nil {
 		defer func(t time.Time) {
@@ -810,7 +812,7 @@ func (b *Bucket) WriteWithMT(k string, flags, exp int, v interface{},
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
 		if opt&AddOnly != 0 {
 			res, err = memcached.UnwrapMemcachedError(
-				mc.Add(vb, k, flags, exp, data))
+				mc.Add(vb, k, flags, exp, data, context...))
 			if err == nil && res.Status != gomemcached.SUCCESS {
 				if res.Status == gomemcached.KEY_EEXISTS {
 					err = ErrKeyExists
@@ -819,11 +821,11 @@ func (b *Bucket) WriteWithMT(k string, flags, exp int, v interface{},
 				}
 			}
 		} else if opt&Append != 0 {
-			res, err = mc.Append(vb, k, data)
+			res, err = mc.Append(vb, k, data, context...)
 		} else if data == nil {
-			res, err = mc.Del(vb, k)
+			res, err = mc.Del(vb, k, context...)
 		} else {
-			res, err = mc.Set(vb, k, flags, exp, data)
+			res, err = mc.Set(vb, k, flags, exp, data, context...)
 		}
 
 		if len(res.Extras) >= 16 {
@@ -843,17 +845,17 @@ func (b *Bucket) WriteWithMT(k string, flags, exp int, v interface{},
 }
 
 // Set a value in this bucket with Cas and return the new Cas value
-func (b *Bucket) Cas(k string, exp int, cas uint64, v interface{}) (uint64, error) {
-	return b.WriteCas(k, 0, exp, cas, v, 0)
+func (b *Bucket) Cas(k string, exp int, cas uint64, v interface{}, context ...*memcached.ClientContext) (uint64, error) {
+	return b.WriteCas(k, 0, exp, cas, v, 0, context...)
 }
 
 // Set a value in this bucket with Cas without json encoding it
-func (b *Bucket) CasRaw(k string, exp int, cas uint64, v interface{}) (uint64, error) {
-	return b.WriteCas(k, 0, exp, cas, v, Raw)
+func (b *Bucket) CasRaw(k string, exp int, cas uint64, v interface{}, context ...*memcached.ClientContext) (uint64, error) {
+	return b.WriteCas(k, 0, exp, cas, v, Raw, context...)
 }
 
 func (b *Bucket) WriteCas(k string, flags, exp int, cas uint64, v interface{},
-	opt WriteOptions) (newCas uint64, err error) {
+	opt WriteOptions, context ...*memcached.ClientContext) (newCas uint64, err error) {
 
 	if ClientOpCallback != nil {
 		defer func(t time.Time) {
@@ -873,7 +875,7 @@ func (b *Bucket) WriteCas(k string, flags, exp int, cas uint64, v interface{},
 
 	var res *gomemcached.MCResponse
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		res, err = mc.SetCas(vb, k, flags, exp, cas, data)
+		res, err = mc.SetCas(vb, k, flags, exp, cas, data, context...)
 		return err
 	})
 
@@ -885,16 +887,16 @@ func (b *Bucket) WriteCas(k string, flags, exp int, cas uint64, v interface{},
 }
 
 // Extended CAS operation. These functions will return the mutation token, i.e vbuuid & guard
-func (b *Bucket) CasWithMeta(k string, flags int, exp int, cas uint64, v interface{}) (uint64, *MutationToken, error) {
-	return b.WriteCasWithMT(k, flags, exp, cas, v, 0)
+func (b *Bucket) CasWithMeta(k string, flags int, exp int, cas uint64, v interface{}, context ...*memcached.ClientContext) (uint64, *MutationToken, error) {
+	return b.WriteCasWithMT(k, flags, exp, cas, v, 0, context...)
 }
 
-func (b *Bucket) CasWithMetaRaw(k string, flags int, exp int, cas uint64, v interface{}) (uint64, *MutationToken, error) {
-	return b.WriteCasWithMT(k, flags, exp, cas, v, Raw)
+func (b *Bucket) CasWithMetaRaw(k string, flags int, exp int, cas uint64, v interface{}, context ...*memcached.ClientContext) (uint64, *MutationToken, error) {
+	return b.WriteCasWithMT(k, flags, exp, cas, v, Raw, context...)
 }
 
 func (b *Bucket) WriteCasWithMT(k string, flags, exp int, cas uint64, v interface{},
-	opt WriteOptions) (newCas uint64, mt *MutationToken, err error) {
+	opt WriteOptions, context ...*memcached.ClientContext) (newCas uint64, mt *MutationToken, err error) {
 
 	if ClientOpCallback != nil {
 		defer func(t time.Time) {
@@ -914,7 +916,7 @@ func (b *Bucket) WriteCasWithMT(k string, flags, exp int, cas uint64, v interfac
 
 	var res *gomemcached.MCResponse
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		res, err = mc.SetCas(vb, k, flags, exp, cas, data)
+		res, err = mc.SetCas(vb, k, flags, exp, cas, data, context...)
 		return err
 	})
 
@@ -939,25 +941,25 @@ func (b *Bucket) WriteCasWithMT(k string, flags, exp int, cas uint64, v interfac
 
 // Set a value in this bucket.
 // The value will be serialized into a JSON document.
-func (b *Bucket) Set(k string, exp int, v interface{}) error {
-	return b.Write(k, 0, exp, v, 0)
+func (b *Bucket) Set(k string, exp int, v interface{}, context ...*memcached.ClientContext) error {
+	return b.Write(k, 0, exp, v, 0, context...)
 }
 
 // Set a value in this bucket with with flags
-func (b *Bucket) SetWithMeta(k string, flags int, exp int, v interface{}) (*MutationToken, error) {
-	return b.WriteWithMT(k, flags, exp, v, 0)
+func (b *Bucket) SetWithMeta(k string, flags int, exp int, v interface{}, context ...*memcached.ClientContext) (*MutationToken, error) {
+	return b.WriteWithMT(k, flags, exp, v, 0, context...)
 }
 
 // SetRaw sets a value in this bucket without JSON encoding it.
-func (b *Bucket) SetRaw(k string, exp int, v []byte) error {
-	return b.Write(k, 0, exp, v, Raw)
+func (b *Bucket) SetRaw(k string, exp int, v []byte, context ...*memcached.ClientContext) error {
+	return b.Write(k, 0, exp, v, Raw, context...)
 }
 
 // Add adds a value to this bucket; like Set except that nothing
 // happens if the key exists.  The value will be serialized into a
 // JSON document.
-func (b *Bucket) Add(k string, exp int, v interface{}) (added bool, err error) {
-	err = b.Write(k, 0, exp, v, AddOnly)
+func (b *Bucket) Add(k string, exp int, v interface{}, context ...*memcached.ClientContext) (added bool, err error) {
+	err = b.Write(k, 0, exp, v, AddOnly, context...)
 	if err == ErrKeyExists {
 		return false, nil
 	}
@@ -966,8 +968,8 @@ func (b *Bucket) Add(k string, exp int, v interface{}) (added bool, err error) {
 
 // AddRaw adds a value to this bucket; like SetRaw except that nothing
 // happens if the key exists.  The value will be stored as raw bytes.
-func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
-	err = b.Write(k, 0, exp, v, AddOnly|Raw)
+func (b *Bucket) AddRaw(k string, exp int, v []byte, context ...*memcached.ClientContext) (added bool, err error) {
+	err = b.Write(k, 0, exp, v, AddOnly|Raw, context...)
 	if err == ErrKeyExists {
 		return false, nil
 	}
@@ -977,8 +979,8 @@ func (b *Bucket) AddRaw(k string, exp int, v []byte) (added bool, err error) {
 // Add adds a value to this bucket; like Set except that nothing
 // happens if the key exists.  The value will be serialized into a
 // JSON document.
-func (b *Bucket) AddWithMT(k string, exp int, v interface{}) (added bool, mt *MutationToken, err error) {
-	mt, err = b.WriteWithMT(k, 0, exp, v, AddOnly)
+func (b *Bucket) AddWithMT(k string, exp int, v interface{}, context ...*memcached.ClientContext) (added bool, mt *MutationToken, err error) {
+	mt, err = b.WriteWithMT(k, 0, exp, v, AddOnly, context...)
 	if err == ErrKeyExists {
 		return false, mt, nil
 	}
@@ -987,8 +989,8 @@ func (b *Bucket) AddWithMT(k string, exp int, v interface{}) (added bool, mt *Mu
 
 // AddRaw adds a value to this bucket; like SetRaw except that nothing
 // happens if the key exists.  The value will be stored as raw bytes.
-func (b *Bucket) AddRawWithMT(k string, exp int, v []byte) (added bool, mt *MutationToken, err error) {
-	mt, err = b.WriteWithMT(k, 0, exp, v, AddOnly|Raw)
+func (b *Bucket) AddRawWithMT(k string, exp int, v []byte, context ...*memcached.ClientContext) (added bool, mt *MutationToken, err error) {
+	mt, err = b.WriteWithMT(k, 0, exp, v, AddOnly|Raw, context...)
 	if err == ErrKeyExists {
 		return false, mt, nil
 	}
@@ -996,43 +998,8 @@ func (b *Bucket) AddRawWithMT(k string, exp int, v []byte) (added bool, mt *Muta
 }
 
 // Append appends raw data to an existing item.
-func (b *Bucket) Append(k string, data []byte) error {
-	return b.Write(k, 0, 0, data, Append|Raw)
-}
-
-func (b *Bucket) GetsMCFromCollection(collUid uint32, key string, reqDeadline time.Time) (*gomemcached.MCResponse, error) {
-	var err error
-	var response *gomemcached.MCResponse
-
-	if key == "" {
-		return nil, nil
-	}
-
-	if ClientOpCallback != nil {
-		defer func(t time.Time) { ClientOpCallback("GetsMCFromCollection", key, t, err) }(time.Now())
-	}
-
-	err = b.Do2(key, func(mc *memcached.Client, vb uint16) error {
-		var err1 error
-
-		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
-		_, err1 = mc.SelectBucket(b.Name)
-		if err1 != nil {
-			mc.SetDeadline(noDeadline)
-			return err1
-		}
-
-		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
-		response, err1 = mc.GetFromCollection(vb, collUid, key)
-		if err1 != nil {
-			mc.SetDeadline(noDeadline)
-			return err1
-		}
-
-		return nil
-	}, false)
-
-	return response, err
+func (b *Bucket) Append(k string, data []byte, context ...*memcached.ClientContext) error {
+	return b.Write(k, 0, 0, data, Append|Raw, context...)
 }
 
 // Returns collectionUid, manifestUid, error.
@@ -1073,7 +1040,7 @@ func (b *Bucket) GetCollectionCID(scope string, collection string, reqDeadline t
 }
 
 // Get a value straight from Memcached
-func (b *Bucket) GetsMC(key string, reqDeadline time.Time) (*gomemcached.MCResponse, error) {
+func (b *Bucket) GetsMC(key string, reqDeadline time.Time, context ...*memcached.ClientContext) (*gomemcached.MCResponse, error) {
 	var err error
 	var response *gomemcached.MCResponse
 
@@ -1089,7 +1056,7 @@ func (b *Bucket) GetsMC(key string, reqDeadline time.Time) (*gomemcached.MCRespo
 		var err1 error
 
 		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
-		response, err1 = mc.Get(vb, key)
+		response, err1 = mc.Get(vb, key, context...)
 		mc.SetDeadline(noDeadline)
 		if err1 != nil {
 			return err1
@@ -1100,7 +1067,7 @@ func (b *Bucket) GetsMC(key string, reqDeadline time.Time) (*gomemcached.MCRespo
 }
 
 // Get a value through the subdoc API
-func (b *Bucket) GetsSubDoc(key string, reqDeadline time.Time, subPaths []string) (*gomemcached.MCResponse, error) {
+func (b *Bucket) GetsSubDoc(key string, reqDeadline time.Time, subPaths []string, context ...*memcached.ClientContext) (*gomemcached.MCResponse, error) {
 	var err error
 	var response *gomemcached.MCResponse
 
@@ -1116,7 +1083,7 @@ func (b *Bucket) GetsSubDoc(key string, reqDeadline time.Time, subPaths []string
 		var err1 error
 
 		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
-		response, err1 = mc.GetSubdoc(vb, key, subPaths)
+		response, err1 = mc.GetSubdoc(vb, key, subPaths, context...)
 		mc.SetDeadline(noDeadline)
 		if err1 != nil {
 			return err1
@@ -1128,7 +1095,7 @@ func (b *Bucket) GetsSubDoc(key string, reqDeadline time.Time, subPaths []string
 
 // GetsRaw gets a raw value from this bucket including its CAS
 // counter and flags.
-func (b *Bucket) GetsRaw(k string) (data []byte, flags int,
+func (b *Bucket) GetsRaw(k string, context ...*memcached.ClientContext) (data []byte, flags int,
 	cas uint64, err error) {
 
 	if ClientOpCallback != nil {
@@ -1136,7 +1103,7 @@ func (b *Bucket) GetsRaw(k string) (data []byte, flags int,
 	}
 
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		res, err := mc.Get(vb, k)
+		res, err := mc.Get(vb, k, context...)
 		if err != nil {
 			return err
 		}
@@ -1153,8 +1120,8 @@ func (b *Bucket) GetsRaw(k string) (data []byte, flags int,
 // Gets gets a value from this bucket, including its CAS counter.  The
 // value is expected to be a JSON stream and will be deserialized into
 // rv.
-func (b *Bucket) Gets(k string, rv interface{}, caso *uint64) error {
-	data, _, cas, err := b.GetsRaw(k)
+func (b *Bucket) Gets(k string, rv interface{}, caso *uint64, context ...*memcached.ClientContext) error {
+	data, _, cas, err := b.GetsRaw(k, context...)
 	if err != nil {
 		return err
 	}
@@ -1167,19 +1134,19 @@ func (b *Bucket) Gets(k string, rv interface{}, caso *uint64) error {
 // Get a value from this bucket.
 // The value is expected to be a JSON stream and will be deserialized
 // into rv.
-func (b *Bucket) Get(k string, rv interface{}) error {
-	return b.Gets(k, rv, nil)
+func (b *Bucket) Get(k string, rv interface{}, context ...*memcached.ClientContext) error {
+	return b.Gets(k, rv, nil, context...)
 }
 
 // GetRaw gets a raw value from this bucket.  No marshaling is performed.
-func (b *Bucket) GetRaw(k string) ([]byte, error) {
-	d, _, _, err := b.GetsRaw(k)
+func (b *Bucket) GetRaw(k string, context ...*memcached.ClientContext) ([]byte, error) {
+	d, _, _, err := b.GetsRaw(k, context...)
 	return d, err
 }
 
 // GetAndTouchRaw gets a raw value from this bucket including its CAS
 // counter and flags, and updates the expiry on the doc.
-func (b *Bucket) GetAndTouchRaw(k string, exp int) (data []byte,
+func (b *Bucket) GetAndTouchRaw(k string, exp int, context ...*memcached.ClientContext) (data []byte,
 	cas uint64, err error) {
 
 	if ClientOpCallback != nil {
@@ -1187,7 +1154,7 @@ func (b *Bucket) GetAndTouchRaw(k string, exp int) (data []byte,
 	}
 
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		res, err := mc.GetAndTouch(vb, k, exp)
+		res, err := mc.GetAndTouch(vb, k, exp, context...)
 		if err != nil {
 			return err
 		}
@@ -1199,14 +1166,14 @@ func (b *Bucket) GetAndTouchRaw(k string, exp int) (data []byte,
 }
 
 // GetMeta returns the meta values for a key
-func (b *Bucket) GetMeta(k string, flags *int, expiry *int, cas *uint64, seqNo *uint64) (err error) {
+func (b *Bucket) GetMeta(k string, flags *int, expiry *int, cas *uint64, seqNo *uint64, context ...*memcached.ClientContext) (err error) {
 
 	if ClientOpCallback != nil {
 		defer func(t time.Time) { ClientOpCallback("GetsMeta", k, t, err) }(time.Now())
 	}
 
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		res, err := mc.GetMeta(vb, k)
+		res, err := mc.GetMeta(vb, k, context...)
 		if err != nil {
 			return err
 		}
@@ -1231,19 +1198,19 @@ func (b *Bucket) GetMeta(k string, flags *int, expiry *int, cas *uint64, seqNo *
 }
 
 // Delete a key from this bucket.
-func (b *Bucket) Delete(k string) error {
-	return b.Write(k, 0, 0, nil, Raw)
+func (b *Bucket) Delete(k string, context ...*memcached.ClientContext) error {
+	return b.Write(k, 0, 0, nil, Raw, context...)
 }
 
 // Incr increments the value at a given key by amt and defaults to def if no value present.
-func (b *Bucket) Incr(k string, amt, def uint64, exp int) (val uint64, err error) {
+func (b *Bucket) Incr(k string, amt, def uint64, exp int, context ...*memcached.ClientContext) (val uint64, err error) {
 	if ClientOpCallback != nil {
 		defer func(t time.Time) { ClientOpCallback("Incr", k, t, err) }(time.Now())
 	}
 
 	var rv uint64
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		res, err := mc.Incr(vb, k, amt, def, exp)
+		res, err := mc.Incr(vb, k, amt, def, exp, context...)
 		if err != nil {
 			return err
 		}
@@ -1254,14 +1221,14 @@ func (b *Bucket) Incr(k string, amt, def uint64, exp int) (val uint64, err error
 }
 
 // Decr decrements the value at a given key by amt and defaults to def if no value present
-func (b *Bucket) Decr(k string, amt, def uint64, exp int) (val uint64, err error) {
+func (b *Bucket) Decr(k string, amt, def uint64, exp int, context ...*memcached.ClientContext) (val uint64, err error) {
 	if ClientOpCallback != nil {
 		defer func(t time.Time) { ClientOpCallback("Decr", k, t, err) }(time.Now())
 	}
 
 	var rv uint64
 	err = b.Do(k, func(mc *memcached.Client, vb uint16) error {
-		res, err := mc.Decr(vb, k, amt, def, exp)
+		res, err := mc.Decr(vb, k, amt, def, exp, context...)
 		if err != nil {
 			return err
 		}

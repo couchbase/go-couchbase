@@ -491,7 +491,7 @@ func (b *Bucket) getRandomConnection() (*memcached.Client, *connectionPool, erro
 // Client.GetRandomDoc() call to get a random document from that node.
 //
 
-func (b *Bucket) GetRandomDoc() (*gomemcached.MCResponse, error) {
+func (b *Bucket) GetRandomDoc(context ...*memcached.ClientContext) (*gomemcached.MCResponse, error) {
 	// get a connection from the pool
 	conn, pool, err := b.getRandomConnection()
 
@@ -508,7 +508,7 @@ func (b *Bucket) GetRandomDoc() (*gomemcached.MCResponse, error) {
 	}
 
 	// get a randomm document from the connection
-	doc, err := conn.GetRandomDoc()
+	doc, err := conn.GetRandomDoc(context...)
 	// need to return the connection to the pool
 	pool.Return(conn)
 	return doc, err
