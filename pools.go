@@ -514,6 +514,50 @@ func (b *Bucket) GetRandomDoc(context ...*memcached.ClientContext) (*gomemcached
 	return doc, err
 }
 
+// Bucket DDL
+func (b *Bucket) CreateScope(scope string) error {
+        b.RLock()
+        pool := b.pool
+        client := pool.client
+        b.RUnlock()
+	args := map[string]interface{} { "name": scope }
+	return client.parsePostURLResponseTerse("/pools/default/buckets/" + b.Name + "/collections", args, nil)
+}
+
+func (b *Bucket) DropScope(scope string) error {
+        b.RLock()
+        pool := b.pool
+        client := pool.client
+        b.RUnlock()
+	return client.parseDeleteURLResponseTerse("/pools/default/buckets/" + b.Name + "/collections" + scope, nil, nil)
+}
+
+func (b *Bucket) CreateCollection(scope string, collection string) error {
+        b.RLock()
+        pool := b.pool
+        client := pool.client
+        b.RUnlock()
+	args := map[string]interface{} { "name": collection }
+	return client.parsePostURLResponseTerse("/pools/default/buckets/" + b.Name + "/collections/" + scope, args, nil)
+}
+
+func (b *Bucket) DropCollection(scope string, collection string) error {
+        b.RLock()
+        pool := b.pool
+        client := pool.client
+        b.RUnlock()
+	return client.parseDeleteURLResponseTerse("/pools/default/buckets/" + b.Name + "/collections/" + scope + "/" + collection, nil, nil)
+}
+
+func (b *Bucket) FlushCollection(scope string, collection string) error {
+        b.RLock()
+        pool := b.pool
+        client := pool.client
+        b.RUnlock()
+	args := map[string]interface{} { "name": collection, "scope": scope }
+	return client.parsePostURLResponseTerse("/pools/default/buckets/" + b.Name + "/collections-flush", args, nil)
+}
+
 func (b *Bucket) getMasterNode(i int) string {
 	p := b.getConnPools(false /* not already locked */)
 	if len(p) > i {
@@ -731,12 +775,16 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 	return res, err
 }
 
-func doPutAPI(baseURL *url.URL, path string, params map[string]interface{}, authHandler AuthHandler, out interface{}) error {
-	return doOutputAPI("PUT", baseURL, path, params, authHandler, out)
+func doPutAPI(baseURL *url.URL, path string, params map[string]interface{}, authHandler AuthHandler, out interface{}, terse bool) error {
+	return doOutputAPI("PUT", baseURL, path, params, authHandler, out, terse)
 }
 
-func doPostAPI(baseURL *url.URL, path string, params map[string]interface{}, authHandler AuthHandler, out interface{}) error {
-	return doOutputAPI("POST", baseURL, path, params, authHandler, out)
+func doPostAPI(baseURL *url.URL, path string, params map[string]interface{}, authHandler AuthHandler, out interface{}, terse bool) error {
+	return doOutputAPI("POST", baseURL, path, params, authHandler, out, terse)
+}
+
+func doDeleteAPI(baseURL *url.URL, path string, params map[string]interface{}, authHandler AuthHandler, out interface{}, terse bool) error {
+	return doOutputAPI("DELETE", baseURL, path, params, authHandler, out, terse)
 }
 
 func doOutputAPI(
@@ -745,7 +793,8 @@ func doOutputAPI(
 	path string,
 	params map[string]interface{},
 	authHandler AuthHandler,
-	out interface{}) error {
+	out interface{},
+	terse bool) error {
 
 	var requestUrl string
 
@@ -780,6 +829,18 @@ func doOutputAPI(
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
+		if terse {
+			var outBuf interface{}
+
+			err := json.Unmarshal(bod, &outBuf)
+			if err == nil && outBuf != nil {
+				errText, ok := outBuf.(string)
+				if ok {
+					return fmt.Errorf(errText)
+				}
+			}
+			return fmt.Errorf(string(bod))
+		}
 		return fmt.Errorf("HTTP error %v getting %q: %s",
 			res.Status, requestUrl, bod)
 	}
@@ -795,7 +856,8 @@ func queryRestAPI(
 	baseURL *url.URL,
 	path string,
 	authHandler AuthHandler,
-	out interface{}) error {
+	out interface{},
+	terse bool) error {
 
 	var requestUrl string
 
@@ -823,6 +885,18 @@ func queryRestAPI(
 	defer res.Body.Close()
 	if res.StatusCode != 200 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
+		if terse {
+			var outBuf interface{}
+
+			err := json.Unmarshal(bod, &outBuf)
+			if err == nil && outBuf != nil {
+				errText, ok := outBuf.(string)
+				if ok {
+					return fmt.Errorf(errText)
+				}
+			}
+			return fmt.Errorf(string(bod))
+		}
 		return fmt.Errorf("HTTP error %v getting %q: %s",
 			res.Status, requestUrl, bod)
 	}
@@ -895,15 +969,31 @@ func (c *Client) processStream(baseURL *url.URL, path string, authHandler AuthHa
 }
 
 func (c *Client) parseURLResponse(path string, out interface{}) error {
-	return queryRestAPI(c.BaseURL, path, c.ah, out)
+	return queryRestAPI(c.BaseURL, path, c.ah, out, false)
 }
 
 func (c *Client) parsePostURLResponse(path string, params map[string]interface{}, out interface{}) error {
-	return doPostAPI(c.BaseURL, path, params, c.ah, out)
+	return doPostAPI(c.BaseURL, path, params, c.ah, out, false)
+}
+
+func (c *Client) parsePostURLResponseTerse(path string, params map[string]interface{}, out interface{}) error {
+	return doPostAPI(c.BaseURL, path, params, c.ah, out, true)
+}
+
+func (c *Client) parseDeleteURLResponse(path string, params map[string]interface{}, out interface{}) error {
+	return doDeleteAPI(c.BaseURL, path, params, c.ah, out, false)
+}
+
+func (c *Client) parseDeleteURLResponseTerse(path string, params map[string]interface{}, out interface{}) error {
+	return doDeleteAPI(c.BaseURL, path, params, c.ah, out, true)
 }
 
 func (c *Client) parsePutURLResponse(path string, params map[string]interface{}, out interface{}) error {
-	return doPutAPI(c.BaseURL, path, params, c.ah, out)
+	return doPutAPI(c.BaseURL, path, params, c.ah, out, false)
+}
+
+func (c *Client) parsePutURLResponseTerse(path string, params map[string]interface{}, out interface{}) error {
+	return doPutAPI(c.BaseURL, path, params, c.ah, out, true)
 }
 
 func (b *Bucket) parseURLResponse(path string, out interface{}) error {
@@ -928,7 +1018,7 @@ func (b *Bucket) parseURLResponse(path string, out interface{}) error {
 
 		// Lock here to avoid having pool closed under us.
 		b.RLock()
-		err := queryRestAPI(url, path, b.pool.client.ah, out)
+		err := queryRestAPI(url, path, b.pool.client.ah, out, false)
 		b.RUnlock()
 		if err == nil {
 			return err
@@ -972,7 +1062,7 @@ func (b *Bucket) parseAPIResponse(path string, out interface{}) error {
 		// MB-13770
 		requestPath := strings.Split(u.String(), u.Host)[1]
 
-		err = queryRestAPI(u, requestPath, b.pool.client.ah, out)
+		err = queryRestAPI(u, requestPath, b.pool.client.ah, out, false)
 		b.RUnlock()
 		if err == nil {
 			return err
