@@ -193,6 +193,12 @@ type Pool struct {
 
 	BucketURL map[string]string `json:"buckets"`
 
+	MemoryQuota         float64 `json:"memoryQuota"`
+	CbasMemoryQuota     float64 `json:"cbasMemoryQuota"`
+	EventingMemoryQuota float64 `json:"eventingMemoryQuota"`
+	FtsMemoryQuota      float64 `json:"ftsMemoryQuota"`
+	IndexMemoryQuota    float64 `json:"indexMemoryQuota"`
+
 	client *Client
 }
 
@@ -516,46 +522,46 @@ func (b *Bucket) GetRandomDoc(context ...*memcached.ClientContext) (*gomemcached
 
 // Bucket DDL
 func (b *Bucket) CreateScope(scope string) error {
-        b.RLock()
-        pool := b.pool
-        client := pool.client
-        b.RUnlock()
-	args := map[string]interface{} { "name": scope }
-	return client.parsePostURLResponseTerse("/pools/default/buckets/" + b.Name + "/collections", args, nil)
+	b.RLock()
+	pool := b.pool
+	client := pool.client
+	b.RUnlock()
+	args := map[string]interface{}{"name": scope}
+	return client.parsePostURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections", args, nil)
 }
 
 func (b *Bucket) DropScope(scope string) error {
-        b.RLock()
-        pool := b.pool
-        client := pool.client
-        b.RUnlock()
-	return client.parseDeleteURLResponseTerse("/pools/default/buckets/" + b.Name + "/collections" + scope, nil, nil)
+	b.RLock()
+	pool := b.pool
+	client := pool.client
+	b.RUnlock()
+	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections"+scope, nil, nil)
 }
 
 func (b *Bucket) CreateCollection(scope string, collection string) error {
-        b.RLock()
-        pool := b.pool
-        client := pool.client
-        b.RUnlock()
-	args := map[string]interface{} { "name": collection }
-	return client.parsePostURLResponseTerse("/pools/default/buckets/" + b.Name + "/collections/" + scope, args, nil)
+	b.RLock()
+	pool := b.pool
+	client := pool.client
+	b.RUnlock()
+	args := map[string]interface{}{"name": collection}
+	return client.parsePostURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections/"+scope, args, nil)
 }
 
 func (b *Bucket) DropCollection(scope string, collection string) error {
-        b.RLock()
-        pool := b.pool
-        client := pool.client
-        b.RUnlock()
-	return client.parseDeleteURLResponseTerse("/pools/default/buckets/" + b.Name + "/collections/" + scope + "/" + collection, nil, nil)
+	b.RLock()
+	pool := b.pool
+	client := pool.client
+	b.RUnlock()
+	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections/"+scope+"/"+collection, nil, nil)
 }
 
 func (b *Bucket) FlushCollection(scope string, collection string) error {
-        b.RLock()
-        pool := b.pool
-        client := pool.client
-        b.RUnlock()
-	args := map[string]interface{} { "name": collection, "scope": scope }
-	return client.parsePostURLResponseTerse("/pools/default/buckets/" + b.Name + "/collections-flush", args, nil)
+	b.RLock()
+	pool := b.pool
+	client := pool.client
+	b.RUnlock()
+	args := map[string]interface{}{"name": collection, "scope": scope}
+	return client.parsePostURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections-flush", args, nil)
 }
 
 func (b *Bucket) getMasterNode(i int) string {
