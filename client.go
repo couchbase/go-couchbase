@@ -129,11 +129,10 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 
 		if deadline && DefaultTimeout > 0 {
 			conn.SetDeadline(getDeadline(noDeadline, DefaultTimeout))
-			err = f(conn, uint16(vb))
-			conn.SetDeadline(noDeadline)
 		} else {
-			err = f(conn, uint16(vb))
+			conn.SetDeadline(noDeadline)
 		}
+		err = f(conn, uint16(vb))
 
 		var retry bool
 		discard := isOutOfBoundsError(err)
@@ -311,8 +310,12 @@ func isOutOfBoundsError(err error) bool {
 }
 
 func getDeadline(reqDeadline time.Time, duration time.Duration) time.Time {
-	if reqDeadline.IsZero() && duration > 0 {
-		return time.Now().Add(duration)
+	if reqDeadline.IsZero() {
+		if duration > 0 {
+			return time.Unix(time.Now().Unix(), 0).Add(duration)
+		} else {
+			return noDeadline
+		}
 	}
 	return reqDeadline
 }
@@ -390,7 +393,6 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 
 			conn.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
 			err = conn.GetBulk(vb, keys, rv, subPaths, context...)
-			conn.SetDeadline(noDeadline)
 
 			discard := false
 			defer func() {
@@ -1020,13 +1022,11 @@ func (b *Bucket) GetCollectionCID(scope string, collection string, reqDeadline t
 		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
 		_, err1 = mc.SelectBucket(b.Name)
 		if err1 != nil {
-			mc.SetDeadline(noDeadline)
 			return err1
 		}
 
 		response, err1 = mc.CollectionsGetCID(scope, collection)
 		if err1 != nil {
-			mc.SetDeadline(noDeadline)
 			return err1
 		}
 
@@ -1057,7 +1057,6 @@ func (b *Bucket) GetsMC(key string, reqDeadline time.Time, context ...*memcached
 
 		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
 		response, err1 = mc.Get(vb, key, context...)
-		mc.SetDeadline(noDeadline)
 		if err1 != nil {
 			return err1
 		}
@@ -1084,7 +1083,6 @@ func (b *Bucket) GetsSubDoc(key string, reqDeadline time.Time, subPaths []string
 
 		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
 		response, err1 = mc.GetSubdoc(vb, key, subPaths, context...)
-		mc.SetDeadline(noDeadline)
 		if err1 != nil {
 			return err1
 		}
