@@ -32,7 +32,7 @@ var updaterTransport http.RoundTripper = &http.Transport{
 	}).Dial,
 }
 
-var updaterHTTPClient = &http.Client{Transport: updaterTransport, Timeout: 30 * time.Second}
+var updaterHTTPClient = &http.Client{Transport: updaterTransport}
 
 func doHTTPRequestForUpdate(req *http.Request) (*http.Response, error) {
 
