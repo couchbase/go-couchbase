@@ -535,7 +535,7 @@ func (b *Bucket) DropScope(scope string) error {
 	pool := b.pool
 	client := pool.client
 	b.RUnlock()
-	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections"+scope, nil, nil)
+	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections/"+scope, nil, nil)
 }
 
 func (b *Bucket) CreateCollection(scope string, collection string) error {
@@ -840,12 +840,19 @@ func doOutputAPI(
 
 			err := json.Unmarshal(bod, &outBuf)
 			if err == nil && outBuf != nil {
-				errText, ok := outBuf.(string)
-				if ok {
-					return fmt.Errorf(errText)
+				switch errText := outBuf.(type) {
+				case string:
+					return fmt.Errorf("%s", errText)
+				case map[string]interface{}:
+					errField := errText["errors"]
+					if errField != nil {
+
+						// remove annoying 'map' prefix
+						return fmt.Errorf("%s", strings.TrimPrefix(fmt.Sprintf("%v", errField), "map"))
+					}
 				}
 			}
-			return fmt.Errorf(string(bod))
+			return fmt.Errorf("%s", string(bod))
 		}
 		return fmt.Errorf("HTTP error %v getting %q: %s",
 			res.Status, requestUrl, bod)
