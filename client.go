@@ -98,6 +98,17 @@ func IsRefreshRequired(err error) bool {
 	return false
 }
 
+// Return true if a collection is not known. Required by cbq-engine
+func IsUnknownCollection(err error) bool {
+
+	res, ok := err.(*gomemcached.MCResponse)
+	if ok && (res.Status == gomemcached.UNKNOWN_COLLECTION) {
+		return true
+	}
+
+	return false
+}
+
 // ClientOpCallback is called for each invocation of Do.
 var ClientOpCallback func(opname, k string, start time.Time, err error)
 
@@ -241,13 +252,38 @@ func (b *Bucket) GetCount(refresh bool, context ...*memcached.ClientContext) (co
 	}
 
 	var cnt int64
-	for _, gs := range b.GatherStats("") {
-		if len(gs.Stats) > 0 {
-			cnt, err = strconv.ParseInt(gs.Stats["curr_items"], 10, 64)
-			if err != nil {
-				return 0, err
+	if len(context) > 0 {
+		key := fmt.Sprintf("collections-byid 0x%x", context[0].CollId)
+		resKey := ""
+		for _, gs := range b.GatherStats(key) {
+			if len(gs.Stats) > 0 {
+
+				// the key encodes the scope and collection id
+				// we don't have the scope id, so we have to find it...
+				if resKey == "" {
+					for k, _ := range gs.Stats {
+						resKey = strings.TrimRightFunc(k, func(r rune) bool {
+							return r != ':'
+						}) + "items"
+						break
+					}
+				}
+				cnt, err = strconv.ParseInt(gs.Stats[resKey], 10, 64)
+				if err != nil {
+					return 0, err
+				}
+				count += cnt
 			}
-			count += cnt
+		}
+	} else {
+		for _, gs := range b.GatherStats("") {
+			if len(gs.Stats) > 0 {
+				cnt, err = strconv.ParseInt(gs.Stats["curr_items"], 10, 64)
+				if err != nil {
+					return 0, err
+				}
+				count += cnt
+			}
 		}
 	}
 
@@ -256,6 +292,9 @@ func (b *Bucket) GetCount(refresh bool, context ...*memcached.ClientContext) (co
 
 // Get bucket document size through the bucket stats
 func (b *Bucket) GetSize(refresh bool, context ...*memcached.ClientContext) (size int64, err error) {
+	if len(context) > 0 {
+		return -1, fmt.Errorf("Size() not supported for collections")
+	}
 	if refresh {
 		b.Refresh()
 	}
