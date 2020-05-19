@@ -292,21 +292,44 @@ func (b *Bucket) GetCount(refresh bool, context ...*memcached.ClientContext) (co
 
 // Get bucket document size through the bucket stats
 func (b *Bucket) GetSize(refresh bool, context ...*memcached.ClientContext) (size int64, err error) {
-	if len(context) > 0 {
-		return -1, fmt.Errorf("Size() not supported for collections")
-	}
+
 	if refresh {
 		b.Refresh()
 	}
 
 	var sz int64
-	for _, gs := range b.GatherStats("") {
-		if len(gs.Stats) > 0 {
-			sz, err = strconv.ParseInt(gs.Stats["ep_value_size"], 10, 64)
-			if err != nil {
-				return 0, err
+	if len(context) > 0 {
+		key := fmt.Sprintf("collections-byid 0x%x", context[0].CollId)
+		resKey := ""
+		for _, gs := range b.GatherStats(key) {
+			if len(gs.Stats) > 0 {
+
+				// the key encodes the scope and collection id
+				// we don't have the scope id, so we have to find it...
+				if resKey == "" {
+					for k, _ := range gs.Stats {
+						resKey = strings.TrimRightFunc(k, func(r rune) bool {
+							return r != ':'
+						}) + "mem_used"
+						break
+					}
+				}
+				sz, err = strconv.ParseInt(gs.Stats[resKey], 10, 64)
+				if err != nil {
+					return 0, err
+				}
+				size += sz
 			}
-			size += sz
+		}
+	} else {
+		for _, gs := range b.GatherStats("") {
+			if len(gs.Stats) > 0 {
+				sz, err = strconv.ParseInt(gs.Stats["ep_value_size"], 10, 64)
+				if err != nil {
+					return 0, err
+				}
+				size += sz
+			}
 		}
 	}
 
