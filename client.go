@@ -310,7 +310,7 @@ func (b *Bucket) GetSize(refresh bool, context ...*memcached.ClientContext) (siz
 					for k, _ := range gs.Stats {
 						resKey = strings.TrimRightFunc(k, func(r rune) bool {
 							return r != ':'
-						}) + "mem_used"
+						}) + "disk_size"
 						break
 					}
 				}

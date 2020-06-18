@@ -13,9 +13,9 @@ type User struct {
 }
 
 type Role struct {
-	Role       string
-	BucketName string `json:"bucket_name"`
-	ScopeName string `json:"scope_name"`
+	Role           string
+	BucketName     string `json:"bucket_name"`
+	ScopeName      string `json:"scope_name"`
 	CollectionName string `json:"collection_name"`
 }
 
