@@ -273,6 +273,8 @@ func (b *Bucket) GetCount(refresh bool, context ...*memcached.ClientContext) (co
 					return 0, err
 				}
 				count += cnt
+			} else if gs.Err != nil {
+				return 0, gs.Err
 			}
 		}
 	} else {
@@ -283,6 +285,8 @@ func (b *Bucket) GetCount(refresh bool, context ...*memcached.ClientContext) (co
 					return 0, err
 				}
 				count += cnt
+			} else if gs.Err != nil {
+				return 0, gs.Err
 			}
 		}
 	}
@@ -319,6 +323,8 @@ func (b *Bucket) GetSize(refresh bool, context ...*memcached.ClientContext) (siz
 					return 0, err
 				}
 				size += sz
+			} else if gs.Err != nil {
+				return 0, gs.Err
 			}
 		}
 	} else {
@@ -329,6 +335,8 @@ func (b *Bucket) GetSize(refresh bool, context ...*memcached.ClientContext) (siz
 					return 0, err
 				}
 				size += sz
+			} else if gs.Err != nil {
+				return 0, gs.Err
 			}
 		}
 	}
