@@ -22,6 +22,7 @@ const MAX_RETRY_COUNT = 5
 const DISCONNECT_PERIOD = 120 * time.Second
 
 type NotifyFn func(bucket string, err error)
+type StreamingFn func(bucket *Bucket)
 
 // Use TCP keepalive to detect half close sockets
 var updaterTransport http.RoundTripper = &http.Transport{
@@ -55,8 +56,12 @@ func doHTTPRequestForUpdate(req *http.Request) (*http.Response, error) {
 }
 
 func (b *Bucket) RunBucketUpdater(notify NotifyFn) {
+	b.RunBucketUpdater2(nil, notify)
+}
+
+func (b *Bucket) RunBucketUpdater2(streamingFn StreamingFn, notify NotifyFn) {
 	go func() {
-		err := b.UpdateBucket()
+		err := b.UpdateBucket2(streamingFn)
 		if err != nil {
 			if notify != nil {
 				notify(b.GetName(), err)
@@ -84,6 +89,10 @@ func (b *Bucket) replaceConnPools2(with []*connectionPool, bucketLocked bool) {
 }
 
 func (b *Bucket) UpdateBucket() error {
+	return b.UpdateBucket2(nil)
+}
+
+func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 	var failures int
 	var returnErr error
 	var poolServices PoolServices
@@ -204,6 +213,9 @@ func (b *Bucket) UpdateBucket() error {
 			b.nodeList = unsafe.Pointer(&tmpb.NodesJSON)
 			b.Unlock()
 
+			if streamingFn != nil {
+				streamingFn(tmpb)
+			}
 			logging.Infof("Got new configuration for bucket %s", b.GetName())
 
 		}

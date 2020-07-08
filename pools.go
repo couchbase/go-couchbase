@@ -227,6 +227,7 @@ type Bucket struct {
 	AuthType               string             `json:"authType"`
 	Capabilities           []string           `json:"bucketCapabilities"`
 	CapabilitiesVersion    string             `json:"bucketCapabilitiesVer"`
+	CollectionsManifestUid string		  `json:"collectionsManifestUid"`
 	Type                   string             `json:"bucketType"`
 	Name                   string             `json:"name"`
 	NodeLocator            string             `json:"nodeLocator"`
