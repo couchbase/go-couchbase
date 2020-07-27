@@ -1691,8 +1691,10 @@ func GetSystemBucket(c *Client, p *Pool, name string) (*Bucket, error) {
 			"saslPassword": "donotuse",
 		}
 		var ret interface{}
+		// allow "bucket already exists" error in case duplicate create
+		// (e.g. two query nodes starting at same time)
 		err = c.parsePostURLResponseTerse("/pools/default/buckets", args, &ret)
-		if err != nil {
+		if err != nil && !AlreadyExistsError(err) {
 			return nil, err
 		}
 
@@ -1718,4 +1720,11 @@ func GetSystemBucket(c *Client, p *Pool, name string) (*Bucket, error) {
 	}
 
 	return bucket, err
+}
+
+func AlreadyExistsError(err error) bool {
+	// Bucket error:     Bucket with given name already exists
+	// Scope error:      Scope with this name already exists
+	// Collection error: Collection with this name already exists
+	return strings.Contains(err.Error(), " name already exists")
 }
