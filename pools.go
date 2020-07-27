@@ -227,7 +227,7 @@ type Bucket struct {
 	AuthType               string             `json:"authType"`
 	Capabilities           []string           `json:"bucketCapabilities"`
 	CapabilitiesVersion    string             `json:"bucketCapabilitiesVer"`
-	CollectionsManifestUid string		  `json:"collectionsManifestUid"`
+	CollectionsManifestUid string             `json:"collectionsManifestUid"`
 	Type                   string             `json:"bucketType"`
 	Name                   string             `json:"name"`
 	NodeLocator            string             `json:"nodeLocator"`
@@ -834,7 +834,8 @@ func doOutputAPI(
 	}
 
 	defer res.Body.Close()
-	if res.StatusCode != 200 {
+	// 200 - ok, 202 - accepted (asynchronously)
+	if res.StatusCode != 200 && res.StatusCode != 202 {
 		bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
 		if terse {
 			var outBuf interface{}
@@ -860,9 +861,13 @@ func doOutputAPI(
 	}
 
 	d := json.NewDecoder(res.Body)
-	if err = d.Decode(&out); err != nil {
-		return err
+	// PUT/POST/DELETE request may not have a response body
+	if d.More() {
+		if err = d.Decode(&out); err != nil {
+			return err
+		}
 	}
+
 	return nil
 }
 
@@ -916,6 +921,7 @@ func queryRestAPI(
 	}
 
 	d := json.NewDecoder(res.Body)
+	// GET request should have a response body
 	if err = d.Decode(&out); err != nil {
 		return fmt.Errorf("json decode err: %#v, for requestUrl: %s",
 			err, requestUrl)
@@ -1667,4 +1673,49 @@ func ConnectWithAuthAndGetBucket(endpoint, poolname, bucketname string,
 	}
 
 	return pool.GetBucket(bucketname)
+}
+
+func GetSystemBucket(c *Client, p *Pool, name string) (*Bucket, error) {
+	bucket, err := p.GetBucket(name)
+	if err != nil {
+		if _, ok := err.(*BucketNotFoundError); !ok {
+			return nil, err
+		}
+
+		// create the bucket if not found
+		args := map[string]interface{}{
+			"authType":     "sasl",
+			"bucketType":   "couchbase",
+			"name":         name,
+			"ramQuotaMB":   100,
+			"saslPassword": "donotuse",
+		}
+		var ret interface{}
+		err = c.parsePostURLResponseTerse("/pools/default/buckets", args, &ret)
+		if err != nil {
+			return nil, err
+		}
+
+		// bucket created asynchronously, try to get the bucket
+		maxRetry := 8
+		interval := 100 * time.Millisecond
+		for i := 0; i < maxRetry; i++ {
+			time.Sleep(interval)
+			interval *= 2
+			err = p.refresh()
+			if err != nil {
+				return nil, err
+			}
+			bucket, err = p.GetBucket(name)
+			if bucket != nil {
+				break
+			} else if err != nil {
+				if _, ok := err.(*BucketNotFoundError); !ok {
+					break
+				}
+			}
+		}
+	}
+
+	return bucket, err
 }
