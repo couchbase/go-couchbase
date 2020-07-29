@@ -1710,7 +1710,12 @@ func GetSystemBucket(c *Client, p *Pool, name string) (*Bucket, error) {
 			}
 			bucket, err = p.GetBucket(name)
 			if bucket != nil {
-				break
+				bucket.RLock()
+				ok := !bucket.closed && len(bucket.getConnPools(true /* already locked */)) > 0
+				bucket.RUnlock()
+				if ok {
+					break
+				}
 			} else if err != nil {
 				if _, ok := err.(*BucketNotFoundError); !ok {
 					break
