@@ -1727,6 +1727,11 @@ func GetSystemBucket(c *Client, p *Pool, name string) (*Bucket, error) {
 	return bucket, err
 }
 
+func DropSystemBucket(c *Client, name string) error {
+	err := c.parseDeleteURLResponseTerse("/pools/default/buckets/"+name, nil, nil)
+	return err
+}
+
 func AlreadyExistsError(err error) bool {
 	// Bucket error:     Bucket with given name already exists
 	// Scope error:      Scope with this name already exists
