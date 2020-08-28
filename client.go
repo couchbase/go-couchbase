@@ -205,6 +205,7 @@ func getStatsParallel(sn string, b *Bucket, offset int, which string,
 	if err != nil {
 		gatheredStats = GatheredStats{Server: sn, Err: err}
 	} else {
+		conn.SetDeadline(getDeadline(time.Time{}, DefaultTimeout))
 		sm, err := conn.StatsMap(which)
 		gatheredStats = GatheredStats{Server: sn, Stats: sm, Err: err}
 	}
