@@ -1813,13 +1813,8 @@ func (d *bucketDataSource) sendStreamReq(sendCh chan interface{},
 
 	vbucketUUID := uint64(0)
 	if len(vbucketMetaData.FailOverLog) >= 1 {
-		smax := uint64(0)
-		for _, pair := range vbucketMetaData.FailOverLog {
-			if smax <= pair[1] {
-				smax = pair[1]
-				vbucketUUID = pair[0]
-			}
-		}
+		// pick the most recent entry from failover log.
+		vbucketUUID = vbucketMetaData.FailOverLog[0][0]
 	}
 
 	seqStart := lastSeq
