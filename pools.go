@@ -523,7 +523,7 @@ func (b *Bucket) GetRandomDoc(context ...*memcached.ClientContext) (*gomemcached
 
 // Bucket DDL
 func uriAdj(s string) string {
-	return strings.ReplaceAll(s, "%", "%25")
+	return strings.Replace(s, "%", "%25", -1)
 }
 
 func (b *Bucket) CreateScope(scope string) error {
