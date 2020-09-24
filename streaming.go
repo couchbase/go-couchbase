@@ -112,7 +112,7 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 		startNode := rand.Intn(len(nodes))
 		node := nodes[(startNode)%len(nodes)]
 
-		streamUrl := fmt.Sprintf("http://%s/pools/default/bucketsStreaming/%s", node.Hostname, b.GetName())
+		streamUrl := fmt.Sprintf("http://%s/pools/default/bucketsStreaming/%s", node.Hostname, uriAdj(b.GetName()))
 		logging.Infof(" Trying with %s", streamUrl)
 		req, err := http.NewRequest("GET", streamUrl, nil)
 		if err != nil {

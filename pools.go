@@ -522,13 +522,17 @@ func (b *Bucket) GetRandomDoc(context ...*memcached.ClientContext) (*gomemcached
 }
 
 // Bucket DDL
+func uriAdj(s string) string {
+	return strings.ReplaceAll(s, "%", "%25")
+}
+
 func (b *Bucket) CreateScope(scope string) error {
 	b.RLock()
 	pool := b.pool
 	client := pool.client
 	b.RUnlock()
 	args := map[string]interface{}{"name": scope}
-	return client.parsePostURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections", args, nil)
+	return client.parsePostURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/collections", args, nil)
 }
 
 func (b *Bucket) DropScope(scope string) error {
@@ -536,7 +540,7 @@ func (b *Bucket) DropScope(scope string) error {
 	pool := b.pool
 	client := pool.client
 	b.RUnlock()
-	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections/"+scope, nil, nil)
+	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/collections/"+uriAdj(scope), nil, nil)
 }
 
 func (b *Bucket) CreateCollection(scope string, collection string) error {
@@ -545,7 +549,7 @@ func (b *Bucket) CreateCollection(scope string, collection string) error {
 	client := pool.client
 	b.RUnlock()
 	args := map[string]interface{}{"name": collection}
-	return client.parsePostURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections/"+scope, args, nil)
+	return client.parsePostURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/collections/"+uriAdj(scope), args, nil)
 }
 
 func (b *Bucket) DropCollection(scope string, collection string) error {
@@ -553,7 +557,7 @@ func (b *Bucket) DropCollection(scope string, collection string) error {
 	pool := b.pool
 	client := pool.client
 	b.RUnlock()
-	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections/"+scope+"/"+collection, nil, nil)
+	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/collections/"+uriAdj(scope)+"/"+uriAdj(collection), nil, nil)
 }
 
 func (b *Bucket) FlushCollection(scope string, collection string) error {
@@ -562,7 +566,7 @@ func (b *Bucket) FlushCollection(scope string, collection string) error {
 	client := pool.client
 	b.RUnlock()
 	args := map[string]interface{}{"name": collection, "scope": scope}
-	return client.parsePostURLResponseTerse("/pools/default/buckets/"+b.Name+"/collections-flush", args, nil)
+	return client.parsePostURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/collections-flush", args, nil)
 }
 
 func (b *Bucket) getMasterNode(i int) string {
