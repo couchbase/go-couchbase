@@ -216,7 +216,7 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 			if streamingFn != nil {
 				streamingFn(tmpb)
 			}
-			logging.Infof("Got new configuration for bucket %s", b.GetName())
+			logging.Debugf("Got new configuration for bucket %s", b.GetName())
 
 		}
 		// we are here because of an error
