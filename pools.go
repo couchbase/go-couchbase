@@ -311,6 +311,11 @@ func (b *Bucket) VBServerMap() *VBucketServerMap {
 	return ret
 }
 
+func (b *Bucket) VBServerMapNoLock() *VBucketServerMap {
+	ret := (*VBucketServerMap)(b.vBucketServerMap)
+	return ret
+}
+
 func (b *Bucket) GetVBmap(addrs []string) (map[string][]uint16, error) {
 	vbmap := b.VBServerMap()
 	servers := vbmap.ServerList
@@ -1445,6 +1450,9 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 			}
 		}
 
+		if hostport == _TRACKED_HOST {
+			logging.Infof("Creating connection pool %v bucket %v nodes %v VBmap %v", hostport, b.Name, tmpb.NodesJSON, tmpb.VBSMJson)
+		}
 		if b.ah != nil {
 			newcps[i] = newConnectionPool(hostport,
 				b.ah, AsynchronousCloser, PoolSize, PoolOverflow, client.tlsConfig, b.Name, encrypted)
