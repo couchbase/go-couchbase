@@ -112,31 +112,16 @@ func IsUnknownCollection(err error) bool {
 // ClientOpCallback is called for each invocation of Do.
 var ClientOpCallback func(opname, k string, start time.Time, err error)
 
-// MB-41420 diags
-const _TRACKED_HOST = "172.23.96.48:11210"
-
-func logDiags41420good(where string, pool *connectionPool, bucket *Bucket, key string, vb uint16) {
-	if pool.host == _TRACKED_HOST {
-		logging.Infof("Unexpected connection %v node %v Bucket %v key %v vb %v VBmap %v", where, pool.host, bucket.Name, key, vb, bucket.VBServerMap())
-	}
-}
-
-func logDiags41420bad(where string, pool *connectionPool, bucket *Bucket, key string, vb uint16) {
-	if pool != nil && pool.host == _TRACKED_HOST {
-		logging.Infof("failed connection %v node %v Bucket %v key %v vb %v VBmap %v", where, pool.host, bucket.Name, key, vb, bucket.VBServerMap())
-	}
-}
-
 // Do executes a function on a memcached connection to the node owning key "k"
 //
 // Note that this automatically handles transient errors by replaying
 // your function on a "not-my-vbucket" error, so don't assume
 // your command will only be executed only once.
 func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (err error) {
-	return b.Do2("Do()", k, f, true)
+	return b.Do2(k, f, true)
 }
 
-func (b *Bucket) Do2(where, k string, f func(mc *memcached.Client, vb uint16) error, deadline bool) (err error) {
+func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, deadline bool) (err error) {
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to Do(%q)", k)
 	}
@@ -146,14 +131,11 @@ func (b *Bucket) Do2(where, k string, f func(mc *memcached.Client, vb uint16) er
 	for i := 0; i < maxTries; i++ {
 		conn, pool, err := b.getConnectionToVBucket(vb)
 		if err != nil {
-			logDiags41420bad(where, pool, b, k, uint16(vb))
 			if isConnError(err) && backOff(i, maxTries, backOffDuration, true) {
 				b.Refresh()
 				continue
 			}
 			return err
-		} else {
-			logDiags41420good(where, pool, b, k, uint16(vb))
 		}
 
 		if deadline && DefaultTimeout > 0 {
@@ -462,7 +444,6 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 			pool := b.getConnPool(masterID)
 			conn, err := pool.Get()
 			if err != nil {
-				logDiags41420bad("doBulkGet()", pool, b, keys[0], vb)
 				if isAuthError(err) || isTimeoutError(err) {
 					logging.Errorf("Fatal Error %v : %v", bname, err)
 					ech <- err
@@ -479,9 +460,8 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 				logging.Infof("Pool Get returned %v: %v", bname, err)
 				// retry
 				return nil
-			} else {
-				logDiags41420good("doBulkGet()", pool, b, keys[0], vb)
 			}
+
 			conn.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
 			err = conn.GetBulk(vb, keys, rv, subPaths, context...)
 
@@ -1107,7 +1087,7 @@ func (b *Bucket) GetCollectionCID(scope string, collection string, reqDeadline t
 	var key = "DUMMY" // Contact any server.
 	var manifestUid uint32
 	var collUid uint32
-	err = b.Do2("GetCollectionCID()", key, func(mc *memcached.Client, vb uint16) error {
+	err = b.Do2(key, func(mc *memcached.Client, vb uint16) error {
 		var err1 error
 
 		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
@@ -1143,7 +1123,7 @@ func (b *Bucket) GetsMC(key string, reqDeadline time.Time, context ...*memcached
 		defer func(t time.Time) { ClientOpCallback("GetsMC", key, t, err) }(time.Now())
 	}
 
-	err = b.Do2("GetsMC()", key, func(mc *memcached.Client, vb uint16) error {
+	err = b.Do2(key, func(mc *memcached.Client, vb uint16) error {
 		var err1 error
 
 		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
@@ -1169,7 +1149,7 @@ func (b *Bucket) GetsSubDoc(key string, reqDeadline time.Time, subPaths []string
 		defer func(t time.Time) { ClientOpCallback("GetsSubDoc", key, t, err) }(time.Now())
 	}
 
-	err = b.Do2("GetSubDoc()", key, func(mc *memcached.Client, vb uint16) error {
+	err = b.Do2(key, func(mc *memcached.Client, vb uint16) error {
 		var err1 error
 
 		mc.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
