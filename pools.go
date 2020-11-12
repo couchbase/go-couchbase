@@ -1347,7 +1347,7 @@ func (b *Bucket) GetCollectionsManifest() (*Manifest, error) {
 	b.RLock()
 	pools := b.getConnPools(true /* already locked */)
 	if len(pools) == 0 {
-		b.Unlock()
+		b.RUnlock()
 		return nil, fmt.Errorf("Unable to get connection to retrieve collections manifest: no connection pool. No collections access to bucket %s.", b.Name)
 	}
 	pool := pools[0] // Any pool will do, so use the first one.
