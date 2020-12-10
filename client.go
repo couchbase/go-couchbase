@@ -246,6 +246,81 @@ func (b *Bucket) GatherStats(which string) map[string]GatheredStats {
 	return rv
 }
 
+type BucketStats int
+
+const (
+	StatCount = BucketStats(iota)
+	StatSize
+)
+
+var bucketStatString = []string{
+	"curr_items",
+	"ep_value_size",
+}
+
+var collectionStatString = []string{
+	"items",
+	"disk_size",
+}
+
+// Get selected bucket or collection stats
+func (b *Bucket) GetIntStats(refresh bool, which []BucketStats, context ...*memcached.ClientContext) ([]int64, error) {
+	if refresh {
+		b.Refresh()
+	}
+
+	var res []int64 = make([]int64, len(which))
+	if len(res) == 0 {
+		return res, nil
+	}
+
+	if len(context) > 0 {
+		key := fmt.Sprintf("collections-byid 0x%x", context[0].CollId)
+		resKey := ""
+		for _, gs := range b.GatherStats(key) {
+			if len(gs.Stats) > 0 {
+
+				// the key encodes the scope and collection id
+				// we don't have the scope id, so we have to find it...
+				if resKey == "" {
+					for k, _ := range gs.Stats {
+						resKey = strings.TrimRightFunc(k, func(r rune) bool {
+							return r != ':'
+						})
+						break
+					}
+				}
+				for i, f := range which {
+					key := resKey + collectionStatString[f]
+					val, err := strconv.ParseInt(gs.Stats[key], 10, 64)
+					if err != nil {
+						return nil, err
+					}
+					res[i] += val
+				}
+			} else if gs.Err != nil {
+				return nil, gs.Err
+			}
+		}
+	} else {
+		for _, gs := range b.GatherStats("") {
+			if len(gs.Stats) > 0 {
+				for i, f := range which {
+					val, err := strconv.ParseInt(gs.Stats[bucketStatString[f]], 10, 64)
+					if err != nil {
+						return nil, err
+					}
+					res[i] += val
+				}
+			} else if gs.Err != nil {
+				return nil, gs.Err
+			}
+		}
+	}
+
+	return res, nil
+}
+
 // Get bucket count through the bucket stats
 func (b *Bucket) GetCount(refresh bool, context ...*memcached.ClientContext) (count int64, err error) {
 	if refresh {
