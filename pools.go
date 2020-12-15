@@ -533,7 +533,7 @@ func (b *Bucket) CreateScope(scope string) error {
 	client := pool.client
 	b.RUnlock()
 	args := map[string]interface{}{"name": scope}
-	return client.parsePostURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/collections", args, nil)
+	return client.parsePostURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/scopes", args, nil)
 }
 
 func (b *Bucket) DropScope(scope string) error {
@@ -541,7 +541,7 @@ func (b *Bucket) DropScope(scope string) error {
 	pool := b.pool
 	client := pool.client
 	b.RUnlock()
-	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/collections/"+uriAdj(scope), nil, nil)
+	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/scopes/"+uriAdj(scope), nil, nil)
 }
 
 func (b *Bucket) CreateCollection(scope string, collection string) error {
@@ -550,7 +550,7 @@ func (b *Bucket) CreateCollection(scope string, collection string) error {
 	client := pool.client
 	b.RUnlock()
 	args := map[string]interface{}{"name": collection}
-	return client.parsePostURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/collections/"+uriAdj(scope), args, nil)
+	return client.parsePostURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/scopes/"+uriAdj(scope)+"/collections", args, nil)
 }
 
 func (b *Bucket) DropCollection(scope string, collection string) error {
@@ -558,7 +558,7 @@ func (b *Bucket) DropCollection(scope string, collection string) error {
 	pool := b.pool
 	client := pool.client
 	b.RUnlock()
-	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/collections/"+uriAdj(scope)+"/"+uriAdj(collection), nil, nil)
+	return client.parseDeleteURLResponseTerse("/pools/default/buckets/"+uriAdj(b.Name)+"/scopes/"+uriAdj(scope)+"/collections/"+uriAdj(collection), nil, nil)
 }
 
 func (b *Bucket) FlushCollection(scope string, collection string) error {
