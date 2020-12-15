@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -211,6 +212,20 @@ func getStatsParallel(sn string, b *Bucket, offset int, which string,
 	}
 }
 
+func getStatsParallelFunc(fn func(key, val []byte), sn string, b *Bucket, offset int, which string,
+	ch chan<- GatheredStats) {
+	pool := b.getConnPool(offset)
+
+	conn, err := pool.Get()
+
+	if err == nil {
+		conn.SetDeadline(getDeadline(time.Time{}, DefaultTimeout))
+		err = conn.StatsFunc(which, fn)
+		pool.Return(conn)
+	}
+	ch <- GatheredStats{Server: sn, Err: err}
+}
+
 // GetStats gets a set of stats from all servers.
 //
 // Returns a map of server ID -> map of stat key to map value.
@@ -246,6 +261,34 @@ func (b *Bucket) GatherStats(which string) map[string]GatheredStats {
 	return rv
 }
 
+// GatherStats returns a map of server ID -> GatheredStats from all servers.
+func (b *Bucket) GatherStatsFunc(which string, fn func(key, val []byte)) map[string]error {
+	var errMap map[string]error
+
+	vsm := b.VBServerMap()
+	if vsm.ServerList == nil {
+		return errMap
+	}
+
+	// Go grab all the things at once.
+	ch := make(chan GatheredStats, len(vsm.ServerList))
+	for i, sn := range vsm.ServerList {
+		go getStatsParallelFunc(fn, sn, b, i, which, ch)
+	}
+
+	// Gather the results
+	for range vsm.ServerList {
+		gs := <-ch
+		if gs.Err != nil {
+			if errMap == nil {
+				errMap = make(map[string]error)
+				errMap[gs.Server] = gs.Err
+			}
+		}
+	}
+	return errMap
+}
+
 type BucketStats int
 
 const (
@@ -269,56 +312,69 @@ func (b *Bucket) GetIntStats(refresh bool, which []BucketStats, context ...*memc
 		b.Refresh()
 	}
 
-	var res []int64 = make([]int64, len(which))
-	if len(res) == 0 {
-		return res, nil
+	var vals []int64 = make([]int64, len(which))
+	if len(vals) == 0 {
+		return vals, nil
 	}
 
+	var outErr error
 	if len(context) > 0 {
-		key := fmt.Sprintf("collections-byid 0x%x", context[0].CollId)
-		resKey := ""
-		for _, gs := range b.GatherStats(key) {
-			if len(gs.Stats) > 0 {
 
-				// the key encodes the scope and collection id
-				// we don't have the scope id, so we have to find it...
-				if resKey == "" {
-					for k, _ := range gs.Stats {
-						resKey = strings.TrimRightFunc(k, func(r rune) bool {
-							return r != ':'
-						})
-						break
+		collKey := fmt.Sprintf("collections-byid 0x%x", context[0].CollId)
+		errs := b.GatherStatsFunc(collKey, func(key, val []byte) {
+			done := len(which)
+			for i, f := range which {
+				lk := len(key)
+				ls := len(collectionStatString[f])
+				if lk >= ls && string(key[lk-ls:]) == collectionStatString[f] {
+					done--
+					v, err := strconv.ParseInt(string(val), 10, 64)
+					if err == nil {
+						atomic.AddInt64(&vals[i], v)
+					} else if outErr == nil {
+						outErr = err
+					}
+
+					// we are not interested in further stats
+					if done == 0 {
+						return
 					}
 				}
-				for i, f := range which {
-					key := resKey + collectionStatString[f]
-					val, err := strconv.ParseInt(gs.Stats[key], 10, 64)
-					if err != nil {
-						return nil, err
-					}
-					res[i] += val
-				}
-			} else if gs.Err != nil {
-				return nil, gs.Err
 			}
+		})
+
+		// have to use a range to access any one element of a map
+		for _, err := range errs {
+			return nil, err
 		}
 	} else {
-		for _, gs := range b.GatherStats("") {
-			if len(gs.Stats) > 0 {
-				for i, f := range which {
-					val, err := strconv.ParseInt(gs.Stats[bucketStatString[f]], 10, 64)
-					if err != nil {
-						return nil, err
+		errs := b.GatherStatsFunc("", func(key, val []byte) {
+			done := len(which)
+			for i, f := range which {
+				if string(key) == bucketStatString[f] {
+					done--
+					v, err := strconv.ParseInt(string(val), 10, 64)
+					if err == nil {
+						atomic.AddInt64(&vals[i], v)
+					} else if outErr == nil {
+						outErr = err
 					}
-					res[i] += val
+
+					// we are not interested in further stats
+					if done == 0 {
+						return
+					}
 				}
-			} else if gs.Err != nil {
-				return nil, gs.Err
 			}
+		})
+
+		// have to use a range to access any one element of a map
+		for _, err := range errs {
+			return nil, err
 		}
 	}
 
-	return res, nil
+	return vals, outErr
 }
 
 // Get bucket count through the bucket stats
