@@ -322,22 +322,15 @@ func (b *Bucket) GetIntStats(refresh bool, which []BucketStats, context ...*memc
 
 		collKey := fmt.Sprintf("collections-byid 0x%x", context[0].CollId)
 		errs := b.GatherStatsFunc(collKey, func(key, val []byte) {
-			done := len(which)
 			for i, f := range which {
 				lk := len(key)
 				ls := len(collectionStatString[f])
 				if lk >= ls && string(key[lk-ls:]) == collectionStatString[f] {
-					done--
 					v, err := strconv.ParseInt(string(val), 10, 64)
 					if err == nil {
 						atomic.AddInt64(&vals[i], v)
 					} else if outErr == nil {
 						outErr = err
-					}
-
-					// we are not interested in further stats
-					if done == 0 {
-						return
 					}
 				}
 			}
@@ -349,20 +342,13 @@ func (b *Bucket) GetIntStats(refresh bool, which []BucketStats, context ...*memc
 		}
 	} else {
 		errs := b.GatherStatsFunc("", func(key, val []byte) {
-			done := len(which)
 			for i, f := range which {
 				if string(key) == bucketStatString[f] {
-					done--
 					v, err := strconv.ParseInt(string(val), 10, 64)
 					if err == nil {
 						atomic.AddInt64(&vals[i], v)
 					} else if outErr == nil {
 						outErr = err
-					}
-
-					// we are not interested in further stats
-					if done == 0 {
-						return
 					}
 				}
 			}
