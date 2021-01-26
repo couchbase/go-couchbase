@@ -510,9 +510,11 @@ func (b *Bucket) GetRandomDoc(context ...*memcached.ClientContext) (*gomemcached
 	// We may need to select the bucket before GetRandomDoc()
 	// will work. This is sometimes done at startup (see defaultMkConn())
 	// but not always, depending on the auth type.
-	_, err = conn.SelectBucket(b.Name)
-	if err != nil {
-		return nil, err
+	if conn.LastBucket() != b.Name {
+		_, err = conn.SelectBucket(b.Name)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// get a randomm document from the connection
