@@ -933,6 +933,14 @@ var ErrKeyExists = errors.New("key exists")
 func (b *Bucket) Write(k string, flags, exp int, v interface{},
 	opt WriteOptions, context ...*memcached.ClientContext) (err error) {
 
+	_, err = b.WriteWithCAS(k,flags,exp,v,opt,context...)
+
+	return err
+}
+
+func (b *Bucket) WriteWithCAS(k string, flags, exp int, v interface{},
+	opt WriteOptions, context ...*memcached.ClientContext) (cas uint64, err error) {
+
 	if ClientOpCallback != nil {
 		defer func(t time.Time) {
 			ClientOpCallback(fmt.Sprintf("Write(%v)", opt), k, t, err)
@@ -943,7 +951,7 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 	if opt&Raw == 0 {
 		data, err = json.Marshal(v)
 		if err != nil {
-			return err
+			return cas, err
 		}
 	} else if v != nil {
 		data = v.([]byte)
@@ -976,7 +984,7 @@ func (b *Bucket) Write(k string, flags, exp int, v interface{},
 		err = b.WaitForPersistence(k, res.Cas, data == nil)
 	}
 
-	return err
+	return res.Cas,err
 }
 
 func (b *Bucket) WriteWithMT(k string, flags, exp int, v interface{},
@@ -1135,6 +1143,11 @@ func (b *Bucket) Set(k string, exp int, v interface{}, context ...*memcached.Cli
 	return b.Write(k, 0, exp, v, 0, context...)
 }
 
+// Set a value in this bucket.
+func (b *Bucket) SetWithCAS(k string, exp int, v interface{}, context ...*memcached.ClientContext) (uint64, error) {
+	return b.WriteWithCAS(k, 0, exp, v, 0, context...)
+}
+
 // Set a value in this bucket with with flags
 func (b *Bucket) SetWithMeta(k string, flags int, exp int, v interface{}, context ...*memcached.ClientContext) (*MutationToken, error) {
 	return b.WriteWithMT(k, flags, exp, v, 0, context...)
@@ -1154,6 +1167,16 @@ func (b *Bucket) Add(k string, exp int, v interface{}, context ...*memcached.Cli
 		return false, nil
 	}
 	return (err == nil), err
+}
+
+// Add adds a value to this bucket; like Set except that nothing
+// happens if the key exists. Return the CAS value.
+func (b *Bucket) AddWithCAS(k string, exp int, v interface{}, context ...*memcached.ClientContext) (bool, uint64, error) {
+	cas, err := b.WriteWithCAS(k, 0, exp, v, AddOnly, context...)
+	if err == ErrKeyExists {
+		return false, 0, nil
+	}
+	return (err == nil), cas, err
 }
 
 // AddRaw adds a value to this bucket; like SetRaw except that nothing
