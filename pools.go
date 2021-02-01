@@ -706,6 +706,7 @@ func doHTTPRequestForStreaming(req *http.Request) (*http.Response, error) {
 		if skipVerify {
 			tr = &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				MaxIdleConnsPerHost: MaxIdleConnsPerHost,
 			}
 		} else {
 			// Handle cases with cert
@@ -717,6 +718,7 @@ func doHTTPRequestForStreaming(req *http.Request) (*http.Response, error) {
 
 			tr = &http.Transport{
 				TLSClientConfig: cfg,
+				MaxIdleConnsPerHost: MaxIdleConnsPerHost,
 			}
 		}
 
@@ -754,6 +756,7 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 		if skipVerify {
 			tr = &http.Transport{
 				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				MaxIdleConnsPerHost: MaxIdleConnsPerHost,
 			}
 		} else {
 			// Handle cases with cert
@@ -765,10 +768,11 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 
 			tr = &http.Transport{
 				TLSClientConfig: cfg,
+				MaxIdleConnsPerHost: MaxIdleConnsPerHost,
 			}
 		}
 
-		client = &http.Client{Transport: tr}
+		client = &http.Client{Transport: tr, Timeout: ClientTimeOut}
 
 	} else if client == nil {
 		client = HTTPClient
