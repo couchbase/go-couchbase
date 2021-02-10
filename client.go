@@ -977,14 +977,18 @@ func (b *Bucket) WriteWithCAS(k string, flags, exp int, v interface{},
 			res, err = mc.Set(vb, k, flags, exp, data, context...)
 		}
 
+		if err == nil {
+			cas = res.Cas
+		}
+
 		return err
 	})
 
 	if err == nil && (opt&(Persist|Indexable) != 0) {
-		err = b.WaitForPersistence(k, res.Cas, data == nil)
+		err = b.WaitForPersistence(k, cas, data == nil)
 	}
 
-	return res.Cas,err
+	return cas, err
 }
 
 func (b *Bucket) WriteWithMT(k string, flags, exp int, v interface{},
