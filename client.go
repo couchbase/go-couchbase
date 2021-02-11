@@ -147,7 +147,7 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 		err = f(conn, uint16(vb))
 
 		var retry bool
-		discard := isOutOfBoundsError(err)
+		discard := isOutOfBoundsError(err) || IsReadTimeOutError(err)
 
 		// MB-30967 / MB-31001 implement back off for transient errors
 		if resp, ok := err.(*gomemcached.MCResponse); ok {
@@ -468,6 +468,9 @@ func isAuthError(err error) bool {
 }
 
 func IsReadTimeOutError(err error) bool {
+	if err == nil {
+		return false
+	}
 	estr := err.Error()
 	return strings.Contains(estr, "read tcp") ||
 		strings.Contains(estr, "i/o timeout")
@@ -615,8 +618,8 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 				ech <- err
 				return err
 			case error:
-				if isOutOfBoundsError(err) {
-					// We got an out of bound error, retry the operation
+				if isOutOfBoundsError(err) || IsReadTimeOutError(err) {
+					// We got an out of bounds error or a read timeout error; retry the operation
 					discard = true
 					return nil
 				} else if isConnError(err) && backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true) {
