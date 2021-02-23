@@ -576,6 +576,21 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 					}
 					b.Refresh()
 					backOffAttempts++
+				} else if err == errNoPool {
+					if !backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true) {
+						logging.Errorf("Connection Error %v : %v", bname, err)
+						ech <- err
+						return err
+					}
+					err = b.Refresh()
+					if err != nil {
+						ech <- err
+						return err
+					}
+					backOffAttempts++
+
+					// retry, and make no noise
+					return nil
 				}
 				logging.Infof("Pool Get returned %v: %v", bname, err)
 				// retry
