@@ -123,6 +123,8 @@ func (b *Bucket) Do(k string, f func(mc *memcached.Client, vb uint16) error) (er
 }
 
 func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, deadline bool) (err error) {
+	var lastError error
+
 	if SlowServerCallWarningThreshold > 0 {
 		defer slowLog(time.Now(), "call to Do(%q)", k)
 	}
@@ -132,7 +134,7 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 	for i := 0; i < maxTries; i++ {
 		conn, pool, err := b.getConnectionToVBucket(vb)
 		if err != nil {
-			if isConnError(err) && backOff(i, maxTries, backOffDuration, true) {
+			if (err == errNoPool || isConnError(err)) && backOff(i, maxTries, backOffDuration, true) {
 				b.Refresh()
 				continue
 			}
@@ -144,13 +146,13 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 		} else {
 			conn.SetDeadline(noDeadline)
 		}
-		err = f(conn, uint16(vb))
+		lastError = f(conn, uint16(vb))
 
-		var retry bool
-		discard := isOutOfBoundsError(err) || IsReadTimeOutError(err)
+		retry := false
+		discard := isOutOfBoundsError(lastError) || IsReadTimeOutError(lastError)
 
 		// MB-30967 / MB-31001 implement back off for transient errors
-		if resp, ok := err.(*gomemcached.MCResponse); ok {
+		if resp, ok := lastError.(*gomemcached.MCResponse); ok {
 			switch resp.Status {
 			case gomemcached.NOT_MY_VBUCKET:
 				b.Refresh()
@@ -163,12 +165,10 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 				retry = true
 			case gomemcached.ENOMEM:
 				fallthrough
-			case gomemcached.TMPFAIL:
+			case gomemcached.TMPFAIL, gomemcached.EBUSY:
 				retry = backOff(i, maxTries, backOffDuration, true)
-			default:
-				retry = false
 			}
-		} else if err != nil && isConnError(err) && backOff(i, maxTries, backOffDuration, true) {
+		} else if lastError != nil && isConnError(lastError) && backOff(i, maxTries, backOffDuration, true) {
 			retry = true
 		}
 
@@ -179,11 +179,11 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 		}
 
 		if !retry {
-			return err
+			return lastError
 		}
 	}
 
-	return fmt.Errorf("unable to complete action after %v attemps", maxTries)
+	return fmt.Errorf("unable to complete action after %v attemps: ", maxTries, lastError)
 }
 
 type GatheredStats struct {
@@ -951,7 +951,7 @@ var ErrKeyExists = errors.New("key exists")
 func (b *Bucket) Write(k string, flags, exp int, v interface{},
 	opt WriteOptions, context ...*memcached.ClientContext) (err error) {
 
-	_, err = b.WriteWithCAS(k,flags,exp,v,opt,context...)
+	_, err = b.WriteWithCAS(k, flags, exp, v, opt, context...)
 
 	return err
 }
