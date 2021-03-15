@@ -637,7 +637,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 				ech <- err
 				return err
 			case error:
-				if isOutOfBoundsError(err) || IsReadTimeOutError(err) {
+				if isOutOfBoundsError(err) {
 					// We got an out of bounds error or a read timeout error; retry the operation
 					discard = true
 					return nil
@@ -648,6 +648,9 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 					discard = true
 					b.Refresh()
 					return nil // retry
+				} else if IsReadTimeOutError(err) {
+					discard = true
+					logging.Errorf("Attempt %v: Terminating bulk request on timeout.", attempts)
 				}
 				ech <- err
 				ch <- rv
