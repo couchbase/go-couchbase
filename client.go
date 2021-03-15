@@ -136,7 +136,7 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 		}
 
 		var retry bool
-		discard := isOutOfBoundsError(err)
+		discard := isOutOfBoundsError(err) || IsReadTimeOutError(lastError)
 
 		// MB-30967 / MB-31001 implement back off for transient errors
 		if resp, ok := err.(*gomemcached.MCResponse); ok {
@@ -281,6 +281,9 @@ func isAuthError(err error) bool {
 }
 
 func IsReadTimeOutError(err error) bool {
+	if err == nil {
+		return false
+	}
 	estr := err.Error()
 	return strings.Contains(estr, "read tcp") ||
 		strings.Contains(estr, "i/o timeout")
@@ -436,6 +439,9 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 					discard = true
 					b.Refresh()
 					return nil // retry
+				} else if IsReadTimeOutError(err) {
+					discard = true
+					logging.Errorf("Attempt %v: Terminating bulk request on timeout.", attempts)
 				}
 				ech <- err
 				ch <- rv
