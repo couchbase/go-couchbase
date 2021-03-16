@@ -88,6 +88,7 @@ func (b *Bucket) GetFailoverLogs(vBuckets []uint16) (FailoverLog, error) {
 		// close the connection so that it doesn't get reused for upr data
 		// connection
 		defer mc.Close()
+		mc.SetDeadline(getDeadline(time.Time{}, DefaultTimeout))
 		failoverlogs, err := mc.UprGetFailoverLog(vbList)
 		if err != nil {
 			return nil, fmt.Errorf("Error getting failover log %s host %s",

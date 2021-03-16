@@ -490,6 +490,7 @@ func (b *Bucket) GetRandomDoc() (*gomemcached.MCResponse, error) {
 	if err != nil {
 		return nil, err
 	}
+	conn.SetDeadline(getDeadline(time.Time{}, DefaultTimeout))
 
 	// We may need to select the bucket before GetRandomDoc()
 	// will work. This is sometimes done at startup (see defaultMkConn())
@@ -1229,6 +1230,7 @@ func (b *Bucket) GetCollectionsManifest() (*Manifest, error) {
 	if err != nil {
 		return nil, fmt.Errorf("Unable to get connection to retrieve collections manifest: %v. No collections access to bucket %s.", err, b.Name)
 	}
+	client.SetDeadline(getDeadline(time.Time{}, DefaultTimeout))
 
 	// We need to select the bucket before GetCollectionsManifest()
 	// will work. This is sometimes done at startup (see defaultMkConn())
