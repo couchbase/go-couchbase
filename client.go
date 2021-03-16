@@ -136,7 +136,7 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 		}
 
 		var retry bool
-		discard := isOutOfBoundsError(err) || IsReadTimeOutError(lastError)
+		discard := isOutOfBoundsError(err) || IsReadTimeOutError(err)
 
 		// MB-30967 / MB-31001 implement back off for transient errors
 		if resp, ok := err.(*gomemcached.MCResponse); ok {
