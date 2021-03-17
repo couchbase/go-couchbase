@@ -66,7 +66,7 @@ func slowLog(startTime time.Time, format string, args ...interface{}) {
 	}
 }
 
-// Return true if error is KEY_ENOENT. Required by cbq-engine
+// Return true if error is KEY_EEXISTS. Required by cbq-engine
 func IsKeyEExistsError(err error) bool {
 
 	res, ok := err.(*gomemcached.MCResponse)
@@ -184,7 +184,11 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 	}
 
 	if resp, ok := lastError.(*gomemcached.MCResponse); ok {
-		return fmt.Errorf("unable to complete action after %v attemps: %v", maxTries, resp.Status)
+		err := gomemcached.StatusNames[resp.Status]
+		if err == "" {
+			err = fmt.Sprintf("KV status %v", resp.Status)
+		}
+		return fmt.Errorf("unable to complete action after %v attemps: %v", maxTries, err)
 	} else {
 		return fmt.Errorf("unable to complete action after %v attemps: %v", maxTries, lastError)
 	}
