@@ -508,6 +508,14 @@ func isOutOfBoundsError(err error) bool {
 
 }
 
+func isAddrNotAvailable(err error) bool {
+	if err == nil {
+		return false
+	}
+	estr := err.Error()
+	return strings.Contains(estr,"cannot assign requested address")
+}
+
 func getDeadline(reqDeadline time.Time, duration time.Duration) time.Time {
 	if reqDeadline.IsZero() {
 		if duration > 0 {
@@ -599,8 +607,16 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 
 					// retry, and make no noise
 					return nil
+				} else if isAddrNotAvailable(err) {
+					if !backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, true) {
+						logging.Errorf("Out of ephemeral ports: %v : %v", bname, err)
+						ech <- err
+						return err
+					}
+					b.Refresh()
+					backOffAttempts++
 				}
-				logging.Infof("Pool Get returned %v: %v", bname, err)
+				logging.Infof("(Attempt: %v) Pool Get returned %v: %v", attempts, bname, err)
 				// retry
 				return nil
 			}
