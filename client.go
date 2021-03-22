@@ -513,7 +513,7 @@ func isAddrNotAvailable(err error) bool {
 		return false
 	}
 	estr := err.Error()
-	return strings.Contains(estr,"cannot assign requested address")
+	return strings.Contains(estr, "cannot assign requested address")
 }
 
 func getDeadline(reqDeadline time.Time, duration time.Duration) time.Time {
@@ -554,6 +554,7 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 	backOffAttempts := 0
 	done := false
 	bname := b.Name
+	var lastError error
 	for ; attempts < MaxBulkRetries && !done && !eStatus.errStatus; attempts++ {
 
 		if len(b.VBServerMap().VBucketMap) < int(vb) {
@@ -616,10 +617,17 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 					b.Refresh()
 					backOffAttempts++
 				}
-				logging.Infof("(Attempt: %v) Pool Get returned %v: %v", attempts, bname, err)
+				if lastError == nil || err.Error() != lastError.Error() || MaxBulkRetries-1 == attempts {
+					if lastError != nil {
+						logging.Infof("(... attempt: %v) Pool Get returned %v: %v", attempts-1, bname, err)
+					}
+					logging.Infof("(Attempt: %v) Pool Get returned %v: %v", attempts, bname, err)
+					lastError = err
+				}
 				// retry
 				return nil
 			}
+			lastError = nil
 
 			conn.SetDeadline(getDeadline(reqDeadline, DefaultTimeout))
 			err = conn.GetBulk(vb, keys, rv, subPaths, context...)
