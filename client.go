@@ -155,11 +155,14 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 		if resp, ok := lastError.(*gomemcached.MCResponse); ok {
 			switch resp.Status {
 			case gomemcached.NOT_MY_VBUCKET:
-				b.Refresh()
+				retry = backOff(i, maxTries, backOffDuration, false)
+				if retry {
+					b.Refresh()
+				}
+
 				// MB-28842: in case of NMVB, check if the node is still part of the map
 				// and ditch the connection if it isn't.
 				discard = b.checkVBmap(pool.Node())
-				retry = true
 			case gomemcached.NOT_SUPPORTED:
 				discard = true
 				retry = true
@@ -645,10 +648,18 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 			case *gomemcached.MCResponse:
 				notSMaxTries := len(b.Nodes()) * 2
 				st := err.(*gomemcached.MCResponse).Status
-				if st == gomemcached.NOT_MY_VBUCKET || (st == gomemcached.NOT_SUPPORTED && attempts < notSMaxTries) {
+				if st == gomemcached.NOT_MY_VBUCKET {
+
+					// increment first, as we want a delay
+					backOffAttempts++
+					backOff(backOffAttempts, MaxBackOffRetries, backOffDuration, false)
 					b.Refresh()
 					discard = b.checkVBmap(pool.Node())
 					return nil // retry
+				} else if (st == gomemcached.NOT_SUPPORTED && attempts < notSMaxTries) {
+                                       b.Refresh()
+                                       discard = b.checkVBmap(pool.Node())
+                                       return nil // retry
 				} else if st == gomemcached.EBUSY || st == gomemcached.LOCKED {
 					if (attempts % (MaxBulkRetries / 100)) == 0 {
 						logging.Infof("Retrying Memcached error (%v) FOR %v(vbid:%d, keys:<ud>%v</ud>)",
