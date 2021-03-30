@@ -314,7 +314,7 @@ var bucketStatString = []string{
 
 var collectionStatString = []string{
 	"items",
-	"disk_size",
+	"data_size",
 }
 
 // Get selected bucket or collection stats
@@ -443,7 +443,7 @@ func (b *Bucket) GetSize(refresh bool, context ...*memcached.ClientContext) (siz
 					for k, _ := range gs.Stats {
 						resKey = strings.TrimRightFunc(k, func(r rune) bool {
 							return r != ':'
-						}) + "disk_size"
+						}) + "data_size"
 						break
 					}
 				}
