@@ -54,7 +54,8 @@ func main() {
 	for _, bi := range bucketInfo {
 		var cbbucket *couchbase.Bucket
 
-		cbbucket, err = cbpool.GetBucketWithAuth(bi.Name, bi.Name, bi.Password)
+		cbbucket, err = cbpool.GetBucketWithAuth(bi.Name, bi.User, bi.Password)
+
 		if err != nil {
 			fmt.Printf("Failed to connect to bucket %s %v", bi.Name, err)
 			return
@@ -62,7 +63,7 @@ func main() {
 
 		err = cbbucket.Set("k1", 0, "value")
 		if err != nil {
-			fmt.Printf("set failed error %v", err)
+			fmt.Printf("set failed error %v \n\n", err)
 			return
 		}
 

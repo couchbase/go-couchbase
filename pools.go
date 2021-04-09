@@ -224,7 +224,6 @@ type DurablitySettings struct {
 // take a boolean parameter "bucketLocked".
 type Bucket struct {
 	sync.RWMutex
-	AuthType               string             `json:"authType"`
 	Capabilities           []string           `json:"bucketCapabilities"`
 	CapabilitiesVersion    string             `json:"bucketCapabilitiesVer"`
 	CollectionsManifestUid string             `json:"collectionsManifestUid"`
@@ -233,7 +232,6 @@ type Bucket struct {
 	NodeLocator            string             `json:"nodeLocator"`
 	Quota                  map[string]float64 `json:"quota,omitempty"`
 	Replicas               int                `json:"replicaNumber"`
-	Password               string             `json:"saslPassword"`
 	URI                    string             `json:"uri"`
 	StreamingURI           string             `json:"streamingUri"`
 	LocalRandomKeyURI      string             `json:"localRandomKeyUri,omitempty"`
@@ -290,17 +288,17 @@ func (e *BucketNotFoundError) Error() string {
 }
 
 type BucketAuth struct {
-	name    string
-	saslPwd string
-	bucket  string
+	name   string
+	pwd    string
+	bucket string
 }
 
 func newBucketAuth(name string, pass string, bucket string) *BucketAuth {
-	return &BucketAuth{name: name, saslPwd: pass, bucket: bucket}
+	return &BucketAuth{name: name, pwd: pass, bucket: bucket}
 }
 
 func (ba *BucketAuth) GetCredentials() (string, string, string) {
-	return ba.name, ba.saslPwd, ba.bucket
+	return ba.name, ba.pwd, ba.bucket
 }
 
 // VBServerMap returns the current VBucketServerMap.
@@ -1179,6 +1177,7 @@ func Connect(baseU string) (Client, error) {
 
 type BucketInfo struct {
 	Name     string // name of bucket
+	User     string // Username to use for access
 	Password string // SASL password of bucket
 }
 
@@ -1199,7 +1198,8 @@ func GetBucketList(baseU string) (bInfo []BucketInfo, err error) {
 	}
 	bInfo = make([]BucketInfo, 0)
 	for _, bucket := range buckets {
-		bucketInfo := BucketInfo{Name: bucket.Name, Password: bucket.Password}
+		user, pass, _ := c.ah.GetCredentials()
+		bucketInfo := BucketInfo{Name: bucket.Name, User: user, Password: pass}
 		bInfo = append(bInfo, bucketInfo)
 	}
 	return bInfo, err
@@ -1605,6 +1605,7 @@ func (p *Pool) GetBucketWithAuth(bucket, username, password string) (*Bucket, er
 	if !ok {
 		return nil, &BucketNotFoundError{bucket: bucket}
 	}
+
 	rv.ah = newBucketAuth(username, password, bucket)
 	err := rv.Refresh()
 	if err != nil {
@@ -1700,11 +1701,9 @@ func GetSystemBucket(c *Client, p *Pool, name string) (*Bucket, error) {
 
 		// create the bucket if not found
 		args := map[string]interface{}{
-			"authType":     "sasl",
-			"bucketType":   "couchbase",
-			"name":         name,
-			"ramQuotaMB":   100,
-			"saslPassword": "donotuse",
+			"bucketType": "couchbase",
+			"name":       name,
+			"ramQuotaMB": 100,
 		}
 		var ret interface{}
 		// allow "bucket already exists" error in case duplicate create
