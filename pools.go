@@ -1672,8 +1672,6 @@ func GetBucket(endpoint, poolname, bucketname string) (*Bucket, error) {
 		return nil, err
 	}
 
-	defer pool.Close()
-
 	return pool.GetBucket(bucketname)
 }
 
@@ -1690,8 +1688,6 @@ func ConnectWithAuthAndGetBucket(endpoint, poolname, bucketname string,
 	if err != nil {
 		return nil, err
 	}
-
-	defer pool.Close()
 
 	return pool.GetBucket(bucketname)
 }
