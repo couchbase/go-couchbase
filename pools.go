@@ -284,7 +284,7 @@ type BucketNotFoundError struct {
 }
 
 func (e *BucketNotFoundError) Error() string {
-	return fmt.Sprint("No bucket named " + e.bucket)
+	return fmt.Sprint("No bucket named '" + e.bucket + "'")
 }
 
 type BucketAuth struct {
