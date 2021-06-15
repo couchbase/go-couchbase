@@ -250,6 +250,8 @@ type Bucket struct {
 	ah               AuthHandler        // auth handler
 	ds               *DurablitySettings // Durablity Settings for this bucket
 	closed           bool
+
+	dedicatedPool bool // Set if the pool instance above caters to this Bucket alone
 }
 
 // PoolServices is all the bucket-independent services in a pool
@@ -1396,6 +1398,49 @@ func (c *Client) GetPool(name string) (p Pool, err error) {
 	return
 }
 
+func (c *Client) setupPoolForBucket(poolname, bucketname string) (p Pool, err error) {
+	var poolURI string
+
+	for _, p := range c.Info.Pools {
+		if p.Name == poolname {
+			poolURI = p.URI
+			break
+		}
+	}
+	if poolURI == "" {
+		return p, errors.New("No pool named " + poolname)
+	}
+
+	err = c.parseURLResponse(poolURI, &p)
+	if err != nil {
+		return p, err
+	}
+
+	p.client = c
+	p.BucketMap = make(map[string]*Bucket)
+
+	buckets := []Bucket{}
+	err = p.client.parseURLResponse(p.BucketURL["uri"], &buckets)
+	if err != nil {
+		return
+	}
+	for i, _ := range buckets {
+		if buckets[i].Name == bucketname {
+			b := new(Bucket)
+			*b = buckets[i]
+			b.pool = &p
+			b.nodeList = unsafe.Pointer(&b.NodesJSON)
+			b.replaceConnPools(make([]*connectionPool, len(b.VBSMJson.ServerList)))
+			p.BucketMap[b.Name] = b
+			runtime.SetFinalizer(b, bucketFinalizer)
+			break
+		}
+	}
+	buckets = nil
+
+	return
+}
+
 // GetPoolServices returns all the bucket-independent services in a pool.
 // (See "Exposing services outside of bucket context" in http://goo.gl/uuXRkV)
 func (c *Client) GetPoolServices(name string) (ps PoolServices, err error) {
@@ -1440,6 +1485,12 @@ func (b *Bucket) Close() {
 			}
 		}
 		b.connPools = nil
+
+		// Close the associated pool asynchronously which acquires the
+		// bucket lock separately.
+		if b.dedicatedPool {
+			go b.pool.Close()
+		}
 	}
 }
 
@@ -1534,12 +1585,20 @@ func GetBucket(endpoint, poolname, bucketname string) (*Bucket, error) {
 		return nil, err
 	}
 
-	pool, err := client.GetPool(poolname)
+	pool, err := client.setupPoolForBucket(poolname, bucketname)
 	if err != nil {
 		return nil, err
 	}
 
-	return pool.GetBucket(bucketname)
+	bucket, err := pool.GetBucket(bucketname)
+	if err != nil {
+		// close dedicated pool on error
+		pool.Close()
+		return nil, err
+	}
+
+	bucket.dedicatedPool = true
+	return bucket, nil
 }
 
 // ConnectWithAuthAndGetBucket is a convenience function for
@@ -1551,10 +1610,18 @@ func ConnectWithAuthAndGetBucket(endpoint, poolname, bucketname string,
 		return nil, err
 	}
 
-	pool, err := client.GetPool(poolname)
+	pool, err := client.setupPoolForBucket(poolname, bucketname)
 	if err != nil {
 		return nil, err
 	}
 
-	return pool.GetBucket(bucketname)
+	bucket, err := pool.GetBucket(bucketname)
+	if err != nil {
+		// close dedicated pool on error
+		pool.Close()
+		return nil, err
+	}
+
+	bucket.dedicatedPool = true
+	return bucket, nil
 }
