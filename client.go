@@ -656,10 +656,10 @@ func (b *Bucket) doBulkGet(vb uint16, keys []string, reqDeadline time.Time,
 					b.Refresh()
 					discard = b.checkVBmap(pool.Node())
 					return nil // retry
-				} else if (st == gomemcached.NOT_SUPPORTED && attempts < notSMaxTries) {
-                                       b.Refresh()
-                                       discard = b.checkVBmap(pool.Node())
-                                       return nil // retry
+				} else if st == gomemcached.NOT_SUPPORTED && attempts < notSMaxTries {
+					b.Refresh()
+					discard = b.checkVBmap(pool.Node())
+					return nil // retry
 				} else if st == gomemcached.EBUSY || st == gomemcached.LOCKED {
 					if (attempts % (MaxBulkRetries / 100)) == 0 {
 						logging.Infof("Retrying Memcached error (%v) FOR %v(vbid:%d, keys:<ud>%v</ud>)",
