@@ -879,6 +879,14 @@ OUTER_LOOP:
 		for server, serverVBucketIDs := range vbucketIDsByServer {
 			workerCh, exists := workers[server]
 			if !exists || workerCh == nil || tlsConfigUpdated {
+
+				if tlsConfigUpdated && workerCh != nil {
+					// If tlsConfig was updated, close the older worker before
+					// setting up a new one.
+					atomic.AddUint64(&d.stats.TotRefreshWorkersRemoveWorker, 1)
+					close(workerCh)
+				}
+
 				atomic.AddUint64(&d.stats.TotRefreshWorkersAddWorker, 1)
 				workerCh = make(chan []uint16, 1)
 				workers[server] = workerCh
