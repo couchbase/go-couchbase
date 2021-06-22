@@ -641,7 +641,7 @@ func maybeAddAuth(req *http.Request, ah AuthHandler) error {
 	return nil
 }
 
-// arbitary number, may need to be tuned #FIXME
+// arbitrary number, may need to be tuned #FIXME
 const HTTP_MAX_RETRY = 5
 
 // Someday golang network packages will implement standard
