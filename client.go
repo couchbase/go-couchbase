@@ -172,7 +172,7 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 		}
 	}
 
-	return fmt.Errorf("unable to complete action after %v attemps", maxTries)
+	return fmt.Errorf("unable to complete action after %v attempts", maxTries)
 }
 
 type GatheredStats struct {
