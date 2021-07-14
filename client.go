@@ -191,9 +191,9 @@ func (b *Bucket) Do2(k string, f func(mc *memcached.Client, vb uint16) error, de
 		if err == "" {
 			err = fmt.Sprintf("KV status %v", resp.Status)
 		}
-		return fmt.Errorf("unable to complete action after %v attemps: %v", maxTries, err)
+		return fmt.Errorf("unable to complete action after %v attempts: %v", maxTries, err)
 	} else {
-		return fmt.Errorf("unable to complete action after %v attemps: %v", maxTries, lastError)
+		return fmt.Errorf("unable to complete action after %v attempts: %v", maxTries, lastError)
 	}
 }
 
