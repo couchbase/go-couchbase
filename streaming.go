@@ -3,15 +3,13 @@ package couchbase
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/couchbase/goutils/logging"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"time"
 	"unsafe"
-
-	"github.com/couchbase/goutils/logging"
-	"github.com/couchbase/cbauth"
 )
 
 // Bucket auto-updater gets the latest version of the bucket config from
@@ -153,7 +151,6 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 
 			// if we got here, reset failure count
 			failures = 0
-			force := false
 
 			if b.pool.client.tlsConfig != nil {
 				poolServices, err = b.pool.client.GetPoolServices("default")
@@ -161,14 +158,6 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 					returnErr = err
 					res.Body.Close()
 					break
-				}
-
-				cryptoConfig, err := cbauth.GetClusterEncryptionConfig()
-				if err != nil {
-					// There is an issue retrieving cluster config. Log and move on.
-					logging.Infof(" Issue retrieving TLS: %v", err)
-				} else {
-						force = cryptoConfig.DisableNonSSLPorts
 				}
 			}
 
@@ -196,7 +185,7 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 				var encrypted bool
 				hostport := tmpb.VBSMJson.ServerList[i]
 				if b.pool.client.tlsConfig != nil {
-					hostport, encrypted, err = MapKVtoSSLExt(hostport, &poolServices,force)
+					hostport, encrypted, err = MapKVtoSSL(hostport, &poolServices)
 					if err != nil {
 						b.Unlock()
 						return err

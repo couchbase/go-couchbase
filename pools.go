@@ -22,10 +22,10 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/couchbase/goutils/logging"
+
 	"github.com/couchbase/gomemcached"        // package name is 'gomemcached'
 	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
-	"github.com/couchbase/goutils/logging"
-	"github.com/couchbase/cbauth"
 )
 
 // HTTPClient to use for REST and view operations.
@@ -1407,22 +1407,12 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 	client := pool.client
 	b.RUnlock()
 
-	force := false
-
 	var poolServices PoolServices
 	var err error
 	if client.tlsConfig != nil {
 		poolServices, err = client.GetPoolServices("default")
 		if err != nil {
 			return err
-		}
-
-		cryptoConfig, err := cbauth.GetClusterEncryptionConfig()
-		if err != nil {
-			// There is an issue retrieving cluster config. Log and move on.
-			logging.Infof(" Issue retrieving TLS: %v", err)
-		} else {
-				force = cryptoConfig.DisableNonSSLPorts
 		}
 	}
 
@@ -1460,7 +1450,7 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 		var encrypted bool
 		if client.tlsConfig != nil {
-			hostport, encrypted, err = MapKVtoSSLExt(hostport, &poolServices,force)
+			hostport, encrypted, err = MapKVtoSSL(hostport, &poolServices)
 			if err != nil {
 				b.Unlock()
 				return err
