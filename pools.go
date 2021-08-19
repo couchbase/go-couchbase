@@ -627,6 +627,7 @@ type Client struct {
 	ah        AuthHandler
 	Info      Pools
 	tlsConfig *tls.Config
+	disableNonSSLPorts bool
 }
 
 func maybeAddAuth(req *http.Request, ah AuthHandler) error {
@@ -1144,7 +1145,7 @@ func ConnectWithAuth(baseU string, ah AuthHandler) (c Client, err error) {
 // with the KV engine encrypted.
 //
 // This method should be called immediately after a Connect*() method.
-func (c *Client) InitTLS(certFile string) error {
+func (c *Client) InitTLS(certFile string,disableNonSSLPorts bool) error {
 	serverCert, err := ioutil.ReadFile(certFile)
 	if err != nil {
 		return err
@@ -1152,11 +1153,13 @@ func (c *Client) InitTLS(certFile string) error {
 	CA_Pool := x509.NewCertPool()
 	CA_Pool.AppendCertsFromPEM(serverCert)
 	c.tlsConfig = &tls.Config{RootCAs: CA_Pool}
+	c.disableNonSSLPorts = disableNonSSLPorts
 	return nil
 }
 
 func (c *Client) ClearTLS() {
 	c.tlsConfig = nil
+	c.disableNonSSLPorts = false
 }
 
 // ConnectWithAuthCreds connects to a couchbase cluster with the give
@@ -1409,6 +1412,7 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 	var poolServices PoolServices
 	var err error
+
 	if client.tlsConfig != nil {
 		poolServices, err = client.GetPoolServices("default")
 		if err != nil {
@@ -1450,7 +1454,7 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 		var encrypted bool
 		if client.tlsConfig != nil {
-			hostport, encrypted, err = MapKVtoSSL(hostport, &poolServices)
+			hostport, encrypted, err = MapKVtoSSLExt(hostport, &poolServices,client.disableNonSSLPorts)
 			if err != nil {
 				b.Unlock()
 				return err
