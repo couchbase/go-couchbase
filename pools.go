@@ -22,10 +22,10 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/couchbase/goutils/logging"
-
 	"github.com/couchbase/gomemcached"        // package name is 'gomemcached'
 	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
+	"github.com/couchbase/goutils/logging"
+	ntls "github.com/couchbase/goutils/tls"
 )
 
 // HTTPClient to use for REST and view operations.
@@ -71,6 +71,7 @@ var skipVerify = true
 var certFile = ""
 var keyFile = ""
 var rootFile = ""
+var privateKeyPassphrase = []byte{}
 
 func SetSkipVerify(skip bool) {
 	skipVerify = skip
@@ -80,12 +81,23 @@ func SetCertFile(cert string) {
 	certFile = cert
 }
 
-func SetKeyFile(cert string) {
-	keyFile = cert
+func SetKeyFile(key string) {
+	keyFile = key
 }
 
-func SetRootFile(cert string) {
-	rootFile = cert
+func SetRootFile(cacert string) {
+	rootFile = cacert
+}
+
+func SetPrivateKeyPassphrase(passphrase []byte) {
+	privateKeyPassphrase = passphrase
+}
+
+func UnsetCertSettings() {
+	rootFile = ""
+	certFile = ""
+	keyFile = ""
+	privateKeyPassphrase = []byte{}
 }
 
 // Allow applications to speciify the Poolsize and Overflow
@@ -623,10 +635,11 @@ func (b *Bucket) CommonAddressSuffix() string {
 // A Client is the starting point for all services across all buckets
 // in a Couchbase cluster.
 type Client struct {
-	BaseURL   *url.URL
-	ah        AuthHandler
-	Info      Pools
-	tlsConfig *tls.Config
+	BaseURL            *url.URL
+	ah                 AuthHandler
+	Info               Pools
+	tlsConfig          *tls.Config
+	disableNonSSLPorts bool
 }
 
 func maybeAddAuth(req *http.Request, ah AuthHandler) error {
@@ -657,11 +670,11 @@ func isHttpConnError(err error) bool {
 var client *http.Client
 var clientForStreaming *http.Client
 
-func ClientConfigForX509(certFile, keyFile, rootFile string) (*tls.Config, error) {
+func ClientConfigForX509(certFile, keyFile, rootFile string, passphrase []byte) (*tls.Config, error) {
 	cfg := &tls.Config{}
 
 	if certFile != "" && keyFile != "" {
-		tlsCert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		tlsCert, err := ntls.LoadX509KeyPair(certFile, keyFile, passphrase)
 		if err != nil {
 			return nil, err
 		}
@@ -711,7 +724,7 @@ func doHTTPRequestForStreaming(req *http.Request) (*http.Response, error) {
 		} else {
 			// Handle cases with cert
 
-			cfg, err := ClientConfigForX509(certFile, keyFile, rootFile)
+			cfg, err := ClientConfigForX509(certFile, keyFile, rootFile, privateKeyPassphrase)
 			if err != nil {
 				return nil, err
 			}
@@ -761,7 +774,7 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 		} else {
 			// Handle cases with cert
 
-			cfg, err := ClientConfigForX509(certFile, keyFile, rootFile)
+			cfg, err := ClientConfigForX509(certFile, keyFile, rootFile, privateKeyPassphrase)
 			if err != nil {
 				return nil, err
 			}
@@ -1144,6 +1157,28 @@ func ConnectWithAuth(baseU string, ah AuthHandler) (c Client, err error) {
 // with the KV engine encrypted.
 //
 // This method should be called immediately after a Connect*() method.
+func (c *Client) InitTLS2(certFile, keyFile, rootFile string,
+	disableNonSSLPorts bool, passphrase []byte) error {
+	if len(rootFile) > 0 {
+		certFile = rootFile
+	}
+	serverCert, err := ioutil.ReadFile(certFile)
+	if err != nil {
+		return err
+	}
+	CA_Pool := x509.NewCertPool()
+	CA_Pool.AppendCertsFromPEM(serverCert)
+	c.tlsConfig = &tls.Config{RootCAs: CA_Pool}
+	c.disableNonSSLPorts = disableNonSSLPorts
+
+	// Set the values for certs
+	SetRootFile(rootFile)
+	SetCertFile(certFile)
+	SetKeyFile(keyFile)
+	SetPrivateKeyPassphrase(passphrase)
+	return nil
+}
+
 func (c *Client) InitTLS(certFile string) error {
 	serverCert, err := ioutil.ReadFile(certFile)
 	if err != nil {
@@ -1157,6 +1192,8 @@ func (c *Client) InitTLS(certFile string) error {
 
 func (c *Client) ClearTLS() {
 	c.tlsConfig = nil
+	c.disableNonSSLPorts = false
+	UnsetCertSettings()
 }
 
 // ConnectWithAuthCreds connects to a couchbase cluster with the give
@@ -1450,7 +1487,9 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 		var encrypted bool
 		if client.tlsConfig != nil {
-			hostport, encrypted, err = MapKVtoSSL(hostport, &poolServices)
+			hostport, encrypted, err = MapKVtoSSLExt(hostport,
+				&poolServices,
+				client.disableNonSSLPorts)
 			if err != nil {
 				b.Unlock()
 				return err

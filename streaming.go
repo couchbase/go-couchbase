@@ -185,7 +185,8 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 				var encrypted bool
 				hostport := tmpb.VBSMJson.ServerList[i]
 				if b.pool.client.tlsConfig != nil {
-					hostport, encrypted, err = MapKVtoSSL(hostport, &poolServices)
+					hostport, encrypted, err = MapKVtoSSLExt(hostport,
+						&poolServices, b.pool.client.disableNonSSLPorts)
 					if err != nil {
 						b.Unlock()
 						return err
