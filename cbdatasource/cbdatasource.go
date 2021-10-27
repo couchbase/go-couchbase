@@ -26,7 +26,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
 	"math/rand"
 	"reflect"
 	"sort"
@@ -54,23 +53,15 @@ var ErrXAttrsNotSupported = fmt.Errorf("xattrs not supported by server")
 type SecurityConfig struct {
 	EncryptData        bool
 	DisableNonSSLPorts bool
-	CertFile           string
-	KeyFile            string
+	Certificates       []tls.Certificate
+	RootCAs            *x509.CertPool
 }
 
-type securitySetting struct {
-	config       *SecurityConfig
-	rootCAs      *x509.CertPool
-	certificates []tls.Certificate
-}
-
-var currSecuritySettingMutex sync.RWMutex
-var currSecuritySetting *securitySetting
+var currSecurityConfigMutex sync.RWMutex
+var currSecurityConfig *SecurityConfig
 
 func init() {
-	currSecuritySetting = &securitySetting{
-		config: &SecurityConfig{},
-	}
+	currSecurityConfig = &SecurityConfig{}
 }
 
 func UpdateSecurityConfig(newConfig *SecurityConfig) error {
@@ -78,54 +69,28 @@ func UpdateSecurityConfig(newConfig *SecurityConfig) error {
 		return fmt.Errorf("security config provided is nil")
 	}
 
-	currSecuritySettingMutex.Lock()
-	defer currSecuritySettingMutex.Unlock()
+	currSecurityConfigMutex.Lock()
+	defer currSecurityConfigMutex.Unlock()
 
-	var roots *x509.CertPool
-	var certificates []tls.Certificate
-	if newConfig.EncryptData && newConfig.CertFile != "" {
-		if newConfig.KeyFile != "" {
-			tlsCert, err := tls.LoadX509KeyPair(newConfig.CertFile, newConfig.KeyFile)
-			if err != nil {
-				return err
-			}
-
-			certificates = []tls.Certificate{tlsCert}
-		}
-
-		certInBytes, err := ioutil.ReadFile(newConfig.CertFile)
-		if err != nil {
-			return err
-		}
-
-		roots = x509.NewCertPool()
-		ok := roots.AppendCertsFromPEM(certInBytes)
-		if !ok {
-			return fmt.Errorf("Error appending certificates")
-		}
-	}
-
-	currSecuritySetting.config = newConfig
-	currSecuritySetting.rootCAs = roots
-	currSecuritySetting.certificates = certificates
+	currSecurityConfig = newConfig
 
 	return nil
 }
 
 func fetchGlobalTLSConfig() *tls.Config {
 	var tlsConfig *tls.Config
-	currSecuritySettingMutex.RLock()
+	currSecurityConfigMutex.RLock()
 
-	if currSecuritySetting.config.EncryptData &&
-		(currSecuritySetting.rootCAs != nil ||
-			currSecuritySetting.certificates != nil) {
+	if currSecurityConfig.EncryptData &&
+		(currSecurityConfig.RootCAs != nil ||
+			currSecurityConfig.Certificates != nil) {
 		tlsConfig = &tls.Config{
-			RootCAs:      currSecuritySetting.rootCAs,
-			Certificates: currSecuritySetting.certificates,
+			RootCAs:      currSecurityConfig.RootCAs,
+			Certificates: currSecurityConfig.Certificates,
 		}
 	}
 
-	currSecuritySettingMutex.RUnlock()
+	currSecurityConfigMutex.RUnlock()
 	return tlsConfig
 }
 
