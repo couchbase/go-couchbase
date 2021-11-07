@@ -560,10 +560,11 @@ func (b *Bucket) CommonAddressSuffix() string {
 // A Client is the starting point for all services across all buckets
 // in a Couchbase cluster.
 type Client struct {
-	BaseURL   *url.URL
-	ah        AuthHandler
-	Info      Pools
-	tlsConfig *tls.Config
+	BaseURL            *url.URL
+	ah                 AuthHandler
+	Info               Pools
+	tlsConfig          *tls.Config
+	disableNonSSLPorts bool
 }
 
 func maybeAddAuth(req *http.Request, ah AuthHandler) error {
@@ -642,7 +643,7 @@ func doHTTPRequestForStreaming(req *http.Request) (*http.Response, error) {
 
 		if skipVerify {
 			tr = &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 				MaxIdleConnsPerHost: MaxIdleConnsPerHost,
 			}
 		} else {
@@ -654,7 +655,7 @@ func doHTTPRequestForStreaming(req *http.Request) (*http.Response, error) {
 			}
 
 			tr = &http.Transport{
-				TLSClientConfig: cfg,
+				TLSClientConfig:     cfg,
 				MaxIdleConnsPerHost: MaxIdleConnsPerHost,
 			}
 		}
@@ -692,7 +693,7 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 
 		if skipVerify {
 			tr = &http.Transport{
-				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+				TLSClientConfig:     &tls.Config{InsecureSkipVerify: true},
 				MaxIdleConnsPerHost: MaxIdleConnsPerHost,
 			}
 		} else {
@@ -704,7 +705,7 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 			}
 
 			tr = &http.Transport{
-				TLSClientConfig: cfg,
+				TLSClientConfig:     cfg,
 				MaxIdleConnsPerHost: MaxIdleConnsPerHost,
 			}
 		}
@@ -1022,7 +1023,7 @@ func ConnectWithAuth(baseU string, ah AuthHandler) (c Client, err error) {
 // with the KV engine encrypted.
 //
 // This method should be called immediately after a Connect*() method.
-func (c *Client) InitTLS(certFile string) error {
+func (c *Client) InitTLS(certFile string, disableNonSSLPorts bool) error {
 	serverCert, err := ioutil.ReadFile(certFile)
 	if err != nil {
 		return err
@@ -1030,11 +1031,13 @@ func (c *Client) InitTLS(certFile string) error {
 	CA_Pool := x509.NewCertPool()
 	CA_Pool.AppendCertsFromPEM(serverCert)
 	c.tlsConfig = &tls.Config{RootCAs: CA_Pool}
+	c.disableNonSSLPorts = disableNonSSLPorts
 	return nil
 }
 
 func (c *Client) ClearTLS() {
 	c.tlsConfig = nil
+	c.disableNonSSLPorts = false
 }
 
 // ConnectWithAuthCreds connects to a couchbase cluster with the give
@@ -1281,6 +1284,7 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 	var poolServices PoolServices
 	var err error
+
 	if client.tlsConfig != nil {
 		poolServices, err = client.GetPoolServices("default")
 		if err != nil {
@@ -1322,7 +1326,7 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 		var encrypted bool
 		if client.tlsConfig != nil {
-			hostport, encrypted, err = MapKVtoSSL(hostport, &poolServices)
+			hostport, encrypted, err = MapKVtoSSLExt(hostport, &poolServices, client.disableNonSSLPorts)
 			if err != nil {
 				b.Unlock()
 				return err

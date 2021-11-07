@@ -893,7 +893,7 @@ OUTER_LOOP:
 
 				var conf *tls.Config
 				if tlsConfig != nil {
-					serverSSL, encrypted, err := couchbase.MapKVtoSSL(server, ps)
+					serverSSL, encrypted, err := couchbase.MapKVtoSSLExt(server, ps, true)
 					// If the "kv" port for the selected server wasn't
 					// successfully mapped to it's "kvSsl" port, silently
 					// fall back to using non-encrypted DCP to support

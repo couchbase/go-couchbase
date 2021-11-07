@@ -40,7 +40,14 @@ func ParsePoolServices(jsonInput string) (*PoolServices, error) {
 // Accepts a "host:port" string representing the KV TCP port and the pools
 // nodeServices payload and returns a host:port string representing the KV
 // TLS port on the same node as the KV TCP port.
+// Returns the original host:port if in case of local communication (services
+// on the same node as source)
+
 func MapKVtoSSL(hostport string, ps *PoolServices) (string, bool, error) {
+	return MapKVtoSSLExt(hostport, ps, false)
+}
+
+func MapKVtoSSLExt(hostport string, ps *PoolServices, force bool) (string, bool, error) {
 	host, port, err := net.SplitHostPort(hostport)
 	if err != nil {
 		return "", false, fmt.Errorf("Unable to split hostport %s: %v", hostport, err)
@@ -85,7 +92,7 @@ func MapKVtoSSL(hostport string, ps *PoolServices) (string, bool, error) {
 	}
 
 	//Don't encrypt for communication between local nodes
-	if len(ns.Hostname) == 0 || ns.ThisNode {
+	if !force && (len(ns.Hostname) == 0 || ns.ThisNode) {
 		return hostport, false, nil
 	}
 
