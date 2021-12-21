@@ -6,7 +6,6 @@ import (
 	"github.com/couchbase/goutils/logging"
 	"io"
 	"io/ioutil"
-	"math/rand"
 	"net"
 	"net/http"
 	"time"
@@ -59,7 +58,16 @@ func (b *Bucket) RunBucketUpdater(notify NotifyFn) {
 		err := b.UpdateBucket()
 		if err != nil {
 			if notify != nil {
-				notify(b.GetName(), err)
+				name := b.GetName()
+				notify(name, err)
+
+				// MB-49772 get rid of the deleted bucket
+				p := b.pool
+				b.Close()
+				p.Lock()
+				p.BucketMap[name] = nil
+				delete(p.BucketMap, name)
+				p.Unlock()
 			}
 			logging.Errorf(" Bucket Updater exited with err %v", err)
 		}
@@ -100,10 +108,7 @@ func (b *Bucket) UpdateBucket() error {
 			return fmt.Errorf("No healthy nodes found")
 		}
 
-		startNode := rand.Intn(len(nodes))
-		node := nodes[(startNode)%len(nodes)]
-
-		streamUrl := fmt.Sprintf("http://%s/pools/default/bucketsStreaming/%s", node.Hostname, b.GetName())
+		streamUrl := fmt.Sprintf("%s/pools/default/bucketsStreaming/%s", b.pool.client.BaseURL, uriAdj(b.GetName()))
 		logging.Infof(" Trying with %s", streamUrl)
 		req, err := http.NewRequest("GET", streamUrl, nil)
 		if err != nil {

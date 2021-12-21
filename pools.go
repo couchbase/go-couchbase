@@ -187,8 +187,9 @@ type Node struct {
 
 // A Pool of nodes and buckets.
 type Pool struct {
-	BucketMap map[string]*Bucket
-	Nodes     []Node
+	sync.RWMutex // for BucketMap
+	BucketMap    map[string]*Bucket
+	Nodes        []Node
 
 	BucketURL map[string]string `json:"buckets"`
 
@@ -507,6 +508,10 @@ func (b *Bucket) GetRandomDoc() (*gomemcached.MCResponse, error) {
 	// need to return the connection to the pool
 	pool.Return(conn)
 	return doc, err
+}
+
+func uriAdj(s string) string {
+        return strings.Replace(s, "%", "%25", -1)
 }
 
 func (b *Bucket) getMasterNode(i int) string {
@@ -1353,13 +1358,16 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 }
 
 func (p *Pool) refresh() (err error) {
-	p.BucketMap = make(map[string]*Bucket)
-
 	buckets := []Bucket{}
 	err = p.client.parseURLResponse(p.BucketURL["uri"], &buckets)
 	if err != nil {
 		return err
 	}
+
+
+	p.RLock()
+	defer p.RUnlock()
+	p.BucketMap = make(map[string]*Bucket)
 	for i, _ := range buckets {
 		b := new(Bucket)
 		*b = buckets[i]
@@ -1515,7 +1523,9 @@ func bucketFinalizer(b *Bucket) {
 
 // GetBucket gets a bucket from within this pool.
 func (p *Pool) GetBucket(name string) (*Bucket, error) {
+	p.RLock()
 	rv, ok := p.BucketMap[name]
+	p.RUnlock()
 	if !ok {
 		return nil, &BucketNotFoundError{bucket: name}
 	}
