@@ -3,13 +3,14 @@ package couchbase
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/couchbase/goutils/logging"
 	"io"
 	"io/ioutil"
 	"net"
 	"net/http"
 	"time"
 	"unsafe"
+
+	"github.com/couchbase/goutils/logging"
 )
 
 // Bucket auto-updater gets the latest version of the bucket config from
@@ -19,6 +20,7 @@ import (
 
 const MAX_RETRY_COUNT = 5
 const DISCONNECT_PERIOD = 120 * time.Second
+const STREAM_RETRY_PERIOD = 100 * time.Millisecond
 
 type NotifyFn func(bucket string, err error)
 type StreamingFn func(bucket *Bucket)
@@ -39,9 +41,13 @@ func doHTTPRequestForUpdate(req *http.Request) (*http.Response, error) {
 	var err error
 	var res *http.Response
 
-	for i := 0; i < HTTP_MAX_RETRY; i++ {
+	for i := 1; i <= HTTP_MAX_RETRY; i++ {
 		res, err = updaterHTTPClient.Do(req)
 		if err != nil && isHttpConnError(err) {
+			// exclude first and last
+			if i > 1 && i < HTTP_MAX_RETRY {
+				time.Sleep(HTTP_RETRY_PERIOD)
+			}
 			continue
 		}
 		break
@@ -109,9 +115,17 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 		}
 
 		streamUrl := fmt.Sprintf("%s/pools/default/bucketsStreaming/%s", b.pool.client.BaseURL, uriAdj(b.GetName()))
-		logging.Infof(" Trying with %s", streamUrl)
+		logging.Infof("Bucket updater:  Trying with %s", streamUrl)
 		req, err := http.NewRequest("GET", streamUrl, nil)
 		if err != nil {
+			if isConnError(err) {
+				failures++
+				if failures < MAX_RETRY_COUNT {
+					logging.Infof("Bucket updater : %v (Retrying %v)", err, failures)
+					time.Sleep(time.Duration(failures) * STREAM_RETRY_PERIOD)
+					continue
+				}
+			}
 			return err
 		}
 
@@ -125,12 +139,20 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 
 		res, err := doHTTPRequestForUpdate(req)
 		if err != nil {
+			if isConnError(err) {
+				failures++
+				if failures < MAX_RETRY_COUNT {
+					logging.Infof("Bucket updater : %v (Retrying %v)", err, failures)
+					time.Sleep(time.Duration(failures) * STREAM_RETRY_PERIOD)
+					continue
+				}
+			}
 			return err
 		}
 
 		if res.StatusCode != 200 {
 			bod, _ := ioutil.ReadAll(io.LimitReader(res.Body, 512))
-			logging.Errorf("Failed to connect to host, unexpected status code: %v. Body %s", res.StatusCode, bod)
+			logging.Errorf("Bucket updater: Failed to connect to host, unexpected status code: %v. Body %s", res.StatusCode, bod)
 			res.Body.Close()
 			returnErr = fmt.Errorf("Failed to connect to host. Status %v Body %s", res.StatusCode, bod)
 			failures++
@@ -185,7 +207,7 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 				var encrypted bool
 				hostport := tmpb.VBSMJson.ServerList[i]
 				if b.pool.client.tlsConfig != nil {
-					hostport, encrypted, err = MapKVtoSSLExt(hostport, &poolServices,b.pool.client.disableNonSSLPorts)
+					hostport, encrypted, err = MapKVtoSSLExt(hostport, &poolServices, b.pool.client.disableNonSSLPorts)
 					if err != nil {
 						b.Unlock()
 						return err
@@ -212,7 +234,7 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 			if streamingFn != nil {
 				streamingFn(tmpb)
 			}
-			logging.Debugf("Got new configuration for bucket %s", b.GetName())
+			logging.Debugf("Bucket updater: Got new configuration for bucket %s", b.GetName())
 
 		}
 		// we are here because of an error

@@ -24,8 +24,8 @@ import (
 
 	"github.com/couchbase/goutils/logging"
 
-	"github.com/couchbase/gomemcached"        // package name is 'gomemcached'
-	"github.com/couchbase/gomemcached/client" // package name is 'memcached'
+	"github.com/couchbase/gomemcached"                  // package name is 'gomemcached'
+	memcached "github.com/couchbase/gomemcached/client" // package name is 'memcached'
 )
 
 // HTTPClient to use for REST and view operations.
@@ -623,10 +623,10 @@ func (b *Bucket) CommonAddressSuffix() string {
 // A Client is the starting point for all services across all buckets
 // in a Couchbase cluster.
 type Client struct {
-	BaseURL   *url.URL
-	ah        AuthHandler
-	Info      Pools
-	tlsConfig *tls.Config
+	BaseURL            *url.URL
+	ah                 AuthHandler
+	Info               Pools
+	tlsConfig          *tls.Config
 	disableNonSSLPorts bool
 }
 
@@ -644,6 +644,7 @@ func maybeAddAuth(req *http.Request, ah AuthHandler) error {
 
 // arbitary number, may need to be tuned #FIXME
 const HTTP_MAX_RETRY = 5
+const HTTP_RETRY_PERIOD = 100 * time.Millisecond
 
 // Someday golang network packages will implement standard
 // error codes. Until then #sigh
@@ -651,6 +652,7 @@ func isHttpConnError(err error) bool {
 
 	estr := err.Error()
 	return strings.Contains(estr, "broken pipe") ||
+		strings.Contains(estr, "connection refused") ||
 		strings.Contains(estr, "broken connection") ||
 		strings.Contains(estr, "connection reset")
 }
@@ -729,9 +731,13 @@ func doHTTPRequestForStreaming(req *http.Request) (*http.Response, error) {
 		clientForStreaming = HTTPClientForStreaming
 	}
 
-	for i := 0; i < HTTP_MAX_RETRY; i++ {
+	for i := 1; i <= HTTP_MAX_RETRY; i++ {
 		res, err = clientForStreaming.Do(req)
 		if err != nil && isHttpConnError(err) {
+			// exclude first and last
+			if i > 1 && i < HTTP_MAX_RETRY {
+				time.Sleep(HTTP_RETRY_PERIOD)
+			}
 			continue
 		}
 		break
@@ -782,6 +788,10 @@ func doHTTPRequest(req *http.Request) (*http.Response, error) {
 	for i := 0; i < HTTP_MAX_RETRY; i++ {
 		res, err = client.Do(req)
 		if err != nil && isHttpConnError(err) {
+			// exclude first and last
+			if i > 1 && i < HTTP_MAX_RETRY {
+				time.Sleep(HTTP_RETRY_PERIOD)
+			}
 			continue
 		}
 		break
@@ -1145,7 +1155,7 @@ func ConnectWithAuth(baseU string, ah AuthHandler) (c Client, err error) {
 // with the KV engine encrypted.
 //
 // This method should be called immediately after a Connect*() method.
-func (c *Client) InitTLS(certFile string,disableNonSSLPorts bool) error {
+func (c *Client) InitTLS(certFile string, disableNonSSLPorts bool) error {
 	serverCert, err := ioutil.ReadFile(certFile)
 	if err != nil {
 		return err
@@ -1454,7 +1464,7 @@ func (b *Bucket) refresh(preserveConnections bool) error {
 
 		var encrypted bool
 		if client.tlsConfig != nil {
-			hostport, encrypted, err = MapKVtoSSLExt(hostport, &poolServices,client.disableNonSSLPorts)
+			hostport, encrypted, err = MapKVtoSSLExt(hostport, &poolServices, client.disableNonSSLPorts)
 			if err != nil {
 				b.Unlock()
 				return err
