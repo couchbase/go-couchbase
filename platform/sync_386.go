@@ -2,6 +2,7 @@
 // This is a thin wrapper around sync/atomic to help with alignment issues.
 //
 
+//go:build 386
 // +build 386
 
 package platform

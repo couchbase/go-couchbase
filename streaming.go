@@ -7,6 +7,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -65,11 +66,27 @@ func (b *Bucket) RunBucketUpdater(notify NotifyFn) {
 }
 
 func (b *Bucket) RunBucketUpdater2(streamingFn StreamingFn, notify NotifyFn) {
+
+	b.Lock()
+	if b.updater != nil {
+		b.updater.Close()
+		b.updater = nil
+	}
+	b.Unlock()
 	go func() {
 		err := b.UpdateBucket2(streamingFn)
 		if err != nil {
 			if notify != nil {
-				notify(b.GetName(), err)
+				name := b.GetName()
+				notify(name, err)
+
+				// MB-49772 get rid of the deleted bucket
+				p := b.pool
+				b.Close()
+				p.Lock()
+				p.BucketMap[name] = nil
+				delete(p.BucketMap, name)
+				p.Unlock()
 			}
 			logging.Errorf(" Bucket Updater exited with err %v", err)
 		}
@@ -101,6 +118,15 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 	var failures int
 	var returnErr error
 	var poolServices PoolServices
+	var updater io.ReadCloser
+
+	defer func() {
+		b.Lock()
+		if b.updater == updater {
+			b.updater = nil
+		}
+		b.Unlock()
+	}()
 
 	for {
 
@@ -158,6 +184,18 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 			failures++
 			continue
 		}
+		b.Lock()
+		if b.updater == updater {
+			b.updater = res.Body
+			updater = b.updater
+		} else {
+			// another updater is running and we should exit cleanly
+			b.Unlock()
+			res.Body.Close()
+			logging.Debugf("Bucket updater: New updater found for bucket: %v", b.GetName())
+			return nil
+		}
+		b.Unlock()
 
 		dec := json.NewDecoder(res.Body)
 
@@ -168,6 +206,11 @@ func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 			if err != nil {
 				returnErr = err
 				res.Body.Close()
+				// if this was closed under us it means a new updater is starting so exit cleanly
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					logging.Debugf("Bucket updater: Notified of new updater for bucket: %v", b.GetName())
+					return nil
+				}
 				break
 			}
 

@@ -3,6 +3,7 @@
 // This is for 64-bit OS and hence is a no-op effectively.
 //
 
+//go:build !386
 // +build !386
 
 package platform
