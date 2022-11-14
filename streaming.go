@@ -8,6 +8,7 @@ import (
 	"io/ioutil"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 	"unsafe"
 )
@@ -21,6 +22,7 @@ const MAX_RETRY_COUNT = 5
 const DISCONNECT_PERIOD = 120 * time.Second
 
 type NotifyFn func(bucket string, err error)
+type StreamingFn func(bucket *Bucket)
 
 // Use TCP keepalive to detect half close sockets
 var updaterTransport http.RoundTripper = &http.Transport{
@@ -54,6 +56,17 @@ func doHTTPRequestForUpdate(req *http.Request) (*http.Response, error) {
 }
 
 func (b *Bucket) RunBucketUpdater(notify NotifyFn) {
+	b.RunBucketUpdater2(nil, notify)
+}
+
+func (b *Bucket) RunBucketUpdater2(streamingFn StreamingFn, notify NotifyFn) {
+
+	b.Lock()
+	if b.updater != nil {
+		b.updater.Close()
+		b.updater = nil
+	}
+	b.Unlock()
 	go func() {
 		err := b.UpdateBucket()
 		if err != nil {
@@ -92,9 +105,22 @@ func (b *Bucket) replaceConnPools2(with []*connectionPool, bucketLocked bool) {
 }
 
 func (b *Bucket) UpdateBucket() error {
+	return b.UpdateBucket2(nil)
+}
+
+func (b *Bucket) UpdateBucket2(streamingFn StreamingFn) error {
 	var failures int
 	var returnErr error
 	var poolServices PoolServices
+	var updater io.ReadCloser
+
+	defer func() {
+		b.Lock()
+		if b.updater == updater {
+			b.updater = nil
+		}
+		b.Unlock()
+	}()
 
 	for {
 
@@ -136,6 +162,18 @@ func (b *Bucket) UpdateBucket() error {
 			failures++
 			continue
 		}
+		b.Lock()
+		if b.updater == updater {
+			b.updater = res.Body
+			updater = b.updater
+		} else {
+			// another updater is running and we should exit cleanly
+			b.Unlock()
+			res.Body.Close()
+			logging.Debugf("Bucket updater: New updater found for bucket: %v", b.GetName())
+			return nil
+		}
+		b.Unlock()
 
 		dec := json.NewDecoder(res.Body)
 
@@ -146,6 +184,11 @@ func (b *Bucket) UpdateBucket() error {
 			if err != nil {
 				returnErr = err
 				res.Body.Close()
+				// if this was closed under us it means a new updater is starting so exit cleanly
+				if strings.Contains(err.Error(), "use of closed network connection") {
+					logging.Debugf("Bucket updater: Notified of new updater for bucket: %v", b.GetName())
+					return nil
+				}
 				break
 			}
 
@@ -185,7 +228,7 @@ func (b *Bucket) UpdateBucket() error {
 				var encrypted bool
 				hostport := tmpb.VBSMJson.ServerList[i]
 				if b.pool.client.tlsConfig != nil {
-					hostport, encrypted, err = MapKVtoSSLExt(hostport, &poolServices,b.pool.client.disableNonSSLPorts)
+					hostport, encrypted, err = MapKVtoSSLExt(hostport, &poolServices, b.pool.client.disableNonSSLPorts)
 					if err != nil {
 						b.Unlock()
 						return err
@@ -209,6 +252,9 @@ func (b *Bucket) UpdateBucket() error {
 			b.nodeList = unsafe.Pointer(&tmpb.NodesJSON)
 			b.Unlock()
 
+			if streamingFn != nil {
+				streamingFn(tmpb)
+			}
 			logging.Infof("Got new configuration for bucket %s", b.GetName())
 
 		}

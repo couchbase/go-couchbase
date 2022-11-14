@@ -253,6 +253,8 @@ type Bucket struct {
 	closed           bool
 
 	dedicatedPool bool // Set if the pool instance above caters to this Bucket alone
+
+	updater io.ReadCloser
 }
 
 // PoolServices is all the bucket-independent services in a pool
@@ -304,6 +306,45 @@ func (b *Bucket) VBServerMap() *VBucketServerMap {
 	defer b.RUnlock()
 	ret := (*VBucketServerMap)(b.vBucketServerMap)
 	return ret
+}
+
+func (b *Bucket) ChangedVBServerMap(new *VBucketServerMap) bool {
+	b.RLock()
+	defer b.RUnlock()
+	return b.changedVBServerMap(new)
+}
+
+func (b *Bucket) changedVBServerMap(new *VBucketServerMap) bool {
+	old := (*VBucketServerMap)(b.vBucketServerMap)
+	if new.NumReplicas != old.NumReplicas {
+		return true
+	}
+	if len(new.ServerList) != len(old.ServerList) {
+		return true
+	}
+
+	// this will also catch the same server list in different order,
+	// but better safe than sorry
+	for i, s := range new.ServerList {
+		if s != old.ServerList[i] {
+			return true
+		}
+	}
+
+	if len(new.VBucketMap) != len(old.VBucketMap) {
+		return true
+	}
+	for i, v := range new.VBucketMap {
+		if len(v) != len(old.VBucketMap[i]) {
+			return true
+		}
+		for j, n := range v {
+			if old.VBucketMap[i][j] != n {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (b *Bucket) GetVBmap(addrs []string) (map[string][]uint16, error) {
@@ -511,7 +552,7 @@ func (b *Bucket) GetRandomDoc() (*gomemcached.MCResponse, error) {
 }
 
 func uriAdj(s string) string {
-        return strings.Replace(s, "%", "%25", -1)
+	return strings.Replace(s, "%", "%25", -1)
 }
 
 func (b *Bucket) getMasterNode(i int) string {
@@ -1364,7 +1405,6 @@ func (p *Pool) refresh() (err error) {
 		return err
 	}
 
-
 	p.RLock()
 	defer p.RUnlock()
 	p.BucketMap = make(map[string]*Bucket)
@@ -1507,6 +1547,13 @@ func (b *Bucket) Close() {
 		if b.dedicatedPool {
 			go b.pool.Close()
 		}
+	}
+}
+
+func (b *Bucket) StopUpdater() {
+	if b.updater != nil {
+		b.updater.Close()
+		b.updater = nil
 	}
 }
 
